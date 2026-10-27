@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-003",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-003-r1",
+      "scenario_id": "S3-CR-A-003"
+    },
+    "channel": "manual",
+    "channel_src": "SMS",
+    "received_at": "2026-10-07T10:22:00+09:00",
+    "sender_role": "고객사 운영",
+    "sender_name": "한유진",
+    "subject": "주문 엑셀 내려받기",
+    "message_text": "관리자 주문목록을 엑셀(.xlsx)로 내려받을 수 있게 버튼 하나 추가해 주세요. 월말 정산 때문에 급합니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-101:BL-2",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

@@ -1,0 +1,75 @@
+{
+  "_note": "baseline_id는 로컬 fixture ID. 우선순위 = 계약서 C-02",
+  "baselines": {
+    "P-COM-101:BL-1": {
+      "project_id": "P-COM-101",
+      "as_of": "2026-09-01",
+      "document_ids": [
+        "CTR-A-001-v1.0",
+        "SOW-A-001-v1.0",
+        "FSP-A-001-v1.0",
+        "QUO-A-001-v1.0"
+      ],
+      "priority": [
+        "CO",
+        "CTR",
+        "SOW",
+        "FSP",
+        "QUO"
+      ]
+    },
+    "P-COM-101:BL-2": {
+      "project_id": "P-COM-101",
+      "as_of": "2026-10-05",
+      "document_ids": [
+        "CO-A-001-v1.0",
+        "CTR-A-001-v1.0",
+        "SOW-A-001-v1.0",
+        "FSP-A-001-v1.0",
+        "QUO-A-001-v1.0"
+      ],
+      "priority": [
+        "CO",
+        "CTR",
+        "SOW",
+        "FSP",
+        "QUO"
+      ],
+      "supersedes": "P-COM-101:BL-1"
+    },
+    "P-COM-102:BL-1": {
+      "project_id": "P-COM-102",
+      "as_of": "2026-09-14",
+      "document_ids": [
+        "CTR-B-001-v1.0",
+        "SOW-B-001-v1.0",
+        "FSP-B-001-v1.0",
+        "QUO-B-001-v1.0"
+      ],
+      "priority": [
+        "CO",
+        "CTR",
+        "SOW",
+        "FSP",
+        "QUO"
+      ]
+    },
+    "P-COM-103:BL-1": {
+      "project_id": "P-COM-103",
+      "as_of": "2026-08-17",
+      "document_ids": [
+        "CTR-C-001-v1.0",
+        "SOW-C-001-v1.0",
+        "FSP-C-001-v1.0",
+        "QUO-C-001-v1.0"
+      ],
+      "priority": [
+        "CO",
+        "CTR",
+        "SOW",
+        "FSP",
+        "QUO"
+      ]
+    }
+  }
+}

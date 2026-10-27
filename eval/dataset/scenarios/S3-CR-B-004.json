@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-004",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-004-r1",
+      "scenario_id": "S3-CR-B-004"
+    },
+    "channel": "manual",
+    "channel_src": "MEETING",
+    "received_at": "2026-10-07T14:30:00+09:00",
+    "sender_role": "고객사 운영",
+    "sender_name": "최예린",
+    "subject": "ERP 배치 지연 의심",
+    "message_text": "[운영회의] 오늘 오전 9시에도 어젯밤 주문이 ERP에서 안 보였습니다. 연동 오류인지 원래 그런 건지 확인해주세요. 배치 성공 로그는 아직 못 받았습니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-102:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

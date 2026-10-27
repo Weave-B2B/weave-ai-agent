@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-005",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-005-r1",
+      "scenario_id": "S3-CR-A-005"
+    },
+    "channel": "email",
+    "channel_src": "GMAIL",
+    "received_at": "2026-10-08T11:37:00+09:00",
+    "sender_role": "고객사 개발",
+    "sender_name": "강민석",
+    "subject": "검색 속도가 느립니다",
+    "message_text": "스테이징에서 검색 결과가 느리게 나오는 것 같아요. 5초쯤 걸린 적이 있는데 개선해 주세요. 동시접속 조건이나 재현 로그는 아직 없습니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-101:BL-2",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

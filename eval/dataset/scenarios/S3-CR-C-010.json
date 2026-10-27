@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-010",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-010-r1",
+      "scenario_id": "S3-CR-C-010"
+    },
+    "channel": "manual",
+    "channel_src": "KAKAO",
+    "received_at": "2026-10-12T18:06:00+09:00",
+    "sender_role": "고객사 PM",
+    "sender_name": "윤채은",
+    "subject": "청구 금액이 달라요",
+    "message_text": "구독료가 29,900원인데 어떤 고객은 이번 달에 32,900원으로 표시됩니다. 배송비 때문인지 오류인지 확인해 주세요. 주문번호는 나중에 전달할게요.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-103:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-006",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-006-r1",
+      "scenario_id": "S3-CR-C-006"
+    },
+    "channel": "manual",
+    "channel_src": "KAKAO",
+    "received_at": "2026-10-08T17:14:00+09:00",
+    "sender_role": "고객사 마케팅",
+    "sender_name": "김가람",
+    "subject": "결제 실패 문자 알림",
+    "message_text": "이메일을 잘 안 보는 고객이 많아서 결제 실패 시 문자(SMS)도 자동 발송해 주세요. 기존 이메일은 유지합니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-103:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

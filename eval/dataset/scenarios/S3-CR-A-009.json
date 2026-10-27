@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-009",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-009-r1",
+      "scenario_id": "S3-CR-A-009"
+    },
+    "channel": "email",
+    "channel_src": "GMAIL",
+    "received_at": "2026-10-12T08:55:00+09:00",
+    "sender_role": "고객사 마케팅",
+    "sender_name": "서유나",
+    "subject": "쿠폰 2개 중복 적용",
+    "message_text": "런칭 이벤트에서 신규회원 쿠폰과 배송비 쿠폰을 한 주문에 함께 적용하고 싶습니다. 지금 한 장만 되는 걸 두 장으로 바꿔주세요.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-101:BL-2",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

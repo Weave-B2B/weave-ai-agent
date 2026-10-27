@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-001",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-001-r1",
+      "scenario_id": "S3-CR-C-001"
+    },
+    "channel": "email",
+    "channel_src": "GMAIL",
+    "received_at": "2026-10-06T10:05:00+09:00",
+    "sender_role": "고객사 마케팅",
+    "sender_name": "김가람",
+    "subject": "친구추천 포인트",
+    "message_text": "고객이 친구를 초대하면 추천인과 가입자 모두 포인트를 지급하는 캠페인을 하려고 합니다. 추천 코드 생성과 적립금 정산도 넣어주세요.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-103:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

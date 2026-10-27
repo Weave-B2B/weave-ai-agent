@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-001",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-001-r1",
+      "scenario_id": "S3-CR-B-001"
+    },
+    "channel": "email",
+    "channel_src": "GMAIL",
+    "received_at": "2026-10-06T09:32:00+09:00",
+    "sender_role": "고객사 운영",
+    "sender_name": "최예린",
+    "subject": "대량 주문 CSV 업로드",
+    "message_text": "거래처에서 품목 800개가 담긴 CSV를 업로드하는 시나리오를 테스트하려고 합니다. 파일 형식과 오류 안내 화면 공유 부탁드립니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-102:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

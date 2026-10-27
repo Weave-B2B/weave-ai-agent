@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-002",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-002-r1",
+      "scenario_id": "S3-CR-C-002"
+    },
+    "channel": "manual",
+    "channel_src": "KAKAO",
+    "received_at": "2026-10-06T15:45:00+09:00",
+    "sender_role": "고객사 운영",
+    "sender_name": "신하늘",
+    "subject": "다음 회차 건너뛰기",
+    "message_text": "고객이 다음 달 배송 한 번만 쉬고 그다음 달부터 자동으로 재개하는 흐름은 현재 기획대로 맞죠?",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-103:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

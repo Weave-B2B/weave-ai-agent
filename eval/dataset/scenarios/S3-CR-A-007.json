@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-007",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-007-r1",
+      "scenario_id": "S3-CR-A-007"
+    },
+    "channel": "manual",
+    "channel_src": "SMS",
+    "received_at": "2026-10-09T09:40:00+09:00",
+    "sender_role": "고객사 운영",
+    "sender_name": "한유진",
+    "subject": "결제 오류",
+    "message_text": "테스트 카드로 결제 버튼을 누르면 오류가 뜨고 주문이 안 만들어져요. 로그는 메일로 보내겠습니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-101:BL-2",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

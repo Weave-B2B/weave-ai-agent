@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-004",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-004-r1",
+      "scenario_id": "S3-CR-A-004"
+    },
+    "channel": "manual",
+    "channel_src": "MEETING",
+    "received_at": "2026-10-07T15:00:00+09:00",
+    "sender_role": "고객사 PM",
+    "sender_name": "김서진",
+    "subject": "가격 필터 유지·영문 페이지 추가",
+    "message_text": "[주간회의] 기존 가격/브랜드 필터는 예정대로 진행해 주세요. 추가로 해외 고객을 위한 영어 상품 상세페이지도 부탁드립니다. 오픈일은 11월 23일 그대로 가면 좋겠습니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-101:BL-2",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

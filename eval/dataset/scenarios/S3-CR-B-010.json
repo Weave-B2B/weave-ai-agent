@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-010",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-010-r1",
+      "scenario_id": "S3-CR-B-010"
+    },
+    "channel": "manual",
+    "channel_src": "KAKAO",
+    "received_at": "2026-10-12T16:42:00+09:00",
+    "sender_role": "고객사 운영",
+    "sender_name": "최예린",
+    "subject": "CSV 내보내기 오류",
+    "message_text": "주문 목록에서 CSV 내려받기를 누르면 빈 파일이 나옵니다. 거래처 필터 걸었을 때만 그런 것 같아요.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-102:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

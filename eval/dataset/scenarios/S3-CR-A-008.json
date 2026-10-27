@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-008",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-008-r1",
+      "scenario_id": "S3-CR-A-008"
+    },
+    "channel": "manual",
+    "channel_src": "MEETING",
+    "received_at": "2026-10-09T14:10:00+09:00",
+    "sender_role": "고객사 PM",
+    "sender_name": "김서진",
+    "subject": "별점만 넣을 때 견적 문의",
+    "message_text": "[회의 메모] 사진은 빼고 별점만 넣으면 얼마나 더 드나요? 아직 개발 진행하라는 승인은 아니고 비용 검토만 부탁합니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-101:BL-2",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

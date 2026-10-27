@@ -1,0 +1,36 @@
+{
+  "document_version": "v0.5",
+  "date": "2026-10-23",
+  "author": "AI팀",
+  "shared_schema_version": "0.3.0",
+  "shared_schema_unmodified": true,
+  "schema_sha256": "25f284e5cbb637dbab7f8cb21ec197b9bbcf781b67a44458e679555049f7facf",
+  "core_requests": 30,
+  "core_agent_pairs": 90,
+  "noisy_typed_cases": 10,
+  "a3_contract_cases": 13,
+  "focused_contract_cases": 3,
+  "scenario_total": 56,
+  "a3_reference_estimates_changed": false,
+  "md_accuracy_scoring": false,
+  "new_gold_human_approved": 0,
+  "blind_test_count": 0,
+  "retrieval_allowlist": [
+    "runtime/documents/*.pdf",
+    "kb/sections.jsonl",
+    "kb/doc_pages.json"
+  ],
+  "never_index": [
+    "gold",
+    "chain",
+    "reference",
+    "agent1",
+    "agent2",
+    "inputs",
+    "noisy",
+    "contract_tests",
+    "agent3/data/evaluation_only",
+    "agent3/data/gold.jsonl",
+    "review.html"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-002",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-002-r1",
+      "scenario_id": "S3-CR-A-002"
+    },
+    "channel": "manual",
+    "channel_src": "KAKAO",
+    "received_at": "2026-10-06T13:05:00+09:00",
+    "sender_role": "고객사 운영",
+    "sender_name": "한유진",
+    "subject": "가격 범위 필터 확인",
+    "message_text": "상품 검색할 때 가격을 1만원~3만원으로 좁히고 브랜드도 동시에 고를 수 있게 되는 거죠? QA에서 같이 확인하려고요.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-101:BL-2",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}

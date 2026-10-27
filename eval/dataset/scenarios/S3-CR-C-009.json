@@ -1,0 +1,27 @@
+{
+  "start_input": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-009",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-009-r1",
+      "scenario_id": "S3-CR-C-009"
+    },
+    "channel": "email",
+    "channel_src": "GMAIL",
+    "received_at": "2026-10-12T10:27:00+09:00",
+    "sender_role": "고객사 개발",
+    "sender_name": "권태현",
+    "subject": "CRM으로 구독 정보 자동 전송",
+    "message_text": "고객 구독 상태와 다음 결제일을 외부 CRM에 실시간으로 보내는 API를 추가하고 싶습니다. 기존 CRM 담당자와 인터페이스 협의가 필요합니다.",
+    "pm_notes": [],
+    "answers": []
+  },
+  "baseline_id": "P-COM-103:BL-1",
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "pm_mode": "HUMAN_OR_EXPLICIT_TEST_ADAPTER_BIND_TO_ACTUAL_A2_ID",
+  "upstream_mode": "ACTUAL_OUTPUTS_ONLY",
+  "answers": []
+}
