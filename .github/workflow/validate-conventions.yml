@@ -4,7 +4,7 @@ name: Validate Git Conventions
 on:
   pull_request:
     branches:
-      - develop
+      - dev
       - stage
       - main
 
