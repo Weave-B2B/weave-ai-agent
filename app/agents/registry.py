@@ -10,4 +10,4 @@ def build_agents() -> AgentSet:
     from app.llm.client import build_llm
     from app.agents.agent2.agent import LlmAgent2
     from app.agents.agent3.agent import LlmAgent3
-    return AgentSet(LlmAgent1(build_llm(settings)), LlmAgent2(), LlmAgent3())
+    return AgentSet(LlmAgent1(build_llm(settings)), LlmAgent2(), LlmAgent3(build_llm(settings)))
