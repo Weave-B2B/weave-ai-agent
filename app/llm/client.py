@@ -1,2 +1,20 @@
-"""LLM 호출 래퍼 (구현 예정): 구조화 출력(스키마 검증), 타임아웃(단계당 60초), 재시도,
-모델·지연·비용 기록(meta.model / latency_ms / cost_usd). 출력 스키마 불일치는 1회 재요청 후 OUTPUT_INVALID."""
+"""Public LLM client interfaces, providers, and factory."""
+
+from app.llm.base import LlmClient, LlmResult, RawResponse, StructuredLlm, Usage
+from app.llm.bedrock import BedrockLlm
+from app.llm.factory import LlmConfigError, build_llm
+from app.llm.fake import FakeLlm
+from app.llm.local import LocalLlm
+
+__all__ = [
+    "BedrockLlm",
+    "FakeLlm",
+    "LlmClient",
+    "LlmConfigError",
+    "LlmResult",
+    "LocalLlm",
+    "RawResponse",
+    "StructuredLlm",
+    "Usage",
+    "build_llm",
+]
