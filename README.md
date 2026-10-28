@@ -115,6 +115,8 @@ uvicorn app.main:app --reload
 
 `AGENT_MODE`를 `llm`로 설정해도 실제 LLM 연동이 완료된 것은 아닙니다. 실제 에이전트 구현 및 LLM 클라이언트 연결 전에는 기본값인 `fixture`를 사용하세요.
 
+`AGENT_MODE`는 에이전트를 fixture로 쓸지(`fixture`) 실제 LLM 에이전트로 쓸지(`llm`)를 고르고, `LLM_PROVIDER`는 실제 에이전트가 쓸 LLM(`fake`·`local`·`bedrock`)을 고릅니다. 서로 다른 축입니다.
+
 ## API
 
 | 메서드 | 경로 | 설명 |
