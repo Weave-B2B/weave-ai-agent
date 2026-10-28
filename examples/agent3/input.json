@@ -1,0 +1,155 @@
+{
+  "context": {
+    "project_id": "P-COM-101",
+    "case_id": "CR-A-001",
+    "request_revision": 1,
+    "baseline_id": "P-COM-101:BL-2",
+    "baseline_as_of": "2026-10-05",
+    "analysis_id": "AN-CR-A-001-r1",
+    "scenario_id": "S3-CR-A-001"
+  },
+  "rate_card_id": "RC-SYNTH-2026H2-v1",
+  "received_at": "2026-10-06T09:12:00+09:00",
+  "items": [
+    {
+      "item_id": "CR-A-001-1",
+      "case_id": "CR-A-001",
+      "display_no": "R1",
+      "item_type": "function",
+      "intent": "change_request",
+      "text": "상세페이지 구매자 별점·후기 텍스트 등록, (가능하면) 사진 최대 3장 첨부",
+      "spans": [
+        {
+          "start": 7,
+          "end": 32,
+          "text": "상세페이지에 구매자 별점과 후기 텍스트를 넣고"
+        },
+        {
+          "start": 34,
+          "end": 56,
+          "text": "가능하면 사진도 3장까지 올리게 해주세요"
+        }
+      ],
+      "source": "gold",
+      "feature_candidates": [
+        "FSP-A-001-v1.0:F-11"
+      ],
+      "inferred": false,
+      "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+    }
+  ],
+  "a2_result": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-001",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-001-r1",
+      "scenario_id": "S3-CR-A-001"
+    },
+    "meta": {
+      "schema_version": "0.3.0",
+      "result_id": "A2-S3-CR-A-001-v05",
+      "result_revision": 1,
+      "created_at": "2026-10-23T10:01:00+09:00",
+      "upstream_result_ids": [
+        "A1-S3-CR-A-001-v05"
+      ],
+      "agent_version": "fixture-v0.5",
+      "model": null,
+      "latency_ms": null,
+      "cost_usd": null,
+      "trace_id": null,
+      "debug": {}
+    },
+    "questions": [],
+    "error": null,
+    "status": "READY_FOR_REVIEW",
+    "assessments": [
+      {
+        "item_id": "CR-A-001-1",
+        "label": "out_of_scope",
+        "evidence": [
+          {
+            "doc_id": "FSP-A-001-v1.0",
+            "doc_version": "1.0",
+            "section_id": "F-11",
+            "page": 2,
+            "line_start": 21,
+            "line_end": 22,
+            "locator": null,
+            "extraction_version": "pdftotext-layout-v1",
+            "quote": "[A-F11][OUT] 구매 후기·별점·사진 리뷰: 구매 후기 작성·별점 평가·사진 첨부 기능은 최초 범위에서 제외. 검수기준: 별도 변경 합의 없이는 구현 의무 없음.",
+            "role": "basis",
+            "match_type": "direct",
+            "verified": true
+          },
+          {
+            "doc_id": "CTR-A-001-v1.0",
+            "doc_version": "1.0",
+            "section_id": "C-05",
+            "page": 1,
+            "line_start": 59,
+            "line_end": 61,
+            "locator": null,
+            "extraction_version": "pdftotext-layout-v1",
+            "quote": "발주자 추가 요청은 원문과 접수일을 기록한다. 수행사는 범위·공수·금액·일정 영향을 서면 검토하고, 내부 승인 후 발주자에게 변경견적을 제시할 수 있다. 발주자와 수행사 양측의 권한 있는 담당자가 변경합의서에 서명하기 전에는 신규 과업·추가대금·일정변경이 확정되지 않는다. 메신저 답장·구두 요청·AI 제안은 변경합의서에 갈음하지 않는다.",
+            "role": "policy",
+            "match_type": "direct",
+            "verified": true
+          }
+        ],
+        "rationale": "구매 후기·별점·사진 리뷰는 승인된 최초 기능명세서에서 제외되었다. 오픈일 유지 요구는 추가 영향 분석이 필요하다.",
+        "evidence_level": "strong",
+        "missing_info": [],
+        "uncertainties": [],
+        "approved_change_ref": null,
+        "gold_ref": null
+      }
+    ]
+  },
+  "pm_review": {
+    "review_id": "PMR-S3-CR-A-001-v05",
+    "review_revision": 1,
+    "target_result_id": "A2-S3-CR-A-001-v05",
+    "reviewer": "PM(가상 fixture)",
+    "reviewed_at": "2026-10-23T10:02:00+09:00",
+    "status": "REVIEWED",
+    "items": [
+      {
+        "item_id": "CR-A-001-1",
+        "ai_label": "out_of_scope",
+        "pm_label": "out_of_scope",
+        "estimate": true,
+        "reason": "",
+        "evidence_refs": [
+          "FSP-A-001-v1.0:F-11",
+          "CTR-A-001-v1.0:C-05"
+        ]
+      }
+    ]
+  },
+  "constraints": [
+    {
+      "item_id": "CR-A-001-2",
+      "case_id": "CR-A-001",
+      "display_no": "R2",
+      "item_type": "deadline",
+      "intent": "constraint",
+      "text": "변경합의된 오픈일 2026-11-24 유지",
+      "spans": [
+        {
+          "start": 58,
+          "end": 85,
+          "text": "변경합의된 11월 24일 오픈일은 유지해야 합니다"
+        }
+      ],
+      "source": "gold",
+      "feature_candidates": [],
+      "inferred": false,
+      "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+    }
+  ],
+  "answers": []
+}
