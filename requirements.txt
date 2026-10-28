@@ -5,6 +5,7 @@ uvicorn[standard]
 pytest
 httpx
 boto3>=1.35  # AWS Bedrock Converse provider
+streamlit>=1.40,<2  # Agent1 interactive demo
 # 구현 단계에서 추가
 # langgraph, langgraph-checkpoint-postgres   # 오케스트레이션 부모 그래프·체크포인터
 # psycopg[binary], pgvector                  # 상태 저장·벡터 검색
