@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     agent_mode: str = "fixture"
 
     data_dir: Path = ROOT / "data"
+    rate_card_file: Path | None = None  # Defaults to data/kb/rate_cards.json; replace with a supplied file later.
     eval_dir: Path = ROOT / "eval" / "dataset"
 
     llm_model: str = ""

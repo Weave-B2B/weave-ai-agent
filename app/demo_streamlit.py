@@ -1,4 +1,4 @@
-"""Streamlit demo UI for the Agent1 request-structuring workflow."""
+"""Streamlit test UI for Agent1 and Agent3 workflows."""
 
 from __future__ import annotations
 
@@ -252,14 +252,14 @@ def _render_agent1() -> None:
 
 
 def main() -> None:
-    """Render the demo shell with only Agent1 implemented."""
+    """Render Agent1 and Agent3; keep Agent2 as a separate placeholder."""
     st.set_page_config(
-        page_title="Scope Agent · Agent1 Demo",
+        page_title="Scope Agent · Demo",
         page_icon="🧵",
         layout="wide",
     )
     st.title("Scope Agent")
-    st.caption("Agent1 요청 구조화 데모 · 입력부터 검증된 출력까지")
+    st.caption("Agent1 요청 구조화 · Agent3 영향 산정·PM 승인·협의안")
 
     agent1_tab, agent2_tab, agent3_tab = st.tabs(
         ["① Agent1 · 요청 구조화", "② Agent2 · 범위 판단", "③ Agent3 · 영향 산정"]
@@ -269,7 +269,8 @@ def main() -> None:
     with agent2_tab:
         st.caption("Agent2 화면은 아직 구현하지 않았습니다.")
     with agent3_tab:
-        st.caption("Agent3 화면은 아직 구현하지 않았습니다.")
+        from app.demo_agent3 import render_agent3
+        render_agent3()
 
 
 if __name__ == "__main__":

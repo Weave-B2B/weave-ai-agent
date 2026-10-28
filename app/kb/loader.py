@@ -36,9 +36,10 @@ def baselines() -> dict[str, dict]:
     return _read_json("baselines.json")["baselines"]
 
 
-@lru_cache
 def rate_cards() -> dict[str, dict]:
-    return _read_json("rate_cards.json")["rate_cards"]
+    # Avoid stale rates after a supplied file is replaced.
+    path = settings.rate_card_file or settings.data_dir / "kb" / "rate_cards.json"
+    return json.loads(path.read_text(encoding="utf-8"))["rate_cards"]
 
 
 @lru_cache
