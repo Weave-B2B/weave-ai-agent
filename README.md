@@ -98,6 +98,16 @@ uvicorn app.main:app --reload
 
 기본 `AGENT_MODE=fixture`에서는 평가 데이터셋에 정의된 케이스를 사용해 API와 오케스트레이션 흐름을 확인합니다. 임의의 케이스 ID는 Fixture에 없으면 처리할 수 없습니다.
 
+Agent1 입력과 구조화 출력을 확인하는 Streamlit 데모는 별도 터미널에서 실행합니다.
+
+```bash
+python -m streamlit run app/demo_streamlit.py
+```
+
+데모에서는 Fake, Local LLM, Bedrock 중 provider를 선택할 수 있습니다. Fake는 입력 원문을 그대로 활용하는 예시 초안을 사용하며 실제 추론은 하지 않습니다. Local LLM은 OpenAI 호환 서버 설정이, Bedrock은 모델 ID·리전과 로컬 AWS 자격 증명이 필요합니다. Agent2·Agent3 탭은 아직 구현되지 않았습니다.
+
+Google AI Studio의 OpenAI 호환 API를 Local provider로 사용할 때는 `.env`에 `LLM_MODEL`과 `LLM_API_KEY`를 설정합니다. `LLM_BASE_URL`을 생략하면 `https://generativelanguage.googleapis.com/v1beta/openai`를 사용합니다. Streamlit은 모델과 키를 서버 측 `.env` 설정에서 읽으며, 키 값은 화면에 표시하지 않습니다.
+
 ## 환경 변수
 
 설정은 프로젝트 루트의 `.env`와 프로세스 환경 변수에서 읽습니다. 환경 변수가 `.env` 값보다 우선합니다.
@@ -109,11 +119,13 @@ uvicorn app.main:app --reload
 | `EVAL_DIR` | `eval/dataset/` | Fixture가 읽는 평가 데이터셋 경로 |
 | `STAGE_TIMEOUT_SEC` | `60` | 오케스트레이션 단계별 제한 시간(초) |
 | `TOOL_MAX_RETRIES` | `2` | 재시도 가능한 도구 실패의 최대 자동 재시도 횟수 |
-| `LLM_MODEL` | 빈 문자열 | 향후 실제 LLM 연결을 위한 설정값. 현재 미사용 |
-| `LLM_API_KEY` | 빈 문자열 | 향후 실제 LLM 연결을 위한 설정값. 현재 미사용 |
+| `LLM_MODEL` | 빈 문자열 | 향후 실제 LLM 연결을 위한 설정값. |
+| `LLM_API_KEY` | 빈 문자열 | 향후 실제 LLM 연결을 위한 설정값. |
 | `DATABASE_URL` | 빈 문자열 | 향후 DB 체크포인터·영속 저장소 연결을 위한 설정값. 현재 미사용 |
 
 `AGENT_MODE`를 `llm`로 설정해도 실제 LLM 연동이 완료된 것은 아닙니다. 실제 에이전트 구현 및 LLM 클라이언트 연결 전에는 기본값인 `fixture`를 사용하세요.
+
+`AGENT_MODE`는 에이전트를 fixture로 쓸지(`fixture`) 실제 LLM 에이전트로 쓸지(`llm`)를 고르고, `LLM_PROVIDER`는 실제 에이전트가 쓸 LLM(`fake`·`local`·`bedrock`)을 고릅니다. 서로 다른 축입니다.
 
 ## API
 
