@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.core.config import settings
 from app.api.routes import router
+from app.api.agent3_routes import router as agent3_router
 from app.llm.factory import build_llm
 
 
@@ -22,3 +23,4 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(router)
+app.include_router(agent3_router)

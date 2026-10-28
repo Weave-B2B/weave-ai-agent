@@ -33,11 +33,14 @@ def finalize_estimates(out: Agent3Output, rate_card_id: str) -> Agent3Output:
         e["totals"] = Totals(**res).model_dump()
         e["totals_source"] = "calc_cost"
     if missing:
+        # A successful partial total is not a complete estimate.
+        for estimate in data["estimates"]:
+            estimate["totals"], estimate["totals_source"] = None, None
         case_id = out.context.case_id
         q = Question(question_id=f"{case_id}-A3Q9", case_id=case_id, stage="agent3", item_ids=sorted({i for e in data["estimates"] for i in e["item_ids"]}),
                      field=",".join(sorted(set(missing))), text="단가표에 없는 직군의 단가를 알려주세요.",
                      reason="단가 누락으로 금액을 계산할 수 없음", basis_refs=sorted(set(missing)), target="pm", blocking=True)
-        data["questions"] = data["questions"] + [q.model_dump()]
+        data["questions"] = [old for old in data["questions"] if old["question_id"] != q.question_id] + [q.model_dump()]
         data["status"] = "NEEDS_INPUT"
         data["draft"] = None
     return Agent3Output.model_validate(data)

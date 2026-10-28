@@ -1,0 +1,71 @@
+[
+  {
+    "estimates": [
+      {
+        "item_numbers": [
+          1
+        ],
+        "status": "draft",
+        "lines": [
+          {
+            "task": "변경 요구 정리·협의",
+            "item_numbers": [
+              1
+            ],
+            "role": "PM",
+            "md": 0.5,
+            "assumption": "검토용 가상 공수"
+          },
+          {
+            "task": "리뷰 UI 설계",
+            "item_numbers": [
+              1
+            ],
+            "role": "UX",
+            "md": 1.5,
+            "assumption": "사진 포함 가정"
+          },
+          {
+            "task": "리뷰·선택적 사진 최대 3장 첨부 UI",
+            "item_numbers": [
+              1
+            ],
+            "role": "FE",
+            "md": 3.0,
+            "assumption": "사진 포함 가정"
+          },
+          {
+            "task": "리뷰 API·구매자 검증·이미지 저장",
+            "item_numbers": [
+              1
+            ],
+            "role": "BE",
+            "md": 3.5,
+            "assumption": "기존 이미지 저장소 재사용"
+          },
+          {
+            "task": "기능·회귀 테스트",
+            "item_numbers": [
+              1
+            ],
+            "role": "QA",
+            "md": 1.5,
+            "assumption": "검토용 가상 공수"
+          }
+        ]
+      }
+    ],
+    "questions": [
+      {
+        "item_numbers": [
+          1
+        ],
+        "field": "image_storage",
+        "text": "기존 이미지 저장소를 재사용할 수 있나요?",
+        "reason": "저장 방식에 따라 공수가 달라짐",
+        "target": "pm",
+        "blocking": false
+      }
+    ]
+  }
+]

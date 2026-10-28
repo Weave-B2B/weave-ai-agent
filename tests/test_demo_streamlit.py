@@ -59,4 +59,4 @@ def test_streamlit_demo_renders_tabs_and_runs_agent1_with_fake_provider() -> Non
     assert any("처리 완료" in alert.value for alert in app.success)
     assert any("중간 처리 보기" in expander.label for expander in app.expander)
     assert any("Agent2 화면은 아직 구현하지 않았습니다." == caption.value for caption in app.caption)
-    assert any("Agent3 화면은 아직 구현하지 않았습니다." == caption.value for caption in app.caption)
+    assert any(button.label == "영향 산정 실행" for button in app.button)
