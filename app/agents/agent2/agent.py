@@ -8,7 +8,6 @@ import concurrent.futures as cf
 import contextvars
 import json
 import random
-import re
 import threading
 import time
 from typing import Literal, Optional
@@ -29,7 +28,6 @@ from app.tools.doc_tools import get_section, list_baseline_docs, search_docs
 from app.tools.errors import ToolInputError
 
 AGENT_VERSION = "a2-llm-0.1.0"
-_WS = re.compile(r"\s+")
 DocType = Literal["contract", "sow", "functional_spec", "quote", "change_order"]
 
 
@@ -72,12 +70,6 @@ class Judgment(_LlmOut):
     uncertainties: list[str]
     approved_change_ref: Optional[str]
     question: Optional[QuestionDraft]
-    defect_facts: list[str] = Field([], description="issue_report를 in_scope로 볼 때: 결함으로 볼 사실을 요청 원문에서 글자 그대로 인용")
-
-
-def _facts_in(facts: list[str], message_text: str) -> bool:
-    flat = _WS.sub("", message_text)
-    return any(f.strip() and _WS.sub("", f) in flat for f in facts)
 
 
 def _rrf(result_lists: list[list[dict]], k: int = 60, top: int = 5) -> list[tuple[str, str]]:
@@ -104,7 +96,12 @@ class _Usage:
         self.models: set[str] = set()
         self.traces: dict[str, list[str]] = {}          # 항목별 행동 순서 (도구 사용 에이전트만)
         self.steps: dict[str, list[dict]] = {}          # 항목별 행동 상세 (검색어·결과·읽은 조항) — 트러블슈팅용
+        self.notes: dict[str, dict] = {}                # 항목별 LLM 원판단 (가드 적용 전 라벨·인용한 결함 사실)
         self._lock = threading.Lock()
+
+    def note(self, item_id: str, **kw) -> None:
+        with self._lock:
+            self.notes.setdefault(item_id, {}).update(kw)
 
     def retry(self) -> None:
         with self._lock:
@@ -187,7 +184,8 @@ class LlmAgent2:
                       debug={"llm_calls": usage.calls, "llm_retries": usage.retries, "input_tokens": usage.input_tokens,
                              "output_tokens": usage.output_tokens,
                              **({"actions": usage.traces} if usage.traces else {}),
-                             **({"steps": usage.steps} if usage.steps else {})}),
+                             **({"steps": usage.steps} if usage.steps else {}),
+                             **({"judgments": usage.notes} if usage.notes else {})}),
         )
         guarded = apply_guards(out)
         cited, kept = (sum(len(a.evidence) for a in o.assessments) for o in (out, guarded))
@@ -233,7 +231,9 @@ class LlmAgent2:
             if judgment.sufficient or not judgment.next_queries:
                 break
             queries = judgment.next_queries
-        return (self._to_assessment(item, judgment, keys, inp.message_text),
+        usage.note(item.item_id, label=judgment.label)
+        judgment = self._hold_issue_report(item, judgment, bool(inp.answers))
+        return (self._to_assessment(item, judgment, keys),
                 self._to_question(item, judgment, ctx.case_id), hints)
 
     def _search(self, queries: list[str], doc_types: list[str], baseline_id: str, found: list,
@@ -258,7 +258,7 @@ class LlmAgent2:
         return set(bl["document_ids"])
 
     @staticmethod
-    def _to_assessment(item: Item, j: Judgment, keys: list, message_text: str = "") -> Assessment:
+    def _to_assessment(item: Item, j: Judgment, keys: list) -> Assessment:
         evidence = []
         for c in j.evidence:
             if (c.doc_id, c.section_id) not in keys:      # 후보 밖 문서는 쓰지 않는다
@@ -275,10 +275,6 @@ class LlmAgent2:
         elif label == "approved_change" and not j.approved_change_ref:
             label, level = "unclear", "none"
             missing.append("승인한 변경합의서 참조 없음 — 판단 보류")
-        elif label == "in_scope" and item.intent == "issue_report" and not _facts_in(j.defect_facts, message_text):
-            # 원인 불명 제보를 결함으로 단정하려면 원문의 사실(재현 조건·로그·대상 건)을 인용해야 한다 — 코드가 원문과 대조
-            label, level = "unclear", "none"
-            missing.append("결함으로 볼 사실(재현 조건·로그·대상 건)이 원문에 없음 — 판단 보류")
         if label == "unclear" and not missing:
             missing = [j.question.reason if j.question else "판단할 근거·정보 부족"]
         ref = j.approved_change_ref if label == "approved_change" else None
@@ -287,6 +283,21 @@ class LlmAgent2:
         return Assessment(item_id=item.item_id, label=label, evidence=evidence, rationale=j.rationale,
                           evidence_level=level, missing_info=missing, uncertainties=j.uncertainties,
                           approved_change_ref=ref)
+
+    @staticmethod
+    def _hold_issue_report(item: Item, j: Judgment, has_answers: bool) -> Judgment:
+        """원인 불명 제보(issue_report)는 답변(재현 조건·로그·대상 건)이 오기 전에는 in_scope(하자 무상 시정)로 확정하지 않는다.
+        프롬프트 규칙만으로는 가벼운 모델이 "원문 불만 문장"을 결함 근거로 삼아 확정하는 일이 반복돼 코드로 막는다.
+        질문이 없으면 고객에게 물을 기본 질문을 붙인다 (PM이 무엇을 확인할지 알 수 있게)."""
+        if item.intent != "issue_report" or j.label != "in_scope" or has_answers:
+            return j
+        q = j.question or QuestionDraft(
+            text="문제가 발생한 재현 조건(환경·시점·대상 건)과 관련 로그·측정 결과를 공유해 주실 수 있나요?",
+            reason="원인 불명 제보라 기준선 기능의 결함인지 환경·운영 요인인지 판단할 사실이 필요하다",
+            field="repro_facts", target="client", blocking=False)
+        return j.model_copy(update={
+            "label": "unclear", "question": q,
+            "missing_info": j.missing_info + ["원인 불명 제보 — 재현 조건·로그·대상 건 답변 전에는 결함(범위 내)으로 확정하지 않음"]})
 
     @staticmethod
     def _to_question(item: Item, j: Judgment, case_id: str) -> Optional[Question]:

@@ -140,21 +140,38 @@ def test_unknown_baseline_is_input_error():
         LlmAgent2(GoldLLM(GOLD["CR-A-001"])).run(Agent2Input.model_validate(raw))
 
 
-@pytest.mark.parametrize("facts,expected", [([], "unclear"), (["원문에 없는 로그 내용"], "unclear"), (None, "in_scope")])
-def test_issue_report_in_scope_needs_fact_quoted_from_message(facts, expected):
-    """원인 불명 제보를 in_scope로 단정하려면 원문의 사실을 인용해야 한다 (None = 원문 첫 문장 인용)."""
+def _issue_report_judgment(case_id: str, question=None):
     from schema.schemas import Item
-    case_id = next(c for c, i in INPUTS.items() if any(it["intent"] == "issue_report" for it in i["items"]))
     inp = INPUTS[case_id]
     item = Item.model_validate(next(it for it in inp["items"] if it["intent"] == "issue_report"))
     a = GOLD[case_id]["assessments"][0]
     keys = [(e["doc_id"], e["section_id"]) for e in a["evidence"]]
-    quoted = [inp["message_text"][:20]] if facts is None else facts
     j = Judgment(sufficient=True, next_queries=[], label="in_scope",
                  evidence=[Cite(doc_id=d, section_id=s, quote="x", role="basis", match_type="direct") for d, s in keys],
                  rationale="r", evidence_level="medium", missing_info=[], uncertainties=[], approved_change_ref=None,
-                 question=None, defect_facts=quoted)
-    out = LlmAgent2._to_assessment(item, j, keys, inp["message_text"])
-    assert out.label == expected
-    if expected == "unclear":
-        assert any("결함으로 볼 사실" in m for m in out.missing_info)
+                 question=question)
+    return item, j, keys
+
+
+ISSUE_CASE = next(c for c, i in INPUTS.items() if any(it["intent"] == "issue_report" for it in i["items"]))
+
+
+def test_issue_report_is_held_until_answers_arrive():
+    """원인 불명 제보는 답변 전에는 in_scope로 확정하지 않고, 고객 질문을 붙인다."""
+    item, j, keys = _issue_report_judgment(ISSUE_CASE)
+    held = LlmAgent2._hold_issue_report(item, j, has_answers=False)
+    a = LlmAgent2._to_assessment(item, held, keys)
+    q = LlmAgent2._to_question(item, held, ISSUE_CASE)
+    assert a.label == "unclear" and any("원인 불명" in m for m in a.missing_info)
+    assert q and q.target == "client" and q.blocking is False
+
+
+def test_issue_report_can_be_in_scope_after_answers():
+    item, j, _ = _issue_report_judgment(ISSUE_CASE)
+    assert LlmAgent2._hold_issue_report(item, j, has_answers=True).label == "in_scope"
+
+
+def test_issue_report_hold_keeps_llm_question():
+    mine = QuestionDraft(text="p95 측정 결과를 주세요", reason="r", field="p95", target="client", blocking=False)
+    item, j, _ = _issue_report_judgment(ISSUE_CASE, question=mine)
+    assert LlmAgent2._hold_issue_report(item, j, has_answers=False).question.text == "p95 측정 결과를 주세요"
