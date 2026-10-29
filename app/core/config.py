@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # fixture: 데이터셋 정답을 에이전트 대신 돌려줌 (오케스트레이션 개발·계약 테스트용)
     # llm: 실제 에이전트 (구현 후)
     agent_mode: str = "fixture"
+    agent2_mode: str = "fixture"     # fixture 모드에서 ②만 llm으로 돌릴 때 llm
+    agent2_style: str = "agent"      # agent: LLM이 도구를 골라 쓰는 에이전트 · workflow: 고정 흐름 (비교용)
+    agent2_use_hints: bool = True    # ①의 feature_candidates를 검색 없이 후보에 넣을지 (평가 시 힌트 유무 비교)
 
     data_dir: Path = ROOT / "data"
     rate_card_file: Path | None = None  # Defaults to data/kb/rate_cards.json; replace with a supplied file later.
