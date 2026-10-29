@@ -60,9 +60,15 @@ class ToolAgent2(LlmAgent2):
         def observe(steps_left: int) -> str:
             return self._observation(shared, item_desc, index, read, history, steps_left)
 
+        pushed_back = False
         for n in range(self.max_steps):
             step = self._ask(AGENT_SYSTEM, observe(self.max_steps - n), AgentStep, "choose_next_action", usage)
             if step.action == "submit_judgment" and step.judgment is not None:
+                gaps = [] if pushed_back or n == self.max_steps - 1 else self._precheck(item, hints, seen, read, allowed)
+                if gaps:                                 # 제출 전 점검 — 한 번만 되돌려 빠진 조사를 하게 한다
+                    pushed_back = True
+                    history.append({"action": "submit_judgment", "result": {"rejected": "제출 전 확인 필요", "gaps": gaps}})
+                    continue
                 judgment = step.judgment
                 history.append({"action": "submit_judgment"})
                 break
@@ -74,8 +80,9 @@ class ToolAgent2(LlmAgent2):
         if judgment is None:                             # 상한 도달 — 본 것만으로 판단을 강제한다
             judgment = self._ask(FINAL_SYSTEM, observe(0), Judgment, "submit_judgment", usage)
 
-        usage.trace(item.item_id, [h["action"] for h in history])
-        return self._to_assessment(item, judgment, seen), self._to_question(item, judgment, ctx.case_id), hints
+        usage.trace(item.item_id, [h["action"] for h in history], [self._step_brief(h) for h in history])
+        return (self._to_assessment(item, judgment, seen, inp.message_text),
+                self._to_question(item, judgment, ctx.case_id), hints)
 
     # ---- 도구 실행 (울타리는 여기) ----
     def _run_tool(self, step: AgentStep, baseline_id: str, allowed: set[str], seen: list, read: dict) -> dict:
@@ -122,6 +129,32 @@ class ToolAgent2(LlmAgent2):
     def _see(seen: list, key: tuple[str, str]) -> None:
         if key not in seen:
             seen.append(key)
+
+    @staticmethod
+    def _precheck(item: Item, hints: list[str], seen: list, read: dict, allowed: set[str]) -> list[str]:
+        """프롬프트로는 지켜지지 않던 조사 누락을 코드가 잡는다 (평가 트레이스에서 반복 확인된 두 가지)."""
+        gaps = []
+        unseen = [h for h in hints if tuple(h.split(":", 1)) not in seen]
+        if unseen:
+            gaps.append(f"①이 준 기능 후보 {unseen}를 아직 보지 않았다. get_section으로 읽고 판단에 반영하라")
+        if item.intent == "defect":
+            defect = [k for k, s in sections().items() if k[0] in allowed and s["doc_type"] == "contract"
+                      and "하자" in s["heading"]]
+            if defect and not any(k in read for k in defect):
+                gaps.append(f"결함(defect) 항목인데 계약서 하자 조항 {[f'{d}:{c}' for d, c in defect]}을 읽지 않았다")
+        return gaps
+
+    @staticmethod
+    def _step_brief(h: dict) -> dict:
+        """행동 하나를 짧게: 검색어와 결과 순위(via 포함), 읽은 조항, 오류. 원문은 넣지 않는다."""
+        out = {"action": h["action"], **h.get("args", {})}
+        r = h.get("result") or {}
+        if "results" in r:
+            out["hits"] = [f"{x['doc_id']}:{x['section_id']}" + ("*" if x.get("read") else "") for x in r["results"]]
+        for k in ("read", "note", "error", "rejected", "gaps"):
+            if k in r:
+                out[k] = r[k]
+        return out
 
     @staticmethod
     def _contract_index(allowed: set[str]) -> list[dict]:
