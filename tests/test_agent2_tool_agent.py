@@ -10,6 +10,7 @@ from schema.schemas import Agent2Input
 from app.agents.agent2.agent import Cite, Judgment
 from app.agents.agent2.tool_agent import AgentStep, ToolAgent2
 from app.agents.base import AgentFailure
+from app.kb.loader import sections
 from app.llm.client import LlmResult, Usage
 from test_agent2 import GOLD, INPUTS
 
@@ -157,3 +158,62 @@ def test_registry_builds_tool_agent_by_default(monkeypatch):
     assert isinstance(registry.build_agent2(ScriptLLM(GOLD["CR-A-001"])), ToolAgent2)
     monkeypatch.setattr(settings, "agent2_style", "workflow")
     assert not isinstance(registry.build_agent2(ScriptLLM(GOLD["CR-A-001"])), ToolAgent2)
+
+
+def _spy_users(case_id: str, script=None):
+    llm = ScriptLLM(GOLD[case_id], script)
+    users: list[str] = []
+    orig = llm.complete_structured
+
+    def spy(**kw):
+        users.append(kw["user"])
+        return orig(**kw)
+    llm.complete_structured = spy
+    out = ToolAgent2(llm).run(Agent2Input.model_validate(INPUTS[case_id]))
+    return out, users
+
+
+def test_first_observation_lists_contract_sections():
+    _, users = _spy_users("CR-A-001")
+    first = users[0]
+    assert "<contract_sections>" in first and '"section_id":"C-06"' in first   # 하자 조항 제목이 처음부터 보인다
+    assert "<read_sections>\n[]" in first                                       # 아직 읽은 전문은 없다
+
+
+def test_contract_index_alone_does_not_allow_citation():
+    """목록에 제목만 본 조항은 근거가 될 수 없다 — 읽어야 한다."""
+    def cite_index_only(item_id, n):
+        a = {x["item_id"]: x for x in GOLD["CR-A-001"]["assessments"]}[item_id]
+        cite = [Cite(doc_id="CTR-A-001-v1.0", section_id="C-06", quote="하자", role="policy", match_type="direct")]
+        return AgentStep(thought="목록만 보고 제출", action="submit_judgment", judgment=_judgment(a, None, evidence=cite))
+    out, _ = _run("CR-A-001", cite_index_only)
+    assert not any(e.section_id == "C-06" for a in out.assessments for e in a.evidence)
+
+
+def test_read_section_text_is_sent_once_and_reread_is_noted():
+    a = GOLD["CR-A-001"]["assessments"][0]
+    ev = a["evidence"][0]
+    text = sections()[(ev["doc_id"], ev["section_id"])]["text"]
+
+    def reread(item_id, n):
+        if n < 3:                                        # 같은 섹션을 세 번 읽으려 한다
+            return AgentStep(thought="읽기", action="get_section", doc_id=ev["doc_id"], section_id=ev["section_id"])
+        return ScriptLLM(GOLD["CR-A-001"]).default(item_id, 0) if n == 3 else \
+            AgentStep(thought="제출", action="submit_judgment", judgment=_judgment(a, None))
+    out, users = _spy_users("CR-A-001", reread)
+    assert all(u.count(text) <= 1 for u in users)                # 전문은 관찰마다 최대 한 번
+    assert "이미 읽음" in users[3]
+
+
+def test_search_omits_snippet_for_already_read_sections():
+    a = GOLD["CR-A-001"]["assessments"][0]
+    ev = a["evidence"][0]
+    agent = ToolAgent2(ScriptLLM(GOLD["CR-A-001"]))
+    allowed = agent._baseline_docs("P-COM-101:BL-2")
+    seen, read = [], {}
+    agent._run_tool(AgentStep(thought="", action="get_section", doc_id=ev["doc_id"], section_id=ev["section_id"]),
+                    "P-COM-101:BL-2", allowed, seen, read)
+    res = agent._run_tool(AgentStep(thought="", action="search_docs", query=sections()[(ev["doc_id"], ev["section_id"])]["heading"]),
+                          "P-COM-101:BL-2", allowed, seen, read)["results"]
+    hit = [r for r in res if (r["doc_id"], r["section_id"]) == (ev["doc_id"], ev["section_id"])]
+    assert hit and hit[0].get("read") is True and "snippet" not in hit[0]
