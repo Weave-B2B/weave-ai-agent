@@ -64,3 +64,25 @@ export class MockPreview {
     return view;
   }
 }
+
+// Agent 2 범위 판단: POST /agent2/assessments (Agent2Input → Agent2Output). 결과는 저장하지 않으므로 세션이 없다.
+export class Agent2Api {
+  async assess(input) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);   // 에이전트가 여러 번 조사하므로 Agent 3보다 길게
+    try {
+      const response = await fetch("/agent2/assessments", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: controller.signal,
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new ApiError(response.status, detailMessage(body?.detail));
+      if (!Array.isArray(body?.assessments) || !body?.meta) throw new ApiError(502, "API 응답 형식이 예상한 Agent 2 계약과 다릅니다.");
+      return body;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(0, error.name === "AbortError" ? "응답 시간이 초과됐습니다. 서버 상태를 확인해 주세요." : "AI 서버에 연결할 수 없습니다. 로컬 서버 실행 상태를 확인해 주세요.");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
