@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "run_id": null,
+  "goal": null,
+  "project_profile": "docs/dev-workflow/project.json",
+  "task_profile": null,
+  "target": {
+    "product_agent": null,
+    "feature": null,
+    "request_type": null,
+    "allowed_paths": [],
+    "acceptance_criteria": [],
+    "checks": []
+  },
+  "status": "planned",
+  "repository_revision": null,
+  "communication_mode": "wait_for_user",
+  "max_repair_rounds": 2,
+  "tasks": [],
+  "approvals": [],
+  "information_requests": [],
+  "findings": [],
+  "events": [],
+  "final_checks": [],
+  "next_start_card": null
+}

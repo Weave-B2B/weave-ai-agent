@@ -3,7 +3,7 @@
 반환: 성공 = Totals 형태 dict / 단가 누락 = {"status":"NEEDS_INPUT","missing":[...],"totals":None}
 입력 오류(없는 단가표·직군, 음수·0.5단위 아님 MD) = ToolInputError(INVALID_INPUT)
 """
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from app.kb.loader import rate_cards
 from app.tools.errors import ToolInputError
@@ -25,7 +25,15 @@ def calc_cost(lines: list[dict], rate_card_id: str) -> dict:
 
     by: dict[str, Decimal] = {}
     for ln in lines:
-        role, md = ln["role"], Decimal(str(ln["md"]))
+        if not isinstance(ln, dict) or "role" not in ln or "md" not in ln:
+            raise ToolInputError("lines require role and md")
+        role = ln["role"]
+        if isinstance(ln["md"], bool) or not isinstance(ln["md"], (int, float, Decimal)):
+            raise ToolInputError("md must be a JSON number")
+        try:
+            md = Decimal(str(ln["md"]))
+        except InvalidOperation:
+            raise ToolInputError("md must be a finite number") from None
         if role not in ROLES:
             raise ToolInputError(f"unknown role {role}")
         if not md.is_finite() or md < 0 or (md * 2) % 1:
@@ -39,8 +47,8 @@ def calc_cost(lines: list[dict], rate_card_id: str) -> dict:
         return {"status": "NEEDS_INPUT", "missing": missing, "totals": None}
 
     pos = {r: m for r, m in by.items() if m > 0}
-    cost = _won(sum((m * Decimal(rates[r]["cost"]) for r, m in pos.items()), Decimal(0)))
-    price = _won(sum((m * Decimal(rates[r]["price"]) for r, m in pos.items()), Decimal(0)))
+    cost = _won(sum((m * Decimal(str(rates[r]["cost"])) for r, m in pos.items()), Decimal(0)))
+    price = _won(sum((m * Decimal(str(rates[r]["price"])) for r, m in pos.items()), Decimal(0)))
     margin = None if price == 0 else float(
         (Decimal(price - cost) / Decimal(price)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
     return {"md": float(sum(by.values(), Decimal(0))),

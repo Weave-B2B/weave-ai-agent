@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "project_name": "Weave AI server — team development",
+  "project_root": ".",
+  "communication": {
+    "language": "ko",
+    "start_mode": "wait_for_user",
+    "approval_scope": "per_task",
+    "manager_relays_worker_updates": true
+  },
+  "qa": {
+    "max_repair_rounds": 2,
+    "reapproval_for_new_assignment": true
+  },
+  "scope": {
+    "goal": "요청받은 제품 에이전트 개발·기존 기능 개선·API 및 확인 화면 연결",
+    "selected_menus": [],
+    "ui_directory": "prototype",
+    "integration_modes": [
+      "mock",
+      "api"
+    ],
+    "excluded": [
+      "승인 범위 밖의 다른 저장소 수정",
+      "요청하지 않은 인프라·업무 DB·인증 체계 신설",
+      "허가 없는 외부 모델 호출·고객 발송·청구"
+    ]
+  },
+  "repositories": {
+    "current": ".",
+    "read_only_references": [],
+    "other_repositories": {
+      "backend": null,
+      "infra": null
+    },
+    "external_write_allowed": false
+  },
+  "sources": {
+    "figma": [],
+    "notion": [],
+    "local": [
+      "README.md",
+      "AGENTS.md",
+      "app/agents/",
+      "app/api/",
+      "schema/schemas.py",
+      ".github/PULL_REQUEST_TEMPLATE.md",
+      ".github/workflows/validate-conventions.yml"
+    ]
+  },
+  "product_agents": {
+    "agent1": {
+      "code": "app/agents/agent1/",
+      "note": "작업 시 실제 구현·입출력·평가 기준을 확인"
+    },
+    "agent2": {
+      "code": "app/agents/agent2/",
+      "note": "작업 시 실제 구현·입출력·평가 기준을 확인"
+    },
+    "agent3": {
+      "code": "app/agents/agent3/",
+      "note": "기존 산정·PM 승인·협의안 구현은 이 에이전트 작업에서만 참고"
+    }
+  },
+  "ownership": {
+    "workflow-domain": [
+      "app/agents/",
+      "app/api/",
+      "app/llm/",
+      "app/tools/"
+    ],
+    "workflow-prototype": [
+      "prototype/"
+    ],
+    "shared_contracts_require_coordination": [
+      "schema/schemas.py",
+      "app/orchestration/",
+      "app/kb/",
+      "docs/data_dictionary/",
+      "app/main.py"
+    ]
+  },
+  "assignment_policy": [
+    "ownership은 담당 영역 후보이며 작업 승인이나 전체 디렉터리 수정 허가가 아니다. 매 작업에서 실제 수정 경로와 1명 소유자를 지정한다.",
+    "개발 대상·API 계약·체크 명령은 해당 에이전트 또는 기능 기준으로 고른다. 다른 에이전트의 전용 API·승인 흐름·테스트를 공통 조건으로 사용하지 않는다.",
+    "다른 팀의 업무 백엔드·인프라 소유권은 지키되, 이 AI 서버의 에이전트·도구·API 개발을 일괄 제외하지 않는다."
+  ],
+  "checks": [
+    {
+      "scope": "workflow_setup_only",
+      "command": "python -m unittest discover -s .agents/skills/manager-dev-workflow/scripts/tests -v",
+      "when": "설치·워크플로 설정을 변경한 경우에만"
+    }
+  ],
+  "checks_selection": "제품 검증 명령은 작업마다 관련 에이전트·API·UI·평가 기준에 맞춰 지정한다. 실제 모델 품질 검증과 mock 검증을 구분한다.",
+  "task_profiles": {
+    "agent3_prototype": "docs/dev-workflow/profiles/agent3-prototype.json"
+  },
+  "open_questions": []
+}
