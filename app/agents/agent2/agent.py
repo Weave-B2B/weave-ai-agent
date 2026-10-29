@@ -11,7 +11,7 @@ import re
 import threading
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from schema.schemas import (
     AgentError, Agent2Input, Agent2Output, Assessment, EvidenceRole, Evidence, Item, Meta, Question, ScopeLabel,
@@ -32,12 +32,18 @@ DocType = Literal["contract", "sow", "functional_spec", "quote", "change_order"]
 
 
 # ---- LLM 구조화 출력 (내부용. 공통 스키마가 아니다) ----
-class SearchPlan(BaseModel):
+class _LlmOut(BaseModel):
+    """정의 안 된 필드는 거부한다 (공통 스키마와 같은 원칙). JSON schema에 additionalProperties=false가 들어가
+    strict 구조화 출력 모드(Gemini·OpenAI 등)에서 요청이 거절되지 않는다."""
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchPlan(_LlmOut):
     queries: list[str] = Field(description="검색어 1~3개")
     doc_types: list[DocType] = Field(description="좁힐 문서 종류. 비우면 전체")
 
 
-class Cite(BaseModel):
+class Cite(_LlmOut):
     doc_id: str
     section_id: str
     quote: str
@@ -45,7 +51,7 @@ class Cite(BaseModel):
     match_type: Literal["direct", "indirect", "not_mentioned"]
 
 
-class QuestionDraft(BaseModel):
+class QuestionDraft(_LlmOut):
     text: str
     reason: str
     field: Optional[str]
@@ -53,7 +59,7 @@ class QuestionDraft(BaseModel):
     blocking: bool
 
 
-class Judgment(BaseModel):
+class Judgment(_LlmOut):
     sufficient: bool
     next_queries: list[str]
     label: ScopeLabel

@@ -13,10 +13,10 @@ LLM이 고르는 것: 어떤 도구를, 어떤 인자로, 몇 번, 언제 끝낼
 import json
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from schema.schemas import AgentError, Agent2Input, Assessment, Item, Question
 
-from app.agents.agent2.agent import DocType, Judgment, LlmAgent2, _Usage
+from app.agents.agent2.agent import DocType, Judgment, LlmAgent2, _LlmOut, _Usage
 from app.agents.agent2.prompts import AGENT_SYSTEM, FINAL_SYSTEM
 from app.agents.base import AgentFailure
 from app.kb.loader import sections
@@ -27,7 +27,7 @@ AGENT_VERSION = "a2-agent-0.1.0"
 Action = Literal["search_docs", "get_section", "verify_quote", "submit_judgment"]
 
 
-class AgentStep(BaseModel):
+class AgentStep(_LlmOut):
     """LLM이 고르는 다음 행동 하나. action에 맞는 인자만 채운다."""
     thought: str = Field(description="이 행동을 고른 이유 한두 문장")
     action: Action
