@@ -52,30 +52,33 @@ class ToolAgent2(LlmAgent2):
                                 "spans": [s.text for s in item.spans], "inferred": item.inferred,
                                 "feature_hints": hints}, ensure_ascii=False)
         seen: list[tuple[str, str]] = []                 # 이번 실행에서 실제로 본 섹션 = 근거로 쓸 수 있는 범위
+        read: dict[tuple[str, str], dict] = {}           # get_section으로 읽은 전문 — 관찰에 한 번만 싣는다
         history: list[dict] = []
         judgment: Optional[Judgment] = None
+        index = self._contract_index(allowed)
+
+        def observe(steps_left: int) -> str:
+            return self._observation(shared, item_desc, index, read, history, steps_left)
 
         for n in range(self.max_steps):
-            step = self._ask(AGENT_SYSTEM, self._observation(shared, item_desc, history, self.max_steps - n),
-                             AgentStep, "choose_next_action", usage)
+            step = self._ask(AGENT_SYSTEM, observe(self.max_steps - n), AgentStep, "choose_next_action", usage)
             if step.action == "submit_judgment" and step.judgment is not None:
                 judgment = step.judgment
                 history.append({"action": "submit_judgment"})
                 break
-            obs = self._run_tool(step, ctx.baseline_id, allowed, seen)
+            obs = self._run_tool(step, ctx.baseline_id, allowed, seen, read)
             history.append({"thought": step.thought, "action": step.action,
                             "args": step.model_dump(include={"query", "doc_types", "doc_id", "section_id", "quote"},
                                                     exclude_none=True),
                             "result": obs})
         if judgment is None:                             # 상한 도달 — 본 것만으로 판단을 강제한다
-            judgment = self._ask(FINAL_SYSTEM, self._observation(shared, item_desc, history, 0),
-                                 Judgment, "submit_judgment", usage)
+            judgment = self._ask(FINAL_SYSTEM, observe(0), Judgment, "submit_judgment", usage)
 
         usage.trace(item.item_id, [h["action"] for h in history])
         return self._to_assessment(item, judgment, seen), self._to_question(item, judgment, ctx.case_id), hints
 
     # ---- 도구 실행 (울타리는 여기) ----
-    def _run_tool(self, step: AgentStep, baseline_id: str, allowed: set[str], seen: list) -> dict:
+    def _run_tool(self, step: AgentStep, baseline_id: str, allowed: set[str], seen: list, read: dict) -> dict:
         try:
             if step.action == "search_docs":
                 if not step.query:
@@ -92,17 +95,23 @@ class ToolAgent2(LlmAgent2):
                     self._see(seen, (r["doc_id"], r["section_id"]))
                 return {"results": [{"doc_id": r["doc_id"], "section_id": r["section_id"],
                                      "heading": sections()[(r["doc_id"], r["section_id"])]["heading"],
-                                     "snippet": r["text"][:self.snippet_chars]} for r in res]}
+                                     # 이미 읽은 섹션은 snippet을 다시 싣지 않는다
+                                     **({"read": True} if (r["doc_id"], r["section_id"]) in read
+                                        else {"snippet": r["text"][:self.snippet_chars]})} for r in res]}
             if not step.doc_id or not step.section_id:
                 return {"error": "doc_id·section_id 필요"}
             if step.doc_id not in allowed:               # 다른 프로젝트·기준선 밖 문서는 열어 주지 않는다
                 return {"error": f"{step.doc_id}는 이 기준선 문서가 아님"}
             if step.action == "get_section":
-                s = get_section(step.doc_id, step.section_id)
-                self._see(seen, (step.doc_id, step.section_id))
-                meta = sections()[(step.doc_id, step.section_id)]
-                return {"doc_id": step.doc_id, "section_id": step.section_id, "doc_type": meta["doc_type"],
-                        "priority_rank": meta["priority_rank"], "heading": meta["heading"], "text": s["text"]}
+                key = (step.doc_id, step.section_id)
+                if key in read:
+                    return {"note": "이미 읽음 — <read_sections> 참조"}
+                s = get_section(*key)
+                self._see(seen, key)
+                meta = sections()[key]
+                read[key] = {"doc_id": step.doc_id, "section_id": step.section_id, "doc_type": meta["doc_type"],
+                             "priority_rank": meta["priority_rank"], "heading": meta["heading"], "text": s["text"]}
+                return {"read": f"{step.doc_id}:{step.section_id}", "heading": meta["heading"]}   # 전문은 <read_sections>
             if step.action == "verify_quote":
                 return verify_quote(step.quote or "", step.doc_id, step.section_id)
             return {"error": "judgment 없이 submit_judgment"}
@@ -115,7 +124,18 @@ class ToolAgent2(LlmAgent2):
             seen.append(key)
 
     @staticmethod
-    def _observation(shared: str, item_desc: str, history: list[dict], steps_left: int) -> str:
+    def _contract_index(allowed: set[str]) -> list[dict]:
+        """계약서·변경합의서 조항 목록(제목만). 하자·우선순위·변경 승인 조항을 놓치지 않게 첫 관찰부터 보여 준다.
+        목록에 있다고 근거로 쓸 수 있는 것은 아니다 — 인용하려면 get_section으로 읽어야 한다."""
+        return [{"doc_id": s["doc_id"], "section_id": s["section_id"], "doc_type": s["doc_type"], "heading": s["heading"]}
+                for (d, _), s in sections().items() if d in allowed and s["doc_type"] in ("contract", "change_order")]
+
+    @staticmethod
+    def _observation(shared: str, item_desc: str, index: list[dict], read: dict, history: list[dict],
+                     steps_left: int) -> str:
+        dump = lambda x: json.dumps(x, ensure_ascii=False, separators=(",", ":"))
         return "\n".join([shared, "", "<item>", item_desc, "</item>", "",
-                          "<history>", json.dumps(history, ensure_ascii=False, indent=1), "</history>",
+                          "<contract_sections>", dump(index), "</contract_sections>", "",
+                          "<read_sections>", dump(list(read.values())), "</read_sections>", "",
+                          "<history>", dump(history), "</history>",
                           f"<steps_left>{steps_left}</steps_left>"])
