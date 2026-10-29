@@ -7,6 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from app.core.config import settings
+from app.kb.rates import load_rate_cards
 
 # 검색 허용: kb/sections.jsonl · kb/doc_pages.json · PDF 원본 (README '분할·검색')
 RETRIEVAL_ALLOWLIST = ("kb/sections.jsonl", "kb/doc_pages.json", "documents/*.pdf")
@@ -39,7 +40,7 @@ def baselines() -> dict[str, dict]:
 def rate_cards() -> dict[str, dict]:
     # Avoid stale rates after a supplied file is replaced.
     path = settings.rate_card_file or settings.data_dir / "kb" / "rate_cards.json"
-    return json.loads(path.read_text(encoding="utf-8"))["rate_cards"]
+    return load_rate_cards(path)
 
 
 @lru_cache
