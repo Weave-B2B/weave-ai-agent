@@ -1,11 +1,15 @@
 """문서 도구: search_docs · get_section · verify_quote · list_baseline_docs (②가 소유, ①③도 사용)."""
+import logging
 import math
 import re
 from collections import Counter
+from functools import lru_cache
 
 from app.kb.loader import baselines, documents, sections
 from app.tools.errors import ToolInputError
 from app.tools.trace import traced
+
+log = logging.getLogger(__name__)
 
 
 def _baseline(baseline_id: str) -> dict:
@@ -55,20 +59,13 @@ def verify_quote(quote: str, doc_id: str, section_id: str) -> dict:
     return {"verified": True, "matched_text": text[start:end]}
 
 
-# ---- 검색 (MVP 기준선: 문자 bigram 어휘 검색. 하이브리드·RRF·리랭크로 교체 예정) ----
+# ---- 검색: 어휘(문자 bigram) + 벡터(임베딩) 하이브리드. 임베딩이 꺼져 있으면 어휘만 ----
 def _grams(t: str) -> Counter:
     t = _WS.sub("", t)
     return Counter(t[i:i + 2] for i in range(len(t) - 1))
 
 
-@traced("search_docs", version="lexical-bigram-v0")
-def search_docs(query: str, baseline_id: str, top_k: int = 5, filters: dict | None = None) -> list[dict]:
-    """기준선의 승인 문서만 검색한다. 다른 프로젝트·기준선 밖 문서는 후보에도 오르지 않는다."""
-    b = _baseline(baseline_id)
-    allowed = set(b["document_ids"])
-    if filters and filters.get("doc_types"):
-        allowed = {d for d in allowed if documents()[d]["doc_type"] in filters["doc_types"]}
-    pool = [s for (d, _), s in sections().items() if d in allowed]
+def _lexical(query: str, pool: list[dict]) -> list[tuple[float, dict]]:
     n = len(pool)
     grams = {id(s): _grams(s["heading"] + " " + s["text"]) for s in pool}
     df: Counter = Counter()
@@ -82,6 +79,76 @@ def search_docs(query: str, baseline_id: str, top_k: int = 5, filters: dict | No
         if sc > 0:
             scored.append((sc / math.sqrt(sum(g.values()) + 1), s))
     scored.sort(key=lambda x: -x[0])
+    return scored
+
+
+@lru_cache(maxsize=1)
+def vector_backend():
+    """(embedder, store) 또는 None. 설정·색인이 없으면 None → 어휘 검색만. 모델이 다르면 IndexMismatch."""
+    from app.core.config import settings
+    from app.embed import build_embedder
+    from app.kb.vector_store import LocalVectorStore
+    if settings.retrieval_mode == "lexical":
+        return None
+    emb = build_embedder(settings)
+    if emb is None:
+        return None
+    if not settings.embed_index_path.exists():
+        log.warning("임베딩 색인 없음 (%s) — 어휘 검색만 사용. python -m app.kb.build_index", settings.embed_index_path)
+        return None
+    store = LocalVectorStore(settings.embed_index_path)
+    store.check(emb)
+    return emb, store
+
+
+@lru_cache(maxsize=512)
+def _query_vector(query: str) -> tuple[float, ...]:
+    emb, _ = vector_backend()
+    return tuple(emb.embed([query])[0])
+
+
+def retrieval_label() -> str:
+    from app.core.config import settings
+    vb = vector_backend()
+    return f"{settings.retrieval_mode}:{vb[1].model_id}" if vb else "lexical-bigram-v0"
+
+
+@traced("search_docs", version="hybrid-rrf-v1")
+def search_docs(query: str, baseline_id: str, top_k: int = 5, filters: dict | None = None) -> list[dict]:
+    """기준선의 승인 문서만 검색한다. 다른 프로젝트·기준선 밖 문서는 후보에도 오르지 않는다.
+    어휘 순위와 벡터 순위를 RRF로 합친다 — 동의어처럼 글자가 안 겹치는 조항도 벡터 쪽에서 올라온다."""
+    from app.core.config import settings
+    b = _baseline(baseline_id)
+    allowed = set(b["document_ids"])
+    if filters and filters.get("doc_types"):
+        allowed = {d for d in allowed if documents()[d]["doc_type"] in filters["doc_types"]}
+    pool = [s for (d, _), s in sections().items() if d in allowed]
+    lex = _lexical(query, pool)
+    vb = vector_backend()
+    if vb is None:
+        ranked = [(sc, s, "lexical") for sc, s in lex]
+    else:
+        _, store = vb
+        by_chunk = {s["chunk_id"]: s for s in pool}
+        vec = [(sc, by_chunk[cid]) for cid, sc in store.search(list(_query_vector(query)), set(by_chunk), top_k=max(top_k * 4, 20))]
+        if settings.retrieval_mode == "vector":
+            ranked = [(sc, s, "vector") for sc, s in vec]
+        else:
+            ranked = _rrf_fuse(lex, vec)
     return [{"doc_id": s["doc_id"], "section_id": s["section_id"], "score": round(sc, 4), "text": s["text"],
-             "page": s["page"], "line_start": s["line_start"], "line_end": s["line_end"]}
-            for sc, s in scored[:top_k]]
+             "page": s["page"], "line_start": s["line_start"], "line_end": s["line_end"], "via": via}
+            for sc, s, via in ranked[:top_k]]
+
+
+def _rrf_fuse(lex: list[tuple[float, dict]], vec: list[tuple[float, dict]], k: int = 60) -> list[tuple[float, dict, str]]:
+    score: dict[str, float] = {}
+    sec: dict[str, dict] = {}
+    via: dict[str, set] = {}
+    for name, lst in (("lexical", lex), ("vector", vec)):
+        for rank, (_, s) in enumerate(lst, 1):
+            cid = s["chunk_id"]
+            score[cid] = score.get(cid, 0.0) + 1 / (k + rank)
+            sec[cid] = s
+            via.setdefault(cid, set()).add(name)
+    order = sorted(score, key=lambda c: -score[c])
+    return [(score[c], sec[c], "both" if len(via[c]) == 2 else next(iter(via[c]))) for c in order]
