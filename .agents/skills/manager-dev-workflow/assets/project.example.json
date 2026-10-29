@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "project_name": null,
+  "project_root": ".",
+  "communication": {
+    "language": "ko",
+    "start_mode": "wait_for_user",
+    "approval_scope": "per_task",
+    "manager_relays_worker_updates": true
+  },
+  "qa": {
+    "max_repair_rounds": 2,
+    "reapproval_for_new_assignment": true
+  },
+  "scope": {
+    "goal": null,
+    "selected_menus": [],
+    "ui_directory": null,
+    "integration_modes": [
+      "mock",
+      "api"
+    ],
+    "excluded": []
+  },
+  "repositories": {
+    "current": ".",
+    "read_only_references": [],
+    "external_write_allowed": false
+  },
+  "sources": {
+    "figma": [],
+    "notion": [],
+    "local": []
+  },
+  "ownership": {
+    "workflow-domain": [],
+    "workflow-prototype": [],
+    "shared_contracts_require_coordination": []
+  },
+  "checks": [],
+  "open_questions": [],
+  "assignment_policy": [
+    "Assign the product agent or feature, exact allowed paths, acceptance criteria and relevant checks per run. Broad ownership entries are candidates, not edit authorization."
+  ],
+  "checks_selection": "Choose checks for the assigned agent or feature; do not inherit another task’s dedicated tests.",
+  "task_profiles": {}
+}

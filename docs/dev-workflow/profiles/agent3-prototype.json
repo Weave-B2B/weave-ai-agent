@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "project_name": "Weave AI server / change-request prototype",
+  "project_root": ".",
+  "communication": {
+    "language": "ko",
+    "start_mode": "wait_for_user",
+    "approval_scope": "per_task",
+    "manager_relays_worker_updates": true,
+    "user_decision": "각 담당자가 시작하기 전에 내 답변을 기다리기"
+  },
+  "qa": {
+    "max_repair_rounds": 2,
+    "reapproval_for_new_assignment": true
+  },
+  "scope": {
+    "goal": "Figma 초기 변경요청 메뉴로 AI 서버 동작을 확인하는 로컬 UI",
+    "selected_menus": [
+      "변경요청"
+    ],
+    "ui_directory": "prototype",
+    "integration_modes": [
+      "mock",
+      "api"
+    ],
+    "excluded": [
+      "별도 서비스 백엔드 구현",
+      "인프라 변경",
+      "CN DB 구축·마이그레이션",
+      "실제 사용자 인증",
+      "고객 발송·청구",
+      "Agent 1·2 구현 변경",
+      "전체 메뉴 구현"
+    ]
+  },
+  "repositories": {
+    "current": ".",
+    "read_only_references": [],
+    "other_repositories": {
+      "backend": null,
+      "infra": null
+    },
+    "external_write_allowed": false
+  },
+  "sources": {
+    "figma": [
+      {
+        "url": "https://www.figma.com/design/Pq2PLWBhkSupb6ThD8oELN/2%ED%8C%80-Weave-_%EC%8B%A4%EB%AC%B4%ED%86%B5%ED%95%A9?node-id=242-2370",
+        "file_key": "Pq2PLWBhkSupb6ThD8oELN",
+        "entry_node_id": "242:2370",
+        "page_name": "03 / Lo-Fi & Wireframes",
+        "selected_frames": [
+          {
+            "name": "C02 변경요청 Inbox",
+            "node_id": "280:749",
+            "inspection": "design_context_and_screenshot"
+          },
+          {
+            "name": "C03 요청 원문",
+            "node_id": "280:1126",
+            "inspection": "design_context_and_screenshot"
+          },
+          {
+            "name": "C04 범위 검토",
+            "node_id": "280:1352",
+            "inspection": "design_context_and_screenshot"
+          },
+          {
+            "name": "C05 영향 산정",
+            "node_id": "280:1661",
+            "inspection": "design_context_and_screenshot"
+          },
+          {
+            "name": "C06 승인·협의",
+            "node_id": "280:2010",
+            "inspection": "design_context_and_screenshot"
+          }
+        ],
+        "status": "inspected_read_only",
+        "accessed_on": "2026-10-28"
+      }
+    ],
+    "notion": [
+      {
+        "url": "https://app.notion.com/p/778a8da52356833583bc01710903b92f",
+        "title": "AI 연동 회의 — A3 담당 준비 자료",
+        "accessed_on": "2026-10-28",
+        "status": "mixed_confirmed_proposed"
+      },
+      {
+        "url": "https://app.notion.com/p/13da8da5235683aaad3381ffb90d98b1",
+        "title": "화면기획서 분석 - AI 기능",
+        "accessed_on": "2026-10-28",
+        "status": "in_progress"
+      },
+      {
+        "url": "https://app.notion.com/p/e12a8da523568216981c81a04882369e",
+        "title": "API 명세 — 정제본",
+        "accessed_on": "2026-10-28",
+        "status": "functional_list_not_final_http_contract"
+      }
+    ],
+    "local": [
+      "docs/agent3-mvp.md",
+      "app/api/agent3_routes.py",
+      "app/agents/agent3/workflow.py",
+      "app/demo_agent3.py",
+      "schema/schemas.py",
+      ".github/PULL_REQUEST_TEMPLATE.md",
+      ".github/workflows/validate-conventions.yml"
+    ]
+  },
+  "ownership": {
+    "workflow-domain": [
+      "app/agents/agent3/",
+      "app/api/agent3_routes.py",
+      "tests/test_agent3_agent.py",
+      "tests/test_agent3_workflow.py"
+    ],
+    "workflow-prototype": [
+      "prototype/"
+    ],
+    "shared_contracts_require_coordination": [
+      "schema/schemas.py",
+      "app/orchestration/",
+      "app/agents/agent1/",
+      "app/agents/agent2/",
+      "docs/data_dictionary/"
+    ]
+  },
+  "checks": [
+    {
+      "scope": "domain",
+      "command": "python -m pytest tests/test_agent3_agent.py tests/test_agent3_workflow.py -q"
+    },
+    {
+      "scope": "existing_demo",
+      "command": "python -m pytest tests/test_agent3_streamlit.py tests/test_demo_streamlit.py -q"
+    },
+    {
+      "scope": "workflow",
+      "command": "python -m unittest discover -s .agents/skills/manager-dev-workflow/scripts/tests -v"
+    }
+  ],
+  "open_questions": [
+    "03 Lo fi 변경요청 메뉴의 실제 구현 프레임과 세부 화면 상태는 Figma 조사 후 확정",
+    "초기 화면을 mock 먼저 만들지 기존 Agent 3 API에 바로 연결할지는 UI 착수 전 결정",
+    "C01-C04 상위 단계의 표시 범위와 Agent 1·2 결과 fixture 범위는 기획 착수 시 확인"
+  ]
+}
