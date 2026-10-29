@@ -13,10 +13,10 @@ LLM이 고르는 것: 어떤 도구를, 어떤 인자로, 몇 번, 언제 끝낼
 import json
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from schema.schemas import AgentError, Agent2Input, Assessment, Item, Question
 
-from app.agents.agent2.agent import DocType, Judgment, LlmAgent2, _Usage
+from app.agents.agent2.agent import DocType, Judgment, LlmAgent2, _LlmOut, _Usage
 from app.agents.agent2.prompts import AGENT_SYSTEM, FINAL_SYSTEM
 from app.agents.base import AgentFailure
 from app.kb.loader import sections
@@ -27,7 +27,7 @@ AGENT_VERSION = "a2-agent-0.1.0"
 Action = Literal["search_docs", "get_section", "verify_quote", "submit_judgment"]
 
 
-class AgentStep(BaseModel):
+class AgentStep(_LlmOut):
     """LLM이 고르는 다음 행동 하나. action에 맞는 인자만 채운다."""
     thought: str = Field(description="이 행동을 고른 이유 한두 문장")
     action: Action
@@ -52,30 +52,42 @@ class ToolAgent2(LlmAgent2):
                                 "spans": [s.text for s in item.spans], "inferred": item.inferred,
                                 "feature_hints": hints}, ensure_ascii=False)
         seen: list[tuple[str, str]] = []                 # 이번 실행에서 실제로 본 섹션 = 근거로 쓸 수 있는 범위
+        read: dict[tuple[str, str], dict] = {}           # get_section으로 읽은 전문 — 관찰에 한 번만 싣는다
         history: list[dict] = []
         judgment: Optional[Judgment] = None
+        index = self._contract_index(allowed)
 
+        def observe(steps_left: int) -> str:
+            return self._observation(shared, item_desc, index, read, history, steps_left)
+
+        pushed_back = False
         for n in range(self.max_steps):
-            step = self._ask(AGENT_SYSTEM, self._observation(shared, item_desc, history, self.max_steps - n),
-                             AgentStep, "choose_next_action", usage)
+            step = self._ask(AGENT_SYSTEM, observe(self.max_steps - n), AgentStep, "choose_next_action", usage)
             if step.action == "submit_judgment" and step.judgment is not None:
+                gaps = [] if pushed_back or n == self.max_steps - 1 else self._precheck(item, hints, seen, read, allowed)
+                if gaps:                                 # 제출 전 점검 — 한 번만 되돌려 빠진 조사를 하게 한다
+                    pushed_back = True
+                    history.append({"action": "submit_judgment", "result": {"rejected": "제출 전 확인 필요", "gaps": gaps}})
+                    continue
                 judgment = step.judgment
                 history.append({"action": "submit_judgment"})
                 break
-            obs = self._run_tool(step, ctx.baseline_id, allowed, seen)
+            obs = self._run_tool(step, ctx.baseline_id, allowed, seen, read)
             history.append({"thought": step.thought, "action": step.action,
                             "args": step.model_dump(include={"query", "doc_types", "doc_id", "section_id", "quote"},
                                                     exclude_none=True),
                             "result": obs})
         if judgment is None:                             # 상한 도달 — 본 것만으로 판단을 강제한다
-            judgment = self._ask(FINAL_SYSTEM, self._observation(shared, item_desc, history, 0),
-                                 Judgment, "submit_judgment", usage)
+            judgment = self._ask(FINAL_SYSTEM, observe(0), Judgment, "submit_judgment", usage)
 
-        usage.trace(item.item_id, [h["action"] for h in history])
-        return self._to_assessment(item, judgment, seen), self._to_question(item, judgment, ctx.case_id), hints
+        usage.trace(item.item_id, [h["action"] for h in history], [self._step_brief(h) for h in history])
+        usage.note(item.item_id, label=judgment.label)
+        judgment = self._hold_issue_report(item, judgment, bool(inp.answers))
+        return (self._to_assessment(item, judgment, seen),
+                self._to_question(item, judgment, ctx.case_id), hints)
 
     # ---- 도구 실행 (울타리는 여기) ----
-    def _run_tool(self, step: AgentStep, baseline_id: str, allowed: set[str], seen: list) -> dict:
+    def _run_tool(self, step: AgentStep, baseline_id: str, allowed: set[str], seen: list, read: dict) -> dict:
         try:
             if step.action == "search_docs":
                 if not step.query:
@@ -92,17 +104,23 @@ class ToolAgent2(LlmAgent2):
                     self._see(seen, (r["doc_id"], r["section_id"]))
                 return {"results": [{"doc_id": r["doc_id"], "section_id": r["section_id"],
                                      "heading": sections()[(r["doc_id"], r["section_id"])]["heading"],
-                                     "snippet": r["text"][:self.snippet_chars]} for r in res]}
+                                     # 이미 읽은 섹션은 snippet을 다시 싣지 않는다
+                                     **({"read": True} if (r["doc_id"], r["section_id"]) in read
+                                        else {"snippet": r["text"][:self.snippet_chars]})} for r in res]}
             if not step.doc_id or not step.section_id:
                 return {"error": "doc_id·section_id 필요"}
             if step.doc_id not in allowed:               # 다른 프로젝트·기준선 밖 문서는 열어 주지 않는다
                 return {"error": f"{step.doc_id}는 이 기준선 문서가 아님"}
             if step.action == "get_section":
-                s = get_section(step.doc_id, step.section_id)
-                self._see(seen, (step.doc_id, step.section_id))
-                meta = sections()[(step.doc_id, step.section_id)]
-                return {"doc_id": step.doc_id, "section_id": step.section_id, "doc_type": meta["doc_type"],
-                        "priority_rank": meta["priority_rank"], "heading": meta["heading"], "text": s["text"]}
+                key = (step.doc_id, step.section_id)
+                if key in read:
+                    return {"note": "이미 읽음 — <read_sections> 참조"}
+                s = get_section(*key)
+                self._see(seen, key)
+                meta = sections()[key]
+                read[key] = {"doc_id": step.doc_id, "section_id": step.section_id, "doc_type": meta["doc_type"],
+                             "priority_rank": meta["priority_rank"], "heading": meta["heading"], "text": s["text"]}
+                return {"read": f"{step.doc_id}:{step.section_id}", "heading": meta["heading"]}   # 전문은 <read_sections>
             if step.action == "verify_quote":
                 return verify_quote(step.quote or "", step.doc_id, step.section_id)
             return {"error": "judgment 없이 submit_judgment"}
@@ -115,7 +133,44 @@ class ToolAgent2(LlmAgent2):
             seen.append(key)
 
     @staticmethod
-    def _observation(shared: str, item_desc: str, history: list[dict], steps_left: int) -> str:
+    def _precheck(item: Item, hints: list[str], seen: list, read: dict, allowed: set[str]) -> list[str]:
+        """프롬프트로는 지켜지지 않던 조사 누락을 코드가 잡는다 (평가 트레이스에서 반복 확인된 두 가지)."""
+        gaps = []
+        unseen = [h for h in hints if tuple(h.split(":", 1)) not in seen]
+        if unseen:
+            gaps.append(f"①이 준 기능 후보 {unseen}를 아직 보지 않았다. get_section으로 읽고 판단에 반영하라")
+        if item.intent == "defect":
+            defect = [k for k, s in sections().items() if k[0] in allowed and s["doc_type"] == "contract"
+                      and "하자" in s["heading"]]
+            if defect and not any(k in read for k in defect):
+                gaps.append(f"결함(defect) 항목인데 계약서 하자 조항 {[f'{d}:{c}' for d, c in defect]}을 읽지 않았다")
+        return gaps
+
+    @staticmethod
+    def _step_brief(h: dict) -> dict:
+        """행동 하나를 짧게: 검색어와 결과 순위(via 포함), 읽은 조항, 오류. 원문은 넣지 않는다."""
+        out = {"action": h["action"], **h.get("args", {})}
+        r = h.get("result") or {}
+        if "results" in r:
+            out["hits"] = [f"{x['doc_id']}:{x['section_id']}" + ("*" if x.get("read") else "") for x in r["results"]]
+        for k in ("read", "note", "error", "rejected", "gaps"):
+            if k in r:
+                out[k] = r[k]
+        return out
+
+    @staticmethod
+    def _contract_index(allowed: set[str]) -> list[dict]:
+        """계약서·변경합의서 조항 목록(제목만). 하자·우선순위·변경 승인 조항을 놓치지 않게 첫 관찰부터 보여 준다.
+        목록에 있다고 근거로 쓸 수 있는 것은 아니다 — 인용하려면 get_section으로 읽어야 한다."""
+        return [{"doc_id": s["doc_id"], "section_id": s["section_id"], "doc_type": s["doc_type"], "heading": s["heading"]}
+                for (d, _), s in sections().items() if d in allowed and s["doc_type"] in ("contract", "change_order")]
+
+    @staticmethod
+    def _observation(shared: str, item_desc: str, index: list[dict], read: dict, history: list[dict],
+                     steps_left: int) -> str:
+        dump = lambda x: json.dumps(x, ensure_ascii=False, separators=(",", ":"))
         return "\n".join([shared, "", "<item>", item_desc, "</item>", "",
-                          "<history>", json.dumps(history, ensure_ascii=False, indent=1), "</history>",
+                          "<contract_sections>", dump(index), "</contract_sections>", "",
+                          "<read_sections>", dump(list(read.values())), "</read_sections>", "",
+                          "<history>", dump(history), "</history>",
                           f"<steps_left>{steps_left}</steps_left>"])

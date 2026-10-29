@@ -7,10 +7,12 @@
 import concurrent.futures as cf
 import contextvars
 import json
+import random
 import threading
+import time
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from schema.schemas import (
     AgentError, Agent2Input, Agent2Output, Assessment, EvidenceRole, Evidence, Item, Meta, Question, ScopeLabel,
@@ -30,12 +32,18 @@ DocType = Literal["contract", "sow", "functional_spec", "quote", "change_order"]
 
 
 # ---- LLM 구조화 출력 (내부용. 공통 스키마가 아니다) ----
-class SearchPlan(BaseModel):
+class _LlmOut(BaseModel):
+    """정의 안 된 필드는 거부한다 (공통 스키마와 같은 원칙). JSON schema에 additionalProperties=false가 들어가
+    strict 구조화 출력 모드(Gemini·OpenAI 등)에서 요청이 거절되지 않는다."""
+    model_config = ConfigDict(extra="forbid")
+
+
+class SearchPlan(_LlmOut):
     queries: list[str] = Field(description="검색어 1~3개")
     doc_types: list[DocType] = Field(description="좁힐 문서 종류. 비우면 전체")
 
 
-class Cite(BaseModel):
+class Cite(_LlmOut):
     doc_id: str
     section_id: str
     quote: str
@@ -43,7 +51,7 @@ class Cite(BaseModel):
     match_type: Literal["direct", "indirect", "not_mentioned"]
 
 
-class QuestionDraft(BaseModel):
+class QuestionDraft(_LlmOut):
     text: str
     reason: str
     field: Optional[str]
@@ -51,7 +59,7 @@ class QuestionDraft(BaseModel):
     blocking: bool
 
 
-class Judgment(BaseModel):
+class Judgment(_LlmOut):
     sufficient: bool
     next_queries: list[str]
     label: ScopeLabel
@@ -84,14 +92,26 @@ class _Usage:
     """항목들(스레드)의 LLM 호출 지연·토큰·모델을 합친다."""
 
     def __init__(self):
-        self.calls = self.latency_ms = self.input_tokens = self.output_tokens = 0
+        self.calls = self.latency_ms = self.input_tokens = self.output_tokens = self.retries = 0
         self.models: set[str] = set()
         self.traces: dict[str, list[str]] = {}          # 항목별 행동 순서 (도구 사용 에이전트만)
+        self.steps: dict[str, list[dict]] = {}          # 항목별 행동 상세 (검색어·결과·읽은 조항) — 트러블슈팅용
+        self.notes: dict[str, dict] = {}                # 항목별 LLM 원판단 (가드 적용 전 라벨·인용한 결함 사실)
         self._lock = threading.Lock()
 
-    def trace(self, item_id: str, actions: list[str]) -> None:
+    def note(self, item_id: str, **kw) -> None:
+        with self._lock:
+            self.notes.setdefault(item_id, {}).update(kw)
+
+    def retry(self) -> None:
+        with self._lock:
+            self.retries += 1
+
+    def trace(self, item_id: str, actions: list[str], steps: Optional[list[dict]] = None) -> None:
         with self._lock:
             self.traces[item_id] = actions
+            if steps is not None:
+                self.steps[item_id] = steps
 
     def add(self, r) -> None:
         with self._lock:
@@ -115,11 +135,22 @@ class LlmAgent2:
         self.llm = llm
         self.use_hints = settings.agent2_use_hints if use_hints is None else use_hints
 
+    # 속도 제한·일시 장애(MODEL_TIMEOUT)만 대기 후 재시도한다. 항목을 병렬로 돌리고 항목마다 여러 번 부르므로
+    # 순간 한도에 걸리기 쉽다. 공통 클라이언트는 크레딧 소진(429 insufficient_quota)도 MODEL_TIMEOUT으로 분류하므로
+    # 총 대기 시간을 짧게 묶어(약 14초) 회복 불가능한 오류에서 오래 매달리지 않게 한다.
+    retry_delays = (2.0, 4.0, 8.0)
+
     def _ask(self, system: str, user: str, schema, tool_name: str, usage: _Usage):
-        try:
-            r = self.llm.complete_structured(system=system, user=user, schema=schema, tool_name=tool_name)
-        except AgentFailure as e:                        # 공통 클라이언트는 stage를 비워 둔다
-            raise AgentFailure(e.error.model_copy(update={"stage": "agent2"})) from None
+        for attempt in range(len(self.retry_delays) + 1):
+            try:
+                r = self.llm.complete_structured(system=system, user=user, schema=schema, tool_name=tool_name)
+                break
+            except AgentFailure as e:                    # 공통 클라이언트는 stage를 비워 둔다
+                err = e.error.model_copy(update={"stage": "agent2"})
+                if err.code != "MODEL_TIMEOUT" or not err.retryable or attempt == len(self.retry_delays):
+                    raise AgentFailure(err) from None
+                usage.retry()
+                time.sleep(self.retry_delays[attempt] * (1 + random.random() * 0.25))   # 병렬 항목이 동시에 다시 몰리지 않게
         usage.add(r)
         return r.parsed
 
@@ -150,9 +181,11 @@ class LlmAgent2:
             meta=Meta(agent_version=self.agent_version, model=",".join(sorted(usage.models)) or None,
                       latency_ms=usage.latency_ms,
                       upstream_result_ids=[inp.a1_result_id] if inp.a1_result_id else [],
-                      debug={"llm_calls": usage.calls, "input_tokens": usage.input_tokens,
+                      debug={"llm_calls": usage.calls, "llm_retries": usage.retries, "input_tokens": usage.input_tokens,
                              "output_tokens": usage.output_tokens,
-                             **({"actions": usage.traces} if usage.traces else {})}),
+                             **({"actions": usage.traces} if usage.traces else {}),
+                             **({"steps": usage.steps} if usage.steps else {}),
+                             **({"judgments": usage.notes} if usage.notes else {})}),
         )
         guarded = apply_guards(out)
         cited, kept = (sum(len(a.evidence) for a in o.assessments) for o in (out, guarded))
@@ -198,7 +231,10 @@ class LlmAgent2:
             if judgment.sufficient or not judgment.next_queries:
                 break
             queries = judgment.next_queries
-        return self._to_assessment(item, judgment, keys), self._to_question(item, judgment, ctx.case_id), hints
+        usage.note(item.item_id, label=judgment.label)
+        judgment = self._hold_issue_report(item, judgment, bool(inp.answers))
+        return (self._to_assessment(item, judgment, keys),
+                self._to_question(item, judgment, ctx.case_id), hints)
 
     def _search(self, queries: list[str], doc_types: list[str], baseline_id: str, found: list,
                 exclude: set) -> list[tuple[str, str]]:
@@ -247,6 +283,21 @@ class LlmAgent2:
         return Assessment(item_id=item.item_id, label=label, evidence=evidence, rationale=j.rationale,
                           evidence_level=level, missing_info=missing, uncertainties=j.uncertainties,
                           approved_change_ref=ref)
+
+    @staticmethod
+    def _hold_issue_report(item: Item, j: Judgment, has_answers: bool) -> Judgment:
+        """원인 불명 제보(issue_report)는 답변(재현 조건·로그·대상 건)이 오기 전에는 in_scope(하자 무상 시정)로 확정하지 않는다.
+        프롬프트 규칙만으로는 가벼운 모델이 "원문 불만 문장"을 결함 근거로 삼아 확정하는 일이 반복돼 코드로 막는다.
+        질문이 없으면 고객에게 물을 기본 질문을 붙인다 (PM이 무엇을 확인할지 알 수 있게)."""
+        if item.intent != "issue_report" or j.label != "in_scope" or has_answers:
+            return j
+        q = j.question or QuestionDraft(
+            text="문제가 발생한 재현 조건(환경·시점·대상 건)과 관련 로그·측정 결과를 공유해 주실 수 있나요?",
+            reason="원인 불명 제보라 기준선 기능의 결함인지 환경·운영 요인인지 판단할 사실이 필요하다",
+            field="repro_facts", target="client", blocking=False)
+        return j.model_copy(update={
+            "label": "unclear", "question": q,
+            "missing_info": j.missing_info + ["원인 불명 제보 — 재현 조건·로그·대상 건 답변 전에는 결함(범위 내)으로 확정하지 않음"]})
 
     @staticmethod
     def _to_question(item: Item, j: Judgment, case_id: str) -> Optional[Question]:
