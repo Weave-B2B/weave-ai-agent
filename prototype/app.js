@@ -1,12 +1,13 @@
-import { Agent3Api, ApiError, MockPreview } from "./api.js";
+import { Agent2Api, Agent3Api, ApiError, MockPreview } from "./api.js";
 import { records, sampleItems, scenarioInput } from "./fixtures.js";
 
 const root = document.querySelector("#app");
 const api = new Agent3Api();
+const agent2 = new Agent2Api();
 const STORAGE = "weave-prototype-agent3-session-v1";
 const PHASE = { WAITING_IMPACT_APPROVAL: "PM 산정 검토 대기", WAITING_INPUT: "추가 정보 필요", WAITING_UPSTREAM_REVIEW: "상위 PM 검토 필요", DRAFT_READY: "내부 협의안 초안 준비", NOT_REQUIRED: "산정 대상 없음", FAILED: "산정 실패" };
 const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "" };
-let baseInput, previewClient, toastTimer, composingSearch = false;
+let baseInput, agent2Input, previewClient, toastTimer, composingSearch = false;
 const e = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "—";
 const money = value => typeof value === "number" && Number.isFinite(value) ? `${number(value)}원` : "미산정";
@@ -92,7 +93,42 @@ function original() {
   const apiCase = record().api;
   return `<div class="columns"><div class="stack"><section class="card"><div class="card-heading"><div><h2>요청 원문</h2><p class="caption">원문은 조회용 합성 데이터이며 실제 수신함과 연결되지 않습니다.</p></div><span class="chip subtle">${icon("83533")}원문 보존</span></div><div class="metadata-box"><dl><dt>보낸 사람</dt><dd>${e(record().requester)} (고객 PM)</dd><dt>받는 사람</dt><dd>김서윤 (한빛디지털 · PM)</dd><dt>수신 일시</dt><dd>2026-${record().date} 09:12</dd><dt>채널</dt><dd>${record().channel} · 원문 예시</dd><dt>첨부</dt><dd>${icon("7502b")}첨부 업로드는 이번 범위 밖</dd></dl></div><div class="original-text"><strong>제목: [자사몰] 상품 리뷰 기능 요청드립니다</strong><p>안녕하세요. 지난 주간 회의에서 말씀드린 리뷰 기능을 정리해서 보내드립니다.</p>${(apiCase ? ["상세페이지에 구매자 별점과 후기 텍스트를 넣어 주세요.", "가능하면 사진도 3장까지 올리게 해주세요.", "변경 합의된 11월 24일 오픈일은 유지해야 합니다."] : ["상품 상세 페이지에서 별점(5점) 리뷰를 작성할 수 있게 해 주세요.", "텍스트 리뷰도 함께 작성·조회가 되어야 합니다.", "가능하면 사진도 여러 장 첨부할 수 있으면 좋겠습니다.", "리뷰는 실제 구매한 고객만 작성할 수 있어야 합니다.", "오픈 일정은 그대로 유지 부탁드립니다."]).map((line, i) => `<div class="highlight"><span class="number">${i + 1}</span><span>${line}</span></div>`).join("")}<p>검토 후 회신 부탁드립니다. 감사합니다.</p></div><div class="card-footer">${icon("2b0e7")}회색 하이라이트 = 항목으로 추출한 원문 위치</div></section><section class="card"><div class="card-heading"><div><h2>PM 메모</h2><p class="caption">실제 저장 기능은 연결 전입니다.</p></div>${button("메모 추가", "unused", { disabled: true, icon: "416f8" })}</div><p class="caption"><span class="avatar">김</span> 김서윤 · 로컬 예시</p><p style="margin-top:10px">사진 포함 여부와 기존 저장소 재사용 가정을 확인해야 합니다. 업무 확정·고객 전달은 별도 담당자가 결정합니다.</p></section></div><div class="stack"><section class="card"><div class="card-heading"><div><h2>${icon("2b0e7")} AI 요청 항목화</h2><p class="caption">상위 Agent 1·2 결과의 합성 입력</p></div>${chip("AI 제안", "ai")}</div>${(apiCase ? [["R1", "기능", baseInput.items[0].text], ["R2", "기한", baseInput.constraints[0].text]] : sampleItems).map(item => `<div class="list-item"><span class="item-no">${item[0]}</span><span class="mini-tag">${item[1]}</span><div class="item-main"><strong>${e(item[2])}</strong><small>${icon("e0393")}원문 연결 · 합성 근거</small></div>${icon("e7746")}</div>`).join("")}<div class="card-footer">${button("항목 추가", "unused", { disabled: true, icon: "416f8" })}${button("AI 재분석", "unused", { disabled: true, icon: "e4529" })}</div></section><section class="card"><h2>확인 질문</h2><p class="caption">이번에는 질문·답변의 실제 저장과 A1 재분석을 연결하지 않습니다.</p><div class="question"><strong>Q1 · 기존 이미지 저장소를 재사용할 수 있나요?</strong><span class="muted">저장 방식에 따라 공수가 달라질 수 있습니다.</span></div><div class="question"><strong>Q2 · 사진 첨부는 이번 변경에 포함되나요?</strong><span class="muted">현재 입력은 사진 최대 3장을 포함한 합성 가정입니다.</span></div></section></div></div>`;
 }
+// ---- C04 범위 검토: Agent 2 실제 결과 (POST /agent2/assessments). 실행 전·조회 예시는 기존 합성 화면(scopeSample) ----
+const a2 = { result: null, pending: false, error: null };
+const A2_LABEL = { in_scope: ["기존 범위 내", "success"], out_of_scope: ["범위 밖 가능성", "ai"], unclear: ["판단 보류", "warning"], approved_change: ["승인된 변경 (재청구 안 함)", "info"] };
+const A2_LEVEL = { strong: "강", medium: "중", none: "근거 없음", interpretation_needed: "해석 필요" };
+const A2_ROLE = { basis: "직접 근거", policy: "절차·원칙", superseding: "우선 문서", context: "참고" };
+const DOC_NAME = { CTR: "계약서", SOW: "과업지시서", FSP: "기능명세서", QUO: "견적서", CO: "변경합의서" };
+const docName = id => DOC_NAME[String(id).split("-")[0]] || "문서";
+async function runAgent2() {
+  if (a2.pending || !agent2Input) return;
+  a2.pending = true; a2.error = null; render();
+  try { a2.result = await agent2.assess(structuredClone(agent2Input)); state.selectedItem = 0; toast("Agent 2 범위 판단 결과를 받았습니다."); }
+  catch (error) { a2.error = { status: error instanceof ApiError ? error.status : 0, message: error.message }; }
+  finally { a2.pending = false; render(); }
+}
+function agent2Bar() {
+  const label = a2.pending ? "범위 판단 중… (최대 1~2분)" : a2.result ? "다시 실행" : "AI 범위 판단 실행";
+  const status = a2.result ? `${chip(a2.result.status === "NEEDS_INPUT" ? "추가 정보 필요" : "PM 검토 대기", a2.result.status === "NEEDS_INPUT" ? "warning" : "info")}<span class="tiny">결과 ${e(a2.result.meta.result_id)} · ${e(a2.result.meta.model || "fixture")}</span>` : '<span class="muted">아래는 실행 전 합성 결과입니다. 실행하면 Agent 2가 기준선 문서를 직접 검색·판단합니다.</span>';
+  const failure = a2.error ? `<div class="notice inline"><strong>Agent 2 실행 실패${a2.error.status ? ` (HTTP ${a2.error.status})` : ""}</strong>${e(a2.error.message)}</div>` : "";
+  return `<div class="baseline">${icon("2b0e7")}<strong>Agent 2 범위 판단</strong>${status}${button(label, "run-a2", { class: "primary small", icon: "a1cb9", disabled: a2.pending || !agent2Input })}</div>${failure}`;
+}
 function scope() {
+  if (!record().api) return scopeSample();
+  if (!a2.result) return agent2Bar() + scopeSample();
+  const out = a2.result, rows = out.assessments;
+  const meta = Object.fromEntries([...(agent2Input.items || []), ...(agent2Input.constraints || [])].map(item => [item.item_id, item]));
+  state.selectedItem = Math.min(state.selectedItem, Math.max(rows.length - 1, 0));
+  const sel = rows[state.selectedItem];
+  if (!sel) return agent2Bar() + '<section class="card"><div class="empty-state"><h3>판단할 기능 항목이 없습니다.</h3></div></section>';
+  const label = item => A2_LABEL[item.label] || [item.label, "neutral"];
+  const questions = (out.questions || []).filter(q => q.item_ids.includes(sel.item_id));
+  const steps = out.meta.debug?.steps?.[sel.item_id] || [];
+  const step = s => s.action === "search_docs" ? `검색 "${e(s.query)}" → ${e((s.hits || []).join(", ") || "결과 없음")}` : s.action === "get_section" ? `조항 열람 ${e(s.read || s.note || s.error || `${s.doc_id}:${s.section_id}`)}` : s.rejected ? `제출 되돌림 — ${e((s.gaps || []).join(" / "))}` : s.action === "submit_judgment" ? "판단 제출" : e(s.action);
+  const list = (title, values) => values?.length ? `<h3 style="margin-top:16px">${title}</h3>${values.map(v => `<p class="caption">· ${e(v)}</p>`).join("")}` : "";
+  return `${agent2Bar()}<div class="scope-grid"><div><section class="card"><div class="card-heading"><div><h2>항목별 범위 판단</h2><p class="caption">AI 제안과 PM 판단은 분리합니다. 아래는 Agent 2 실제 결과입니다.</p></div><span class="mini-tag">전체 ${rows.length}</span></div><div class="table-wrap"><table class="scope-table"><thead><tr><th>요청 항목</th><th>AI 제안</th><th>근거 수준</th><th>PM 판단</th><th>근거</th></tr></thead><tbody>${rows.map((item, index) => `<tr class="${index === state.selectedItem ? "selected" : ""}"><td><button class="scope-select" data-item="${index}">${e(meta[item.item_id]?.display_no || item.item_id)} ${e(meta[item.item_id]?.text || "")}<small>${e(item.item_id)}</small></button></td><td>${chip(...label(item))}</td><td>${e(A2_LEVEL[item.evidence_level] || "—")}</td><td>${chip("미확정")}</td><td>${item.evidence.length}</td></tr>`).join("")}</tbody></table></div></section><div class="scope-evidence"><section class="card"><h2>고객 요청 · ${e(meta[sel.item_id]?.display_no || sel.item_id)}</h2><p class="caption">원문 위치</p>${(meta[sel.item_id]?.spans || []).map(span => `<div class="quote">${e(span.text)}</div>`).join("") || '<div class="quote">원문 구간 없음</div>'}<div class="notice inline">원문에 없는 요구는 AI가 추가하지 않습니다.</div></section><section class="stack">${sel.evidence.length ? sel.evidence.map(ev => `<article class="card"><h3>${icon("f3e38")} ${docName(ev.doc_id)} <span class="mini-tag">v${e(ev.doc_version)}</span> <span class="mini-tag">${e(ev.section_id)}</span></h3><p class="tiny">${e(ev.doc_id)} · ${ev.page ? `p.${ev.page} · ` : ""}${ev.line_start ?? "—"}~${ev.line_end ?? "—"}행 · ${e(A2_ROLE[ev.role] || ev.role)}</p><div class="quote">${e(ev.quote)}</div>${chip(ev.verified ? "원문 인용 검증됨" : "인용 미검증", ev.verified ? "success" : "warning")}</article>`).join("") : '<article class="card"><h3>근거 없음</h3><p class="caption">검증된 근거가 없어 판단을 보류했습니다. 근거 없음은 범위 밖을 뜻하지 않습니다.</p></article>'}</section></div></div><aside class="card"><div class="card-heading"><h2>판단 · ${e(meta[sel.item_id]?.display_no || sel.item_id)}</h2><span class="tiny">${state.selectedItem + 1} / ${rows.length}</span></div><div class="reason-box"><h3>${icon("2b0e7")} AI 제안 · ${e(label(sel)[0])}</h3><p>${e(sel.rationale)}</p>${list("부족한 정보", sel.missing_info)}${list("불확실성", sel.uncertainties)}</div>${questions.length ? `<h3 style="margin-top:18px">확인 질문</h3>${questions.map(q => `<div class="question"><strong>${e(q.text)}</strong><span class="muted">${q.target === "client" ? "고객" : "PM"} 대상 · ${q.blocking ? "답변 전 진행 불가" : "진행 가능(참고)"} · ${e(q.reason)}</span></div>`).join("")}` : ""}${steps.length ? `<details style="margin-top:18px"><summary>에이전트 조사 과정 (${steps.length}단계)</summary>${steps.map((s, i) => `<p class="tiny">${i + 1}. ${step(s)}</p>`).join("")}</details>` : ""}<div class="notice inline"><strong>PM 판단 · 산정 대상 선택</strong>PM 범위 확정 API는 아직 연결 전입니다. 영향 산정(Agent 3)은 기존 합성 A2 결과를 입력으로 사용합니다.</div><div class="form-actions">${button("판단 확정", "unused", { disabled: true, title: "실제 PM 범위 확정 API는 이번 범위 밖" })}${button("영향 산정으로", "go-impact", { class: "primary", icon: "ec151" })}</div></aside></div>`;
+}
+function scopeSample() {
   const apiCase = record().api;
   const items = apiCase ? [["R1", "기능", baseInput.items[0].text, "범위 밖", "범위 밖", "강", "2"]] : sampleItems;
   state.selectedItem = Math.min(state.selectedItem, items.length - 1);
@@ -256,6 +292,7 @@ root.addEventListener("click", event => {
   if (action === "previous") { state.pageNo--; render(); }
   if (action === "next") { state.pageNo++; render(); }
   if (action === "prepare") prepare();
+  if (action === "run-a2") runAgent2();
   if (action === "refresh") refresh();
   if (action === "edit") edit();
   if (action === "approve") review(true);
@@ -298,6 +335,8 @@ try {
   const [inputResponse, previewResponse] = await Promise.all([fetch(new URL("./data/agent3-input.json", import.meta.url)), fetch(new URL("./data/agent3-preview.json", import.meta.url))]);
   if (!inputResponse.ok || !previewResponse.ok) throw new Error("합성 입력 파일을 불러오지 못했습니다.");
   baseInput = await inputResponse.json(); previewClient = new MockPreview(await previewResponse.json()); state.inputText = JSON.stringify(baseInput, null, 2);
+  try { const a2Response = await fetch(new URL("./data/agent2-input.json", import.meta.url)); if (a2Response.ok) agent2Input = await a2Response.json(); }
+  catch { /* Agent 2 입력이 없어도 나머지 화면은 동작한다 (실행 버튼만 비활성). */ }
   route(); await restore();
 } catch (error) {
   root.innerHTML = `<main class="content"><h1>화면을 준비하지 못했습니다.</h1><p style="margin-top:16px">${e(error.message)}</p><p>로컬 서버와 prototype/data 파일을 확인해 주세요.</p></main>`;

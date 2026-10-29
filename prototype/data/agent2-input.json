@@ -1,0 +1,61 @@
+{
+  "context": {
+    "project_id": "P-COM-101",
+    "case_id": "CR-A-001",
+    "request_revision": 1,
+    "baseline_id": "P-COM-101:BL-2",
+    "baseline_as_of": "2026-10-05",
+    "analysis_id": "AN-CR-A-001-r1",
+    "scenario_id": null
+  },
+  "message_text": "안녕하세요. 상세페이지에 구매자 별점과 후기 텍스트를 넣고, 가능하면 사진도 3장까지 올리게 해주세요. 변경합의된 11월 24일 오픈일은 유지해야 합니다. 견적도 부탁드립니다.",
+  "a1_result_id": "A1-S3-CR-A-001-v05",
+  "items": [
+    {
+      "item_id": "CR-A-001-1",
+      "case_id": "CR-A-001",
+      "display_no": "R1",
+      "item_type": "function",
+      "intent": "change_request",
+      "text": "상세페이지 구매자 별점·후기 텍스트 등록, (가능하면) 사진 최대 3장 첨부",
+      "spans": [
+        {
+          "start": 7,
+          "end": 32,
+          "text": "상세페이지에 구매자 별점과 후기 텍스트를 넣고"
+        },
+        {
+          "start": 34,
+          "end": 56,
+          "text": "가능하면 사진도 3장까지 올리게 해주세요"
+        }
+      ],
+      "source": "ai",
+      "feature_candidates": [
+        "FSP-A-001-v1.0:F-11"
+      ],
+      "inferred": false
+    }
+  ],
+  "constraints": [
+    {
+      "item_id": "CR-A-001-2",
+      "case_id": "CR-A-001",
+      "display_no": "R2",
+      "item_type": "deadline",
+      "intent": "constraint",
+      "text": "변경합의된 오픈일 2026-11-24 유지",
+      "spans": [
+        {
+          "start": 58,
+          "end": 85,
+          "text": "변경합의된 11월 24일 오픈일은 유지해야 합니다"
+        }
+      ],
+      "source": "ai",
+      "feature_candidates": [],
+      "inferred": false
+    }
+  ],
+  "answers": []
+}
