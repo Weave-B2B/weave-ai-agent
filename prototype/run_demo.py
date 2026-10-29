@@ -56,9 +56,11 @@ def configuration(args, environ) -> RunConfig:
 
 
 def apply_environment(config: RunConfig, responses: Path | None = None) -> None:
-    """Set the existing factory's inputs; A1/A2 remain fixtures in both modes."""
+    """Set the existing factory's inputs. A1 stays a fixture; A2 runs the real agent only in Gemini mode
+    (fake mode has no scripted Agent 2 responses, so /agent2 returns the dataset fixture offline)."""
     os.environ.update({
         "AGENT_MODE": "fixture",
+        "AGENT2_MODE": "llm" if config.mode == "gemini" else "fixture",
         "LLM_PROVIDER": "local" if config.mode == "gemini" else "fake",
         "LLM_MODEL": config.model,
         "LLM_BASE_URL": GEMINI_BASE_URL if config.mode == "gemini" else "",
@@ -111,7 +113,8 @@ def main(argv=None) -> None:
 
         print(f"Local prototype: http://{args.host}:{args.port}/prototype/")
         print("Offline synthetic AI responses." if config.mode == "fake" else "Gemini API mode: impact estimation sends selected requirements to Google; no fake fallback.")
-        print("Existing code calculation, PM review, and deterministic internal draft; A1/A2 fixtures.")
+        print("Existing code calculation, PM review, and deterministic internal draft; A1 fixture.")
+        print("Agent 2 scope review (C04): real agent via Gemini." if config.mode == "gemini" else "Agent 2 scope review (C04): dataset fixture.")
         uvicorn.run("app.main:app", host=args.host, port=args.port, workers=1)
 
 
