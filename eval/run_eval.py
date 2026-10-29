@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.core.config import settings  # noqa: E402
 from app.kb.loader import documents  # noqa: E402
 from app.orchestration.preflight import preflight_a3  # noqa: E402
-from app.tools.doc_tools import search_docs  # noqa: E402
+from app.tools.doc_tools import retrieval_label, search_docs, vector_backend  # noqa: E402
 
 EVAL = settings.eval_dir
 SPLITS = ("train", "validation", "test")
@@ -111,13 +111,17 @@ if __name__ == "__main__":
     ap.add_argument("what", nargs="?", default="all", choices=["retrieval", "contract", "agent2", "all"])
     ap.add_argument("--split", choices=SPLITS)
     ap.add_argument("--pred", help="agent2: 예측 결과를 저장할 jsonl 경로")
+    ap.add_argument("--retrieval", choices=["lexical", "vector", "hybrid"], help="검색 방식 (기본: RETRIEVAL_MODE)")
     a = ap.parse_args()
+    if a.retrieval:
+        settings.retrieval_mode = a.retrieval
+        vector_backend.cache_clear()
     if a.what == "agent2":                              # API 비용이 드므로 'all'에 넣지 않는다. 기본은 validation
         print("agent2:", agent2((a.split or "validation",), a.pred))
         sys.exit(0)
     sp = (a.split,) if a.split else SPLITS
     if a.what in ("retrieval", "all"):
-        print("retrieval(lexical-bigram-v0):", retrieval(sp))
+        print(f"retrieval({retrieval_label()}):", retrieval(sp))
     if a.what in ("contract", "all"):
         print("contract:", contract())
     print("gold label mix (review_needed):", label_mix())

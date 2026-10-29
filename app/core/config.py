@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     agent2_style: str = "agent"      # agent: LLM이 도구를 골라 쓰는 에이전트 · workflow: 고정 흐름 (비교용)
     agent2_use_hints: bool = True    # ①의 feature_candidates를 검색 없이 후보에 넣을지 (평가 시 힌트 유무 비교)
 
+    # ② 검색 임베딩 (LLM provider와 별개). none이면 어휘 검색만
+    embed_provider: str = "none"     # none · fake · openai · bedrock
+    embed_model: str = ""            # 예: text-embedding-3-small · amazon.titan-embed-text-v2:0
+    embed_api_key: str = ""          # 비우면 LLM_API_KEY 사용 (openai)
+    embed_base_url: str = "https://api.openai.com/v1"
+    embed_dim: int = Field(default=1024, ge=8)   # Titan v2와 같은 1024로 맞춰 두면 전환 시 차원 변경 없음
+    embed_index_path: Path = ROOT / "data" / "index" / "chunk_embeddings.json"
+    retrieval_mode: str = "hybrid"   # 임베딩이 켜졌을 때: hybrid(어휘+벡터 RRF) · vector · lexical
+
     data_dir: Path = ROOT / "data"
     rate_card_file: Path | None = None  # Defaults to data/kb/rate_cards.json; replace with a supplied file later.
     eval_dir: Path = ROOT / "eval" / "dataset"
