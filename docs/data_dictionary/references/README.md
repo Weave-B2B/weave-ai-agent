@@ -7,9 +7,7 @@
 - 원본: [ERDCloud — Weave ERD v0.6](https://www.erdcloud.com/d/J5sro4zYdpM2STSro).
 - 사용자에게 권한이 부여된 Chrome 탭에서 읽었다. PostgreSQL 형식, PK·FK·비식별 관계 포함, DROP 미포함·전체 엔티티 내보내기를 사용했다. ERD 자체는 편집하지 않았다.
 - 참조 파일: [cn_erd_v06_export.sql](./cn_erd_v06_export.sql). **조회·대조용 내보내기 원본이며 실행용 migration이 아니다.** 새 Agent3 테이블/컬럼은 포함하지 않는다.
-- Git 저장본은 내보내기 SQL 끝의 불필요한 빈 줄만 정리했다. 테이블·컬럼·주석·제약 정의는 변경하지 않았다.
-- 다운로드 원본 SHA-256: `4ed232d6666146d2193376843ed202ffc9131ff9733df8bd2a643e4ce50a02cd`.
-- Git 저장본 SHA-256: `f01d7cc6b284ca0f0c3f7d6a914e60e0b2dbcb60f78a60bf44373cab37840950`.
+- 파일 SHA-256: `4ed232d6666146d2193376843ed202ffc9131ff9733df8bd2a643e4ce50a02cd`.
 - 원본에는 CREATE TABLE 43개, PRIMARY KEY 정의 43개, FOREIGN KEY 정의 77개가 있다. 이는 설계의 내보내기 상태이며 운영 DB의 적용 상태를 뜻하지 않는다.
 - UNIQUE·CHECK·일부 enum 규칙은 COMMENT ON COLUMN에만 있다. 이 텍스트를 UNIQUE/CHECK 제약 생성문이 존재하는 것으로 해석하지 않는다. 예: question_answer의 OPEN/ANSWERED 정합성, review_version의 버전 순번 UQ.
 - SQL에 DEFAULT가 없는 컬럼에 now()/0/false/{}/[] 같은 DB 기본값을 임의로 만들어 쓰지 않는다. 앱 기본값과 DB 기본값은 다르다.
@@ -37,4 +35,4 @@
 
 ## 코드
 
-공유 [schemas.py](../../../schema/schemas.py) 0.3.0, 로컬 구현 초안 `app/agents/agent3/workflow.py` (이번 PR 미포함), [calc_cost.py](../../../app/tools/calc_cost.py), [trace.py](../../../app/tools/trace.py)를 대조했다. 코드 동작과 신규 테이블을 1:1 구현 완료로 동일시하지 않는다. 실제 회사 단가·고객 계약 원문·인증 정보는 이 폴더에 포함하지 않는다.
+공유 [schemas.py](../../../schema/schemas.py) 0.3.0, [workflow.py](../../../app/agents/agent3/workflow.py), [calc_cost.py](../../../app/tools/calc_cost.py), [trace.py](../../../app/tools/trace.py)를 대조했다. 코드 동작과 신규 테이블을 1:1 구현 완료로 동일시하지 않는다. 실제 회사 단가·고객 계약 원문·인증 정보는 이 폴더에 포함하지 않는다.
