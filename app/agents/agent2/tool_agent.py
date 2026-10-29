@@ -81,7 +81,9 @@ class ToolAgent2(LlmAgent2):
             judgment = self._ask(FINAL_SYSTEM, observe(0), Judgment, "submit_judgment", usage)
 
         usage.trace(item.item_id, [h["action"] for h in history], [self._step_brief(h) for h in history])
-        return (self._to_assessment(item, judgment, seen, inp.message_text),
+        usage.note(item.item_id, label=judgment.label)
+        judgment = self._hold_issue_report(item, judgment, bool(inp.answers))
+        return (self._to_assessment(item, judgment, seen),
                 self._to_question(item, judgment, ctx.case_id), hints)
 
     # ---- 도구 실행 (울타리는 여기) ----
