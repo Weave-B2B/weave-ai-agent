@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     agent2_use_hints: bool = True    # ①의 feature_candidates를 검색 없이 후보에 넣을지 (평가 시 힌트 유무 비교)
 
     # ② 검색 임베딩 (LLM provider와 별개). none이면 어휘 검색만
-    embed_provider: str = "none"     # none · fake · openai · bedrock
-    embed_model: str = ""            # 예: text-embedding-3-small · amazon.titan-embed-text-v2:0
+    embed_provider: str = "none"     # none · fake · openai · gemini · bedrock
+    embed_model: str = ""            # 예: text-embedding-3-small · gemini-embedding-001 · amazon.titan-embed-text-v2:0
     embed_api_key: str = ""          # 비우면 LLM_API_KEY 사용 (openai)
     embed_base_url: str = "https://api.openai.com/v1"
     embed_dim: int = Field(default=1024, ge=8)   # Titan v2와 같은 1024로 맞춰 두면 전환 시 차원 변경 없음

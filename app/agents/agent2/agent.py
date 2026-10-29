@@ -7,8 +7,10 @@
 import concurrent.futures as cf
 import contextvars
 import json
+import random
 import re
 import threading
+import time
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -98,11 +100,15 @@ class _Usage:
     """항목들(스레드)의 LLM 호출 지연·토큰·모델을 합친다."""
 
     def __init__(self):
-        self.calls = self.latency_ms = self.input_tokens = self.output_tokens = 0
+        self.calls = self.latency_ms = self.input_tokens = self.output_tokens = self.retries = 0
         self.models: set[str] = set()
         self.traces: dict[str, list[str]] = {}          # 항목별 행동 순서 (도구 사용 에이전트만)
         self.steps: dict[str, list[dict]] = {}          # 항목별 행동 상세 (검색어·결과·읽은 조항) — 트러블슈팅용
         self._lock = threading.Lock()
+
+    def retry(self) -> None:
+        with self._lock:
+            self.retries += 1
 
     def trace(self, item_id: str, actions: list[str], steps: Optional[list[dict]] = None) -> None:
         with self._lock:
@@ -132,11 +138,22 @@ class LlmAgent2:
         self.llm = llm
         self.use_hints = settings.agent2_use_hints if use_hints is None else use_hints
 
+    # 속도 제한·일시 장애(MODEL_TIMEOUT)만 대기 후 재시도한다. 항목을 병렬로 돌리고 항목마다 여러 번 부르므로
+    # 순간 한도에 걸리기 쉽다. 공통 클라이언트는 크레딧 소진(429 insufficient_quota)도 MODEL_TIMEOUT으로 분류하므로
+    # 총 대기 시간을 짧게 묶어(약 14초) 회복 불가능한 오류에서 오래 매달리지 않게 한다.
+    retry_delays = (2.0, 4.0, 8.0)
+
     def _ask(self, system: str, user: str, schema, tool_name: str, usage: _Usage):
-        try:
-            r = self.llm.complete_structured(system=system, user=user, schema=schema, tool_name=tool_name)
-        except AgentFailure as e:                        # 공통 클라이언트는 stage를 비워 둔다
-            raise AgentFailure(e.error.model_copy(update={"stage": "agent2"})) from None
+        for attempt in range(len(self.retry_delays) + 1):
+            try:
+                r = self.llm.complete_structured(system=system, user=user, schema=schema, tool_name=tool_name)
+                break
+            except AgentFailure as e:                    # 공통 클라이언트는 stage를 비워 둔다
+                err = e.error.model_copy(update={"stage": "agent2"})
+                if err.code != "MODEL_TIMEOUT" or not err.retryable or attempt == len(self.retry_delays):
+                    raise AgentFailure(err) from None
+                usage.retry()
+                time.sleep(self.retry_delays[attempt] * (1 + random.random() * 0.25))   # 병렬 항목이 동시에 다시 몰리지 않게
         usage.add(r)
         return r.parsed
 
@@ -167,7 +184,7 @@ class LlmAgent2:
             meta=Meta(agent_version=self.agent_version, model=",".join(sorted(usage.models)) or None,
                       latency_ms=usage.latency_ms,
                       upstream_result_ids=[inp.a1_result_id] if inp.a1_result_id else [],
-                      debug={"llm_calls": usage.calls, "input_tokens": usage.input_tokens,
+                      debug={"llm_calls": usage.calls, "llm_retries": usage.retries, "input_tokens": usage.input_tokens,
                              "output_tokens": usage.output_tokens,
                              **({"actions": usage.traces} if usage.traces else {}),
                              **({"steps": usage.steps} if usage.steps else {})}),
