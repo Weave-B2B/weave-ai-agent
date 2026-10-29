@@ -23,3 +23,16 @@ def split_rows(agent: str, kind: str) -> list[dict]:
 @pytest.fixture(scope="session")
 def chain() -> list[dict]:
     return [r for s in ("train", "validation", "test") for r in jl(EVAL / "chain" / f"{s}.jsonl")]
+
+
+@pytest.fixture(autouse=True)
+def _no_embedding_api(monkeypatch):
+    """.env 설정과 무관하게 테스트는 실제 LLM·임베딩 API를 부르지 않는다 (fixture 에이전트·어휘 검색 고정).
+    하이브리드 경로는 tests/test_retrieval_hybrid.py가 fake 임베딩으로 따로 켠다."""
+    from app.tools import doc_tools
+    monkeypatch.setattr(settings, "embed_provider", "none")
+    monkeypatch.setattr(settings, "agent_mode", "fixture")     # .env의 AGENT_MODE·AGENT2_MODE=llm이 실제 LLM을 부르지 않게
+    monkeypatch.setattr(settings, "agent2_mode", "fixture")
+    doc_tools.vector_backend.cache_clear()
+    yield
+    doc_tools.vector_backend.cache_clear()

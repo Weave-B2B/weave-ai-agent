@@ -180,3 +180,6 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 .DS_Store
+
+# ② 임베딩 색인 (python -m app.kb.build_index로 생성, 모델별 산출물)
+data/index/

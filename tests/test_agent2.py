@@ -138,3 +138,40 @@ def test_unknown_baseline_is_input_error():
     raw = {**INPUTS["CR-A-001"], "context": {**INPUTS["CR-A-001"]["context"], "baseline_id": "P-COM-101:BL-9"}}
     with pytest.raises(ToolInputError):
         LlmAgent2(GoldLLM(GOLD["CR-A-001"])).run(Agent2Input.model_validate(raw))
+
+
+def _issue_report_judgment(case_id: str, question=None):
+    from schema.schemas import Item
+    inp = INPUTS[case_id]
+    item = Item.model_validate(next(it for it in inp["items"] if it["intent"] == "issue_report"))
+    a = GOLD[case_id]["assessments"][0]
+    keys = [(e["doc_id"], e["section_id"]) for e in a["evidence"]]
+    j = Judgment(sufficient=True, next_queries=[], label="in_scope",
+                 evidence=[Cite(doc_id=d, section_id=s, quote="x", role="basis", match_type="direct") for d, s in keys],
+                 rationale="r", evidence_level="medium", missing_info=[], uncertainties=[], approved_change_ref=None,
+                 question=question)
+    return item, j, keys
+
+
+ISSUE_CASE = next(c for c, i in INPUTS.items() if any(it["intent"] == "issue_report" for it in i["items"]))
+
+
+def test_issue_report_is_held_until_answers_arrive():
+    """원인 불명 제보는 답변 전에는 in_scope로 확정하지 않고, 고객 질문을 붙인다."""
+    item, j, keys = _issue_report_judgment(ISSUE_CASE)
+    held = LlmAgent2._hold_issue_report(item, j, has_answers=False)
+    a = LlmAgent2._to_assessment(item, held, keys)
+    q = LlmAgent2._to_question(item, held, ISSUE_CASE)
+    assert a.label == "unclear" and any("원인 불명" in m for m in a.missing_info)
+    assert q and q.target == "client" and q.blocking is False
+
+
+def test_issue_report_can_be_in_scope_after_answers():
+    item, j, _ = _issue_report_judgment(ISSUE_CASE)
+    assert LlmAgent2._hold_issue_report(item, j, has_answers=True).label == "in_scope"
+
+
+def test_issue_report_hold_keeps_llm_question():
+    mine = QuestionDraft(text="p95 측정 결과를 주세요", reason="r", field="p95", target="client", blocking=False)
+    item, j, _ = _issue_report_judgment(ISSUE_CASE, question=mine)
+    assert LlmAgent2._hold_issue_report(item, j, has_answers=False).question.text == "p95 측정 결과를 주세요"
