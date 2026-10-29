@@ -32,7 +32,8 @@ async function boot(options = {}) {
     sessionStorage: { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key) },
     fetch: async url => ({ ok: true, json: async () => structuredClone(String(url).includes('agent3-input') ? input : response) }),
   });
-  const transport = new vm.SyntheticModule(['Agent3Api', 'ApiError', 'MockPreview'], function () {
+  const transport = new vm.SyntheticModule(['Agent2Api', 'Agent3Api', 'ApiError', 'MockPreview'], function () {
+    this.setExport('Agent2Api', class { assess() { throw new Error('Agent 2 is not exercised in these tests'); } });
     this.setExport('Agent3Api', FakeApi); this.setExport('ApiError', ApiError);
     this.setExport('MockPreview', class { constructor() {} });
   }, { context });
