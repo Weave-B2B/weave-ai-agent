@@ -119,3 +119,23 @@ def test_factory_requires_settings(monkeypatch):
         build_embedder(settings)
     monkeypatch.setattr(settings, "embed_provider", "none")
     assert build_embedder(settings) is None
+
+
+@pytest.mark.parametrize("provider,base,expected_url,label", [
+    ("openai", "", "https://api.openai.com/v1", "openai"),
+    ("gemini", "", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini"),
+    ("gemini", "https://api.openai.com/v1", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini"),
+])
+def test_factory_base_url_defaults(monkeypatch, provider, base, expected_url, label):
+    for k, v in (("embed_provider", provider), ("embed_model", "m"), ("embed_api_key", "k"), ("embed_base_url", base)):
+        monkeypatch.setattr(settings, k, v)
+    emb = build_embedder(settings)
+    assert emb.base_url == expected_url and emb.model_id == f"{label}:m"
+
+
+def test_openai_compatible_embedder_without_index_keeps_input_order():
+    """Gemini OpenAI 호환 응답은 data[].index가 없다 — 입력 순서를 그대로 쓴다."""
+    handler = lambda req: httpx.Response(200, json={"data": [{"embedding": [3, 4]}, {"embedding": [0, 2]}]})
+    emb = OpenAIEmbedder(base_url="https://x", api_key="k", model="gemini-embedding-001", dim=2, label="gemini",
+                         client=httpx.Client(transport=httpx.MockTransport(handler)))
+    assert emb.embed(["a", "b"]) == [[0.6, 0.8], [0.0, 1.0]]

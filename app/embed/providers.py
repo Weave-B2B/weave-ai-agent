@@ -31,16 +31,16 @@ class FakeEmbedder:
 
 
 class OpenAIEmbedder:
-    """OpenAI 호환 /embeddings. text-embedding-3 계열은 dimensions로 차원을 줄일 수 있다 (Titan v2와 맞추기 쉬움)."""
+    """OpenAI 호환 /embeddings (OpenAI·Gemini OpenAI 호환 엔드포인트). dimensions로 차원을 지정한다 (Titan v2와 맞추기 쉬움)."""
 
     def __init__(self, *, base_url: str, api_key: str, model: str, dim: int, batch: int = 64,
-                 timeout_sec: float = 30, client: Optional[httpx.Client] = None):
+                 timeout_sec: float = 30, client: Optional[httpx.Client] = None, label: str = "openai"):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.dim = dim
         self.batch = batch
-        self.model_id = f"openai:{model}"
+        self.model_id = f"{label}:{model}"              # 색인에 남는 이름. 같은 클라이언트라도 provider를 구분한다
         self.client = client or httpx.Client(timeout=timeout_sec)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -51,7 +51,9 @@ class OpenAIEmbedder:
                                  headers={"Authorization": f"Bearer {self.api_key}"},
                                  json={"model": self.model, "input": chunk, "dimensions": self.dim})
             r.raise_for_status()
-            data = sorted(r.json()["data"], key=lambda d: d["index"])
+            data = r.json()["data"]
+            if all("index" in d for d in data):          # OpenAI는 index를 주고, Gemini 호환 엔드포인트는 생략한다(입력 순서)
+                data = sorted(data, key=lambda d: d["index"])
             if len(data) != len(chunk):
                 raise ValueError("embedding count mismatch")
             out += [normalize(d["embedding"]) for d in data]

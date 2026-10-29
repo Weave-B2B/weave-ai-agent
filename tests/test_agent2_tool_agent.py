@@ -251,3 +251,46 @@ def test_steps_trace_records_queries_and_hits():
     steps = out.meta.debug["steps"]["CR-A-001-1"]
     search = next(s for s in steps if s["action"] == "search_docs")
     assert search["query"] and search["hits"]
+
+
+def _flaky(code: str, retryable: bool, fails: int):
+    from schema.schemas import AgentError
+    llm = ScriptLLM(GOLD["CR-A-001"])
+    orig, n = llm.complete_structured, {"left": fails}
+
+    def call(**kw):
+        if n["left"] > 0:
+            n["left"] -= 1
+            raise AgentFailure(AgentError(code=code, message="x", stage=None, retryable=retryable))
+        return orig(**kw)
+    llm.complete_structured = call
+    return llm, n
+
+
+def test_rate_limit_is_retried_with_backoff(monkeypatch):
+    import app.agents.agent2.agent as mod
+    slept = []
+    monkeypatch.setattr(mod.time, "sleep", slept.append)
+    llm, _ = _flaky("MODEL_TIMEOUT", True, 2)
+    out = ToolAgent2(llm).run(Agent2Input.model_validate(INPUTS["CR-A-001"]))
+    assert out.meta.debug["llm_retries"] == 2 and len(slept) == 2 and slept[1] > slept[0]
+
+
+def test_retries_are_bounded(monkeypatch):
+    import app.agents.agent2.agent as mod
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    llm, _ = _flaky("MODEL_TIMEOUT", True, 99)
+    with pytest.raises(AgentFailure) as e:
+        ToolAgent2(llm).run(Agent2Input.model_validate(INPUTS["CR-A-001"]))
+    assert e.value.error.code == "MODEL_TIMEOUT" and e.value.error.stage == "agent2"
+
+
+@pytest.mark.parametrize("code,retryable", [("INTERNAL_ERROR", False), ("OUTPUT_INVALID", True)])
+def test_non_rate_limit_errors_are_not_retried(monkeypatch, code, retryable):
+    import app.agents.agent2.agent as mod
+    slept = []
+    monkeypatch.setattr(mod.time, "sleep", slept.append)
+    llm, n = _flaky(code, retryable, 1)
+    with pytest.raises(AgentFailure):
+        ToolAgent2(llm).run(Agent2Input.model_validate(INPUTS["CR-A-001"]))
+    assert slept == []
