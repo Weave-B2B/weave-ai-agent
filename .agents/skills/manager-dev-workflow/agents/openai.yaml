@@ -1,0 +1,4 @@
+interface:
+  display_name: "매니저형 개발팀"
+  short_description: "담당별 착수 승인과 자료 인수인계, QA 수정·재검증을 조율하는 개발 워크플로"
+  default_prompt: "Use $manager-dev-workflow to coordinate approved development tasks and QA feedback in this project."

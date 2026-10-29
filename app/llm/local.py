@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel
@@ -76,7 +77,7 @@ class LocalLlm(StructuredLlm):
                 "type": "json_schema",
                 "json_schema": {
                     "name": tool_name,
-                    "schema": schema.model_json_schema(),
+                    "schema": _request_schema(schema, self.base_url),
                     "strict": True,
                 },
             }
@@ -109,6 +110,37 @@ class LocalLlm(StructuredLlm):
             ),
             stop_reason=choice.get("finish_reason") if isinstance(choice, dict) else None,
         )
+
+
+def _request_schema(schema: type[BaseModel], base_url: str) -> dict[str, Any]:
+    """Use a small strict schema for Gemini; keep full local validation afterwards.
+
+    Other OpenAI-compatible endpoints retain their existing request contract.
+    Gemini only implements a subset of JSON Schema. Resolve local Pydantic refs,
+    drop defaults, and make all properties explicit for the strict envelope.
+    """
+    raw = schema.model_json_schema()
+    if urlsplit(base_url).hostname != "generativelanguage.googleapis.com":
+        return raw
+    definitions = raw.get("$defs", {})
+
+    def normalize(value):
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        if "$ref" in value:
+            ref = value["$ref"]
+            if not ref.startswith("#/$defs/") or ref[8:] not in definitions:
+                raise ValueError("unsupported structured schema reference")
+            return normalize({**definitions[ref[8:]], **{k: v for k, v in value.items() if k != "$ref"}})
+        result = {key: normalize(item) for key, item in value.items() if key not in {"$defs", "default"}}
+        if result.get("type") == "object":
+            result["required"] = list(result.get("properties", {}))
+            result["additionalProperties"] = False
+        return result
+
+    return normalize(raw)
 
 
 def _token_count(usage: dict[str, Any], key: str) -> int:

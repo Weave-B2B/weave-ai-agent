@@ -2,7 +2,7 @@
 
 문서 v0.3 · 2026-10-28 · [목록](./README.md)
 
-로컬 구현 초안 `app/agents/agent3/workflow.py` (이번 PR 미포함), [공통 schemas.py](../../../schema/schemas.py), [calc_cost.py](../../../app/tools/calc_cost.py), [trace.py](../../../app/tools/trace.py)를 읽고 작성했다. **대응 후보를 문서화한 것이며 DB 저장 어댑터·migration을 구현한 것은 아니다.**
+[workflow.py](../../../app/agents/agent3/workflow.py), [공통 schemas.py](../../../schema/schemas.py), [calc_cost.py](../../../app/tools/calc_cost.py), [trace.py](../../../app/tools/trace.py)를 읽고 작성했다. **대응 후보를 문서화한 것이며 DB 저장 어댑터·migration을 구현한 것은 아니다.**
 
 ## 처리 순서
 
@@ -41,4 +41,4 @@
 - 현재 workflow는 메모리와 프로세스 내 Lock을 사용한다. 영속 복구·다중 worker 경합·인증/인가·CN DB 조회 저장은 구현돼 있지 않다.
 - 공통 PMReview 복원, 상위 질문 조회·답변 판정, 최신 A2 결과 확인은 호출부·CN·오케스트레이션 계약으로 맞춘다. JSON 모델에 필드가 없는 부분을 이미 구현했다고 기록하지 않는다.
 
-이 문서의 workflow 대응은 로컬 구현 초안을 참고한 협의 자료다. 해당 구현 코드와 실행 설명은 이번 데이터 PR에 포함하지 않는다. 앱 실행·DB 연동 검증을 완료했다는 뜻은 아니며, 데이터 문서 검사를 이전 앱 테스트 결과와 구분한다.
+[초기 MVP 실행 설명](../../agent3-mvp.md) 참조. 이 문서 작업에서는 앱 테스트를 재실행하지 않았으며 이전 테스트 통과 기록을 새로운 DB 연동 검증으로 인용하지 않는다.
