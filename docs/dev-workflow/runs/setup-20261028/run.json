@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "run_id": "setup-20261028",
+  "goal": "재사용 가능한 매니저형 개발 워크플로 구성 및 변경요청 UI 소스 조사",
+  "status": "waiting_user",
+  "repository_revision": "6d69950f47e4e5ce0c3e191ca6cfb441dc4794f7",
+  "communication_mode": "wait_for_user",
+  "max_repair_rounds": 2,
+  "tasks": [
+    {
+      "task_id": "setup",
+      "role": "workflow-manager",
+      "scope_version": 1,
+      "status": "in_review",
+      "write_scope": [
+        ".agents/skills/manager-dev-workflow/",
+        ".codex/agents/",
+        "docs/dev-workflow/",
+        "AGENTS.md managed block"
+      ],
+      "authorization": "initial_user_configuration_request"
+    },
+    {
+      "task_id": "repo-survey",
+      "role": "workflow-sources",
+      "runtime_agent": "/root/repo_scout",
+      "status": "handed_off",
+      "dispatch_mode": "before_user_selected_wait_for_user",
+      "write_scope": []
+    },
+    {
+      "task_id": "notion-survey",
+      "role": "workflow-sources",
+      "runtime_agent": "/root/design_research",
+      "status": "handed_off",
+      "dispatch_mode": "before_user_selected_wait_for_user",
+      "write_scope": []
+    },
+    {
+      "task_id": "bootstrap",
+      "role": "workflow-domain",
+      "runtime_agent": "/root/repo_scout",
+      "status": "handed_off",
+      "dispatch_mode": "before_user_selected_wait_for_user",
+      "write_scope": [
+        ".agents/skills/manager-dev-workflow/scripts/bootstrap.py",
+        ".agents/skills/manager-dev-workflow/scripts/tests/test_bootstrap.py"
+      ]
+    },
+    {
+      "task_id": "figma-survey",
+      "role": "workflow-sources",
+      "runtime_agent": "/root/design_research",
+      "scope_version": 1,
+      "status": "handed_off",
+      "approval_ref": "human-batch-figma-qa",
+      "write_scope": [],
+      "handoff": "source-handoff.md"
+    },
+    {
+      "task_id": "workflow-qa",
+      "role": "workflow-qa",
+      "runtime_agent": "/root/workflow_qa",
+      "scope_version": 1,
+      "status": "running",
+      "approval_ref": "human-batch-figma-qa",
+      "write_scope": [
+        "/private/tmp isolated test project",
+        "docs/dev-workflow/runs/setup-20261028/qa-review.md"
+      ]
+    },
+    {
+      "task_id": "repair-1",
+      "role": "workflow-manager",
+      "scope_version": 1,
+      "status": "waiting_user",
+      "write_scope": [
+        ".agents/skills/manager-dev-workflow/assets/roles/workflow-domain.toml",
+        ".codex/agents/workflow-domain.toml",
+        "docs/dev-workflow/project.json",
+        "docs/dev-workflow/runs/setup-20261028/"
+      ],
+      "approval_ref": null
+    }
+  ],
+  "approvals": [
+    {
+      "id": "communication-choice",
+      "source": "direct_user_message",
+      "exact_answer": "각 담당자가 시작하기 전에 내 답변을 기다리기"
+    },
+    {
+      "id": "human-batch-figma-qa",
+      "source": "direct_user_message",
+      "exact_answer": "Figma 조사와 워크플로 QA 모두 착수 승인",
+      "covered_tasks": [
+        "figma-survey",
+        "workflow-qa"
+      ],
+      "scope_version": 1,
+      "includes_ui_coding": false,
+      "includes_repair_assignment": false
+    }
+  ],
+  "information_requests": [],
+  "findings": [
+    {
+      "id": "QA-001",
+      "status": "changes_requested",
+      "owner_task": "setup",
+      "severity": "P2",
+      "summary": "Generic workflow-domain template names Agent 3 instead of consulting only the project profile.",
+      "repair_round": 0
+    }
+  ],
+  "events": [
+    {
+      "event": "initial_discovery",
+      "note": "구성 요청에 따라 저장소/노션 조사와 설치 도구 담당이 착수했다. 이후 사용자가 담당별 답변 대기 방식을 선택했으며, 과거 작업에 개별 승인이 있었다고 소급 기록하지 않는다."
+    },
+    {
+      "event": "communication_preference_set",
+      "note": "이후 새 담당 작업은 사용자 답변 후 시작한다."
+    },
+    {
+      "event": "human_batch_approval",
+      "note": "Figma 읽기와 워크플로 독립 QA만 승인. UI 코딩 미승인."
+    },
+    {
+      "event": "local_install",
+      "note": "역할 6개와 AGENTS 안내 설치. 프로젝트 프로필 보존. 전역 설정 변경 없음."
+    },
+    {
+      "event": "qa_finding_and_repair_gate",
+      "note": "QA-001 발견 후 수정 및 QA 재확인 1회의 착수 승인을 사용자에게 요청했다. 수정은 아직 실행하지 않았다."
+    }
+  ],
+  "final_checks": [
+    {
+      "name": "skill_frontmatter_validation",
+      "status": "passed",
+      "command": "python3 /Users/mac/.codex/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/manager-dev-workflow",
+      "result": "Skill is valid!"
+    },
+    {
+      "name": "bootstrap_unittest",
+      "status": "passed",
+      "command": "python3 -m unittest discover -s .agents/skills/manager-dev-workflow/scripts/tests -v",
+      "result": "11 tests passed"
+    },
+    {
+      "name": "independent_qa",
+      "status": "running"
+    },
+    {
+      "name": "browser_ui",
+      "status": "not_run",
+      "reason": "이번 실행은 구성 및 디자인 조사. UI 코딩 착수 전."
+    },
+    {
+      "name": "live_api_model",
+      "status": "not_run",
+      "reason": "앱 코드를 변경하지 않았고 외부 API/모델 실행은 이번 범위 밖."
+    }
+  ],
+  "next_start_card": {
+    "task_id": "change-request-ui-plan",
+    "role": "workflow-planner",
+    "scope_version": 1,
+    "status": "waiting_user",
+    "goal": "변경요청 메뉴의 첫 구현 화면과 mock/API 연결 범위를 정리",
+    "read_scope": [
+      "project.json",
+      "source-handoff.md",
+      "docs/agent3-mvp.md"
+    ],
+    "write_scope": [
+      "docs/dev-workflow/runs/change-request-ui/plan.md"
+    ],
+    "required_input": "C02~C05 및 C06 초안 확인 중 첫 구현 묶음과 mock/API 연결 우선순위",
+    "approval_ref": null
+  }
+}

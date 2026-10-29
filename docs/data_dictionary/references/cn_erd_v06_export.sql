@@ -1268,3 +1268,4 @@ ALTER TABLE "agreement_item" ADD CONSTRAINT "FK_request_item_TO_agreement_item_1
 REFERENCES "request_item" (
 	"request_item_id"
 );
+
