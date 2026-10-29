@@ -29,6 +29,7 @@ JUDGE_SYSTEM = """\
 3. 오작동 요청은 항목의 intent(①이 분류)로 구분한다.
    - intent=defect (정의된 기능이 재현 가능하게 동작하지 않음): 그 기능이 기준선에 포함(IN)이면 in_scope (하자 무상 시정). 계약서의 하자 조항을 role=policy 근거로 함께 붙인다. 로그가 없다는 이유만으로 unclear로 내리지 않는다.
    - intent=issue_report (원인 불명 문제 제보): 기준선 기능의 결함인지 환경·운영·외부 요인인지 가를 사실(재현 조건·로그·대상 건)이 원문에 없으면 in_scope로 단정하지 않는다. unclear + missing_info + 그 사실을 묻는 질문(target=client, blocking=false).
+     원문에 그런 사실이 있어 in_scope로 판단한다면, 그 문장을 defect_facts에 원문 그대로 인용한다. 코드가 원문과 대조하고 없으면 unclear로 내린다.
 4. 구두·초안·메신저 발언은 승인 문서를 대체하지 않는다. 그런 주장에는 해당 계약 조항을 policy 근거로 붙인다.
 5. 항목 하나에 포함 기능과 제외 기능이 섞여 판단이 갈리면 unclear + 항목을 나눠 달라는 blocking 질문(target=pm).
 6. 원문에 없는 추정 항목(inferred)은 unclear + 실제 요청인지 확인하는 blocking 질문(target=pm).
@@ -77,7 +78,9 @@ _AGENT_TOOLS = """\
 1. 항목의 기능을 다룬 기능명세·SOW 조항을 찾고 전문을 읽는다. feature_hints가 있으면 먼저 읽어 볼 수 있지만 검증된 근거가 아니다.
 2. <contract_sections>에서 판단에 걸리는 조항(하자·우선순위·변경 절차, 이 기능을 다룬 변경합의서)을 골라 읽는다. 결함·오작동 요청이면 하자 조항을 반드시 읽는다.
 3. 같은 검색어를 반복하지 않는다. 못 찾으면 다른 표현이나 doc_types로 바꾼다.
+   기능이 포함·제외됐는지는 기능명세(functional_spec)가 1차 근거다. doc_types로 좁힐 때 functional_spec을 빼지 않는다.
 4. 판단에 필요한 조항을 읽었으면 바로 제출한다. steps_left가 1이면 반드시 submit_judgment.
+   제출이 "제출 전 확인 필요"로 되돌아오면 gaps에 적힌 조사를 한 뒤 다시 제출한다.
 5. 근거(evidence)에는 get_section 또는 search_docs로 실제 본 섹션만 쓴다. 본 적 없는 섹션은 코드가 버린다.
 6. submit_judgment에서는 sufficient=true, next_queries=[]로 둔다.
 

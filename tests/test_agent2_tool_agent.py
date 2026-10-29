@@ -217,3 +217,37 @@ def test_search_omits_snippet_for_already_read_sections():
                           "P-COM-101:BL-2", allowed, seen, read)["results"]
     hit = [r for r in res if (r["doc_id"], r["section_id"]) == (ev["doc_id"], ev["section_id"])]
     assert hit and hit[0].get("read") is True and "snippet" not in hit[0]
+
+
+def test_precheck_pushes_back_once_when_hint_unread():
+    """힌트 조항을 안 보고 제출하면 한 번 되돌린다. 두 번째 제출은 받는다 (무한 반복 방지)."""
+    case_id = next(c for c, i in INPUTS.items() if any(it["feature_candidates"] for it in i["items"]))
+    gold = GOLD[case_id]
+
+    def eager(item_id, n):
+        a = {x["item_id"]: x for x in gold["assessments"]}[item_id]
+        return AgentStep(thought="바로 제출", action="submit_judgment", judgment=_judgment(a, None))
+    out, llm = _run(case_id, eager)
+    for item_id, steps in out.meta.debug["steps"].items():
+        if any(it["feature_candidates"] for it in INPUTS[case_id]["items"] if it["item_id"] == item_id):
+            assert steps[0].get("rejected") and "기능 후보" in steps[0]["gaps"][0]
+            assert steps[-1] == {"action": "submit_judgment"} and len(steps) == 2
+
+
+def test_precheck_requires_defect_clause_for_defect_items():
+    case_id = next(c for c, i in INPUTS.items() if any(it["intent"] == "defect" for it in i["items"]))
+    item = next(it for it in INPUTS[case_id]["items"] if it["intent"] == "defect")
+    from schema.schemas import Item
+    agent = ToolAgent2(ScriptLLM(GOLD[case_id]), use_hints=False)
+    allowed = agent._baseline_docs(INPUTS[case_id]["context"]["baseline_id"])
+    gaps = agent._precheck(Item.model_validate(item), [], [], {}, allowed)
+    assert any("하자" in g for g in gaps)
+    defect = next(k for k, s in sections().items() if k[0] in allowed and s["doc_type"] == "contract" and "하자" in s["heading"])
+    assert agent._precheck(Item.model_validate(item), [], [defect], {defect: {}}, allowed) == []
+
+
+def test_steps_trace_records_queries_and_hits():
+    out, _ = _run("CR-A-001")
+    steps = out.meta.debug["steps"]["CR-A-001-1"]
+    search = next(s for s in steps if s["action"] == "search_docs")
+    assert search["query"] and search["hits"]
