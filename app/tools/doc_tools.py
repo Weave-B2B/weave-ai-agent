@@ -29,7 +29,10 @@ def get_section(doc_id: str, section_id: str) -> dict:
         raise ToolInputError(f"unknown section {doc_id}:{section_id}")
     return {"doc_id": doc_id, "doc_version": s["doc_version"], "section_id": section_id, "text": s["text"],
             "page": s["page"], "line_start": s["line_start"], "page_end": s["page_end"],
-            "line_end": s["line_end"], "locator": s["locator"], "extraction_version": s["extraction_version"]}
+            "line_end": s["line_end"], "extraction_version": s["extraction_version"],
+            # locator = ERD document_chunk_id 운반 ('chunk:<uuid>'). 다른 위치 참조와 구분하려 접두어를 붙인다
+            "locator": s["locator"] or f"chunk:{s['chunk_id']}",
+            "chunk_id": s["chunk_id"], "start_offset": s["start_offset"], "end_offset": s["end_offset"]}
 
 
 _WS = re.compile(r"\s+")
