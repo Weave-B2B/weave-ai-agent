@@ -1,0 +1,13 @@
+{
+  "version": "synthetic-review-example-v1",
+  "case_id": "CR-A-001",
+  "target_text": "상세페이지 구매자 별점·후기 텍스트 등록, (가능하면) 사진 최대 3장 첨부",
+  "note": "테스트 전용: CR-A-001 리뷰·사진 예시의 묶음 작업이며 실제 공수 기준이 아님",
+  "rules": {
+    "review_pm": {"role": "PM", "md": 0.5, "description": "리뷰·사진 요구 정리 및 협의"},
+    "review_ux": {"role": "UX", "md": 1.5, "description": "리뷰 작성 폼·영역·사진 UI 설계"},
+    "review_fe": {"role": "FE", "md": 3.0, "description": "리뷰 목록·별점·작성 폼·사진 업로드 UI"},
+    "review_be": {"role": "BE", "md": 3.5, "description": "리뷰 API·구매자 검증·이미지 저장·평균 집계"},
+    "review_qa": {"role": "QA", "md": 1.5, "description": "리뷰·사진 시나리오 및 회귀 테스트"}
+  }
+}

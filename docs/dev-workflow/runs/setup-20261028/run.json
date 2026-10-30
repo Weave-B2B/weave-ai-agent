@@ -172,7 +172,7 @@
     "read_scope": [
       "project.json",
       "source-handoff.md",
-      "docs/agent3-mvp.md"
+      "docs/agent3/agent3-mvp.md"
     ],
     "write_scope": [
       "docs/dev-workflow/runs/change-request-ui/plan.md"

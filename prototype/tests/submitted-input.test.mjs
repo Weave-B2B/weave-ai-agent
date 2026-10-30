@@ -10,6 +10,10 @@ const input = JSON.parse(await readFile(new URL('../data/agent3-input.json', imp
 const response = JSON.parse(await readFile(new URL('../data/agent3-preview.json', import.meta.url), 'utf8'));
 const appSource = await readFile(appUrl, 'utf8');
 const fixtureSource = await readFile(new URL('../fixtures.js', import.meta.url), 'utf8');
+const requestSamplesSource = await readFile(new URL('../data/request-samples.js', import.meta.url), 'utf8');
+const samples = JSON.parse(await readFile(new URL('../data/agent3-samples.json', import.meta.url), 'utf8'));
+const agent2Inputs = JSON.parse(await readFile(new URL('../data/agent2-inputs.json', import.meta.url), 'utf8'));
+const agent1Inputs = JSON.parse(await readFile(new URL('../data/agent1-inputs.json', import.meta.url), 'utf8'));
 const storageKey = 'weave-prototype-agent3-session-v1';
 const changedInput = text => { const result = structuredClone(input); result.constraints[0].text = text; return result; };
 class ApiError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -30,23 +34,105 @@ async function boot(options = {}) {
     document: { activeElement: null, querySelector() { return node; } },
     location: { hash: '' }, window: { addEventListener() {}, scrollTo() {} },
     sessionStorage: { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key) },
-    fetch: async url => ({ ok: true, json: async () => structuredClone(String(url).includes('agent3-input') ? input : response) }),
+    fetch: async url => {
+      const path = String(url);
+      if (path.includes('/prototype-lab/defaults')) return { ok: !!options.labDefaults, json: async () => structuredClone(options.labDefaults) };
+      const value = path.includes('agent3-input') ? input : path.includes('agent3-samples') ? samples : path.includes('agent2-inputs') ? agent2Inputs : path.includes('agent1-inputs') ? agent1Inputs : response;
+      return { ok: true, json: async () => structuredClone(value) };
+    },
   });
-  const transport = new vm.SyntheticModule(['Agent2Api', 'Agent3Api', 'ApiError', 'MockPreview'], function () {
-    this.setExport('Agent2Api', class { assess() { throw new Error('Agent 2 is not exercised in these tests'); } });
+  const transport = new vm.SyntheticModule(['Agent1Api', 'Agent2Api', 'Agent3Api', 'ApiError', 'MockPreview'], function () {
+    this.setExport('Agent1Api', class { run(body, config) { return callbacks.agent1?.(body, config); } });
+    this.setExport('Agent2Api', class { assess(body, config) {
+      if (callbacks.assess) return callbacks.assess(body, config);
+      throw new Error('Agent 2 is not exercised in this test');
+    } });
     this.setExport('Agent3Api', FakeApi); this.setExport('ApiError', ApiError);
     this.setExport('MockPreview', class { constructor() {} });
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
-  await module.link(specifier => specifier === './api.js' ? transport : fixtures);
+  await module.link(specifier => {
+    if (specifier === './api.js') return transport;
+    if (specifier === './fixtures.js') return fixtures;
+    if (specifier === './data/request-samples.js') return requestSamples;
+    throw new Error(`Unexpected module: ${specifier}`);
+  });
   await module.evaluate();
   return { ...module.namespace, store };
 }
 
 function saved(store) { return JSON.parse(store.get(storageKey)); }
+
+test('Agent2 scope execution preserves the Agent3 sample and developer lab settings', async t => {
+  let received;
+  const result = structuredClone(input.a2_result);
+  const app = await boot({
+    labDefaults: { model: 'test-model', fake_response: { estimates: [] } },
+    callbacks: { assess: body => { received = body; return structuredClone(result); } },
+  });
+  t.after(app.cleanup);
+  const original = app.state.inputText;
+  await app.runAgent2();
+  assert.equal(received.context.case_id, 'CR-A-001');
+  assert.equal(app.a2.result.meta.result_id, result.meta.result_id);
+  assert.equal(app.lab.enabled, true);
+  assert.equal(app.lab.model, 'test-model');
+  assert.equal(app.state.inputText, original);
+  assert.equal(app.state.view, null);
+});
+
+test('Agent2 sends each selected case and keeps Agent3 input independent', async t => {
+  const received = [];
+  const app = await boot({ callbacks: { assess: body => {
+    received.push(body);
+    return structuredClone(samples.inputs[body.context.case_id].a2_result);
+  } } });
+  t.after(app.cleanup);
+  for (const id of ['CR-A-003', 'CR-B-002', 'CR-C-001']) {
+    app.state.id = id; app.selectCase(id);
+    const before = app.state.inputText;
+    await app.runAgent2();
+    assert.equal(received.at(-1).context.case_id, id);
+    assert.equal(app.a2.result.context.case_id, id);
+    assert.equal(app.state.inputText, before);
+    assert.match(app.scope(), /Agent 2/);
+  }
+});
+
+test('late Agent2 response cannot appear on another case', async t => {
+  let resolve;
+  const app = await boot({ callbacks: { assess: () => new Promise(done => { resolve = done; }) } });
+  t.after(app.cleanup);
+  app.state.id = 'CR-A-003'; app.selectCase('CR-A-003');
+  const work = app.runAgent2();
+  app.state.id = 'CR-B-002'; app.selectCase('CR-B-002');
+  resolve(structuredClone(samples.inputs['CR-A-003'].a2_result));
+  await work;
+  assert.equal(app.a2.result, null);
+  assert.equal(app.a2.pending, false);
+});
+
+test('Agent 1 and Agent 2 use their independently selected providers', async t => {
+  let a1Call, a2Call;
+  const app = await boot({ labDefaults: { model: 'default', fake_response: {} }, callbacks: {
+    agent1: (body, config) => { a1Call = { body, config }; return { context: body.context, items: [], meta: {}, status: 'READY' }; },
+    assess: (body, config) => { a2Call = { body, config }; return samples.inputs[body.context.case_id].a2_result; },
+  } });
+  t.after(app.cleanup);
+  app.state.id = 'CR-A-003'; app.selectCase('CR-A-003');
+  app.a1.provider = 'gemini'; app.a1.model = 'gemini-2.5-flash-lite';
+  app.a2.provider = 'bedrock'; app.a2.model = 'model-id';
+  await app.runAgent1(); await app.runAgent2();
+  assert.equal(a1Call.body.context.case_id, 'CR-A-003');
+  assert.equal(a1Call.config.provider, 'gemini');
+  assert.equal(a2Call.body.context.case_id, 'CR-A-003');
+  assert.equal(a2Call.config.provider, 'bedrock');
+  assert.equal(app.a2.result.context.case_id, 'CR-A-003');
+});
 
 test('successful prepare keeps its submitted conditions when editor changes during await', async t => {
   let resolve, received;
