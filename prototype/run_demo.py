@@ -12,7 +12,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-GEMINI_MODEL = "gemini-3.5-flash-lite"
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
@@ -76,11 +76,14 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--lab", action="store_true", help="Enable local developer controls using server-side .env credentials")
     parser.add_argument("--mode", choices=("fake", "gemini", "api"), default="fake")
     parser.add_argument("--model", help="Explicit Gemini model override; default is the pinned stable preset")
     parser.add_argument("--rate-card-file", help="Reviewed rate_cards JSON; otherwise RATE_CARD_FILE or bundled synthetic table")
     parser.add_argument("--check", action="store_true", help="Validate configuration and rate data with zero network calls; do not start a server")
     args = parser.parse_args(argv)
+    if args.lab and args.host not in ("127.0.0.1", "::1", "localhost"):
+        parser.error("--lab requires a loopback host")
     sys.path.insert(0, str(ROOT))
     from app.kb.rates import load_rate_cards
 
@@ -109,6 +112,8 @@ def main(argv=None) -> None:
             responses = Path(folder) / "fake-responses.json"
             responses.write_text(json.dumps(source * 200, ensure_ascii=False), encoding="utf-8")
         apply_environment(config, responses)
+        if args.lab:
+            os.environ["PROTOTYPE_LAB"] = "1"
         import uvicorn
 
         print(f"Local prototype: http://{args.host}:{args.port}/prototype/")

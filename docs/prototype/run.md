@@ -3,6 +3,23 @@
 현재 범위는 [구현 계획](implementation-plan.md)의 혼합안(B)이다.
 Figma C02~C06의 기본 구조를 기존 FastAPI 서버의 `/prototype/`에서 확인한다.
 
+## 화면에서 직접 모델 테스트하기
+
+1. 저장소 루트에서 `python prototype/run_demo.py --lab --port 8770`을 실행한다.
+   `--lab`은 로컬 주소에서만 사용할 수 있는 개발자 테스트 기능을 켠다.
+2. `http://127.0.0.1:8770/prototype/`을 열고 `CR-A-001` → **영향 산정**을 선택한다.
+3. **테스트 실행 설정**에서 `가상 응답`, `Gemini API`, `AWS Bedrock`을 선택한다.
+   가상 응답은 JSON을 직접 편집할 수 있다. Bedrock은 서버의 AWS 자격 증명과 모델 ID·리전이 필요하다.
+4. Gemini를 선택하면 서버가 `.env`의 `GEMINI_API_KEY`를 읽는다. 키는 브라우저에 입력하지 않는다.
+   기본 모델은 `gemini-2.5-flash-lite`이며 화면에서 모델 ID를 바꿀 수 있다.
+5. 아래 **테스트 입력**에서 샘플 입력을 확인하고 위쪽 **영향 산정 실행**을 누른다.
+   공수·가정을 확인하고 필요하면 수정한 뒤 일정 미산정을 체크하여 승인한다.
+   **승인·협의**에서 내부 초안을 볼 수 있으며 **결과 JSON · 버전**을 펼쳐 응답을 확인한다.
+
+Gemini·Bedrock 실행은 외부 API 호출이며 비용이 발생할 수 있다. 입력은 실제 모델로 전달되므로
+테스트에 사용할 데이터인지 확인한다. 기본 입력·단가는 합성 예시다.
+서버를 다시 시작하면 메모리의 테스트 세션이 초기화된다. 기본 실행 명령과 --lab은 별개의 모드다.
+
 ## 실행
 
 저장소 루트에서 기존 `requirements.txt`가 설치된 Python을 사용한다.
@@ -21,7 +38,7 @@ python prototype/run_demo.py
 - `AGENT_MODE=fixture`: 공유 A1/A2는 합성 입력을 유지한다. `/agent3`는 별도 공급자를 사용한다.
 - fake: `LLM_PROVIDER=fake`, `LLM_MODEL=fake-ui-demo`, 기존 합성 응답을 임시 파일에 200회 반복한다.
 - gemini (`api` 별칭): 기존 `local` OpenAI 호환 클라이언트, 고정 Google endpoint,
-  `gemini-3.5-flash-lite`, JSON schema 모드를 명시적으로 선택한다.
+  `gemini-2.5-flash-lite`, JSON schema 모드를 명시적으로 선택한다.
 - 수정·승인·협의안 템플릿은 추가 LLM 호출 없이 기존 코드로 처리한다.
 
 ### 무호출 사전 확인
@@ -45,7 +62,7 @@ python prototype/run_demo.py --mode gemini --check
 python prototype/run_demo.py --mode gemini --check
 python prototype/run_demo.py --mode gemini --port 8000
 # 다른 모델은 사용자가 명시적으로 선택한다.
-python prototype/run_demo.py --mode gemini --model gemini-3.5-flash-lite --check
+python prototype/run_demo.py --mode gemini --model gemini-2.5-flash-lite --check
 ```
 
 `GEMINI_API_KEY`가 우선하고, 비어 있으면 `LLM_API_KEY`를 사용한다.
@@ -75,8 +92,8 @@ python prototype/run_demo.py --mode gemini --rate-card-file /absolute/path/to/co
 파일 교체 후 fingerprint가 달라지면 이전 결과 승인이 차단되고 재계산·재승인이 필요하다.
 회사 단가표가 아직 없으면 Gemini 모드도 기본 합성 표를 사용한다. 이는 실제 견적 검증이 아니다.
 
-공식 모델·스키마 근거와 검증 한계는 [Agent 3 API 준비](../agent3-api-plan.md)를 참고한다.
-이번 준비 중 외부 모델 API는 호출하지 않았고 HTTP mock으로 연결 계약만 검증했다.
+공식 모델·스키마 근거와 검증 한계는 [Agent 3 API 준비](../agent3/agent3-api-plan.md)를 참고한다.
+초기 준비에서는 HTTP mock으로 연결 계약을 검증했다. 이후 --lab에서 합성 입력으로 Gemini 2.5 Flash-Lite 실제 산정·승인·초안을 확인했다. Google은 2.5 모델 접근을 과거 사용 이력이 있는 사용자로 제한한다고 안내하므로 실제 키의 접근 가능 여부는 별도 확인해야 한다.
 
 ## 확인할 흐름
 

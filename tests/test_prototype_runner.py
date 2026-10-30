@@ -22,7 +22,7 @@ def test_fake_default_and_explicit_gemini_presets_ignore_stale_provider_environm
     selected = args()
     selected.mode = "gemini"
     gemini = run_demo.configuration(selected, environment)
-    assert gemini.model == "gemini-3.5-flash-lite" and gemini.api_key == "mock-secret"
+    assert gemini.model == "gemini-2.5-flash-lite" and gemini.api_key == "mock-secret"
     assert "mock-secret" not in repr(gemini)
     for name in ("AGENT_MODE", "AGENT2_MODE", "LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "LLM_BASE_URL", "LLM_LOCAL_JSON_MODE", "LLM_FAKE_RESPONSES", "RATE_CARD_FILE", "LLM_MAX_TOKENS"):
         monkeypatch.setenv(name, "stale")

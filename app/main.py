@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from pathlib import Path
+import os
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -28,6 +29,11 @@ app = FastAPI(
 app.include_router(router)
 app.include_router(agent2_router)
 app.include_router(agent3_router)
+
+# The developer-only API is enabled only by the explicit local prototype runner.
+if os.environ.get("PROTOTYPE_LAB") == "1":
+    from prototype.lab import router as lab_router
+    app.include_router(lab_router)
 
 # Local confirmation UI; business APIs and workflow ownership remain unchanged.
 prototype_dir = Path(__file__).resolve().parents[1] / "prototype"

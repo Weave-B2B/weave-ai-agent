@@ -27,7 +27,7 @@ AI 서버 저장소에서 Figma의 변경요청 메뉴처럼 Agent 동작을 눈
 | [PRD v0.1](https://app.notion.com/p/84da8da523568391a37401a82ba4d47a) | 서비스의 문제·가설·MVP 방향 | 10/16 작성 맥락의 인터뷰 전 가설/MVP 제안. 최종 확정 PRD로 단정하지 않음 |
 | [MVP 기능 요구사항 v0.2](https://app.notion.com/p/453a8da523568248a772811cb0a01d0c) | 기능 우선순위·독립 상태·화면 구조 | 본문 최근 수정 10/19, 우선순위 제안. 전체 MVP를 이번 UI 범위로 승격하지 않음 |
 | [Figma 03 / Lo-Fi & Wireframes](https://www.figma.com/design/Pq2PLWBhkSupb6ThD8oELN/?node-id=242-2370) | C02~C06 변경요청 화면과 행동 | 앞선 자료 조사에서 context/screenshot 확인. 실제 제품 클릭 검증과 구분 |
-| [Agent 3 초기 MVP](../agent3-mvp.md) | 현재 구현·API·PM 승인 경계 | 코드와 대조한 이번 연동의 직접 기준 |
+| [Agent 3 초기 MVP](../agent3/agent3-mvp.md) | 현재 구현·API·PM 승인 경계 | 코드와 대조한 이번 연동의 직접 기준 |
 
 전체 PRD를 다시 만들 필요는 없다. 이번에 보충할 것은 **선택 화면·mock/API 경계·상태별 수용 기준**이다.
 PRD/요구사항이 초안인 사실만으로 모든 개발을 막지는 않되, 업무 정책의 미결 사항을 UI가 임의 확정하지 않는다.

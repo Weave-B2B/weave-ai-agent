@@ -13,8 +13,8 @@
               1
             ],
             "role": "PM",
-            "md": 0.5,
-            "assumption": "검토용 가상 공수"
+            "assumption": "검토용 가상 공수",
+            "rule_id": "review_pm"
           },
           {
             "task": "리뷰 UI 설계",
@@ -22,8 +22,8 @@
               1
             ],
             "role": "UX",
-            "md": 1.5,
-            "assumption": "사진 포함 가정"
+            "assumption": "사진 포함 가정",
+            "rule_id": "review_ux"
           },
           {
             "task": "리뷰·선택적 사진 최대 3장 첨부 UI",
@@ -31,8 +31,8 @@
               1
             ],
             "role": "FE",
-            "md": 3.0,
-            "assumption": "사진 포함 가정"
+            "assumption": "사진 포함 가정",
+            "rule_id": "review_fe"
           },
           {
             "task": "리뷰 API·구매자 검증·이미지 저장",
@@ -40,8 +40,8 @@
               1
             ],
             "role": "BE",
-            "md": 3.5,
-            "assumption": "기존 이미지 저장소 재사용"
+            "assumption": "기존 이미지 저장소 재사용",
+            "rule_id": "review_be"
           },
           {
             "task": "기능·회귀 테스트",
@@ -49,8 +49,8 @@
               1
             ],
             "role": "QA",
-            "md": 1.5,
-            "assumption": "검토용 가상 공수"
+            "assumption": "검토용 가상 공수",
+            "rule_id": "review_qa"
           }
         ]
       }
