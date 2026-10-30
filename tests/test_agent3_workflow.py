@@ -28,7 +28,7 @@ def review_request(view, **changes):
     return ReviewImpact.model_validate(body)
 
 
-def edit_request(view, md=3.5):
+def edit_request(view, md=4.5):
     edits = [{"item_ids": e["item_ids"], "lines": copy.deepcopy(e["lines"])} for e in view["impact"]["estimates"]]
     edits[0]["lines"][0]["md"] = md
     return EditImpact(state_revision=view["state_revision"], target_result_id=view["impact"]["meta"]["result_id"],
@@ -42,7 +42,7 @@ def test_workflow_never_creates_draft_before_pm_approval(workflow, a3_input):
     assert view["draft"] is None and view["impact"]["draft"] is None
     result = workflow.review(view["session_id"], review_request(view))
     assert result["phase"] == "DRAFT_READY"
-    assert result["draft"]["cost"] == "판매 산정가 3,300,000원 / VAT 별도 / 단가표 RC-SYNTH-2026H2-v1"
+    assert result["draft"]["cost"] == "판매 산정가 5,150,000원 / VAT 별도 / 단가표 RC-SYNTH-2026H2-v1"
     assert "일정 영향 미산정" in result["draft"]["impact"]
     assert "FSP-A-001-v1.0:F-11" in result["draft"]["scope"]
     assert "가능하면" in result["draft"]["scope"]
@@ -58,12 +58,12 @@ def test_pm_edit_recalculates_and_invalidates_old_approval_and_draft(workflow, a
     assert edited["phase"] == "WAITING_IMPACT_APPROVAL" and edited["draft"] is None
     assert edited["approval"] is None
     assert edited["impact"]["meta"]["result_id"] != old["impact"]["meta"]["result_id"]
-    assert edited["impact"]["estimates"][0]["totals"]["price"] == 4000000
+    assert edited["impact"]["estimates"][0]["totals"]["price"] == 5850000
     assert edited["history"][0]["approval"]["approved"] is True
     with pytest.raises(WorkflowConflict):
         workflow.review(old["session_id"], review_request(old))
     final = workflow.review(old["session_id"], review_request(edited, request_id="request-2"))
-    assert "4,000,000원" in final["draft"]["cost"]
+    assert "5,850,000원" in final["draft"]["cost"]
 
 
 def test_rejection_and_idempotency_preserve_decisions(workflow, a3_input):
@@ -112,7 +112,7 @@ def test_supplied_rate_file_can_be_replaced_but_old_result_cannot_be_approved(wo
     with pytest.raises(WorkflowConflict, match="rate card changed"):
         workflow.review(view["session_id"], review_request(view))
     recalculated = workflow.edit(view["session_id"], edit_request(view, md=2.5))
-    assert recalculated["impact"]["estimates"][0]["totals"]["price"] == 3550000
+    assert recalculated["impact"]["estimates"][0]["totals"]["price"] == 4700000
     assert recalculated["rate_card_fingerprint"] != view["rate_card_fingerprint"]
 
 
@@ -138,7 +138,18 @@ def test_edit_can_resolve_missing_rate_by_removing_unused_role(workflow, a3_inpu
 def test_get_returns_an_isolated_copy(workflow, a3_input):
     view = workflow.prepare(a3_input)
     view["impact"]["estimates"][0]["totals"]["price"] = 1
-    assert workflow.get(view["session_id"])["impact"]["estimates"][0]["totals"]["price"] == 3300000
+    assert workflow.get(view["session_id"])["impact"]["estimates"][0]["totals"]["price"] == 5150000
+
+
+def test_changed_effort_rules_block_approval(workflow, a3_input, monkeypatch):
+    from app.agents.agent3 import workflow as workflow_module
+    from app.agents.agent3.effort import load_effort_rules
+    view = workflow.prepare(a3_input)
+    changed = load_effort_rules()
+    changed["version"] = "changed"
+    monkeypatch.setattr(workflow_module, "load_effort_rules", lambda: changed)
+    with pytest.raises(WorkflowConflict, match="changed"):
+        workflow.review(view["session_id"], review_request(view))
 
 
 def test_workflow_api_runs_approval_flow_and_rejects_tampering(workflow, a3_input, monkeypatch):

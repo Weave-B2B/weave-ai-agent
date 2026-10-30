@@ -1,4 +1,6 @@
-export const records = [
+import { requestSamples } from "./data/request-samples.js";
+
+const legacyRecords = [
   { id: "CR-A-001", title: "상품 리뷰 기능 추가 (별점·텍스트·사진)", project: "자사몰 구축 · 모노마켓", requester: "이정민", channel: "이메일", date: "10-06", scope: "범위 밖", process: "PM 검토 필요", approval: "미요청", customer: "미요청", md: "미산정", price: "—", owner: "김", elapsed: "6일", api: true },
   { id: "CR-004", title: "멤버십 등급 기준 변경", project: "멤버십 앱 리뉴얼 · 다라리테일", requester: "최유진", channel: "이메일", date: "10-13", scope: "판단 보류", process: "PM 검토 필요", approval: "미요청", customer: "미요청", md: "미산정", price: "—", owner: "정", elapsed: "2일" },
   { id: "CR-005", title: "주문 엑셀 일괄 업로드", project: "B2B 주문 포털 · 마바유통", requester: "한도윤", channel: "이메일", date: "10-17", scope: "범위 밖", process: "내부 승인 대기", approval: "대기", customer: "미요청", md: "9.0 MD", price: "380만원 (예시)", owner: "김", elapsed: "3일" },
@@ -11,6 +13,22 @@ export const records = [
   { id: "CR-014", title: "배송 추적 API 연동", project: "B2B 주문 포털 · 마바유통", requester: "한도윤", channel: "전화", date: "10-20", scope: "미분석", process: "접수", approval: "미요청", customer: "미요청", md: "미산정", price: "—", owner: "김", elapsed: "0일" },
   { id: "CR-006", title: "관리자 권한 3단계 세분화", project: "B2B 주문 포털 · 마바유통", requester: "한도윤", channel: "회의 메모", date: "10-02", scope: "범위 밖", process: "실행 중", approval: "승인 v2 (예시)", customer: "증빙 확인", md: "5.0 MD", price: "200만원 (예시)", owner: "정", elapsed: "—" },
   { id: "CR-016", title: "상품 목록 정렬 기준 변경", project: "자사몰 구축 · 모노마켓", requester: "이정민", channel: "이메일", date: "10-21", scope: "판단 보류", process: "PM 검토 필요", approval: "미요청", customer: "미요청", md: "미산정", price: "—", owner: "김", elapsed: "1일" },
+];
+
+// Keep the existing demo records; CR-A-001 already represents the first dataset request.
+export const records = [
+  ...legacyRecords.filter(record => record.id === "CR-A-001").map(record => ({
+    ...record, project: requestSamples[0].project_name, requester: requestSamples[0].sender_name,
+  })),
+  ...requestSamples.filter(item => item.case_id !== "CR-A-001").map(item => ({
+    id: item.case_id, title: item.subject, project: item.project_name,
+    requester: item.sender_name, requesterRole: item.sender_role, channel: item.channel_src,
+    date: item.received_at.slice(5, 10), receivedAt: item.received_at,
+    messageText: item.message_text, datasetSample: true,
+    scope: "미분석", process: "접수", approval: "미요청", customer: "미요청",
+    md: "미산정", price: "—", owner: "—", elapsed: "—", api: true,
+  })),
+  ...legacyRecords.filter(record => record.id !== "CR-A-001"),
 ];
 
 export const sampleItems = [

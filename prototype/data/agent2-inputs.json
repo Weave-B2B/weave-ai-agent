@@ -1,0 +1,1425 @@
+{
+  "CR-C-001": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-001",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-001-r1",
+      "scenario_id": "S3-CR-C-001"
+    },
+    "message_text": "고객이 친구를 초대하면 추천인과 가입자 모두 포인트를 지급하는 캠페인을 하려고 합니다. 추천 코드 생성과 적립금 정산도 넣어주세요.",
+    "a1_result_id": "A1-S3-CR-C-001-v05",
+    "items": [
+      {
+        "item_id": "CR-C-001-1",
+        "case_id": "CR-C-001",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "친구 추천 포인트(추천인·가입자 지급), 추천 코드 생성, 적립금 정산",
+        "spans": [
+          {
+            "start": 0,
+            "end": 47,
+            "text": "고객이 친구를 초대하면 추천인과 가입자 모두 포인트를 지급하는 캠페인을 하려고 합니다"
+          },
+          {
+            "start": 49,
+            "end": 72,
+            "text": "추천 코드 생성과 적립금 정산도 넣어주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-08"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-002": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-002",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-002-r1",
+      "scenario_id": "S3-CR-C-002"
+    },
+    "message_text": "고객이 다음 달 배송 한 번만 쉬고 그다음 달부터 자동으로 재개하는 흐름은 현재 기획대로 맞죠?",
+    "a1_result_id": "A1-S3-CR-C-002-v05",
+    "items": [
+      {
+        "item_id": "CR-C-002-1",
+        "case_id": "CR-C-002",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "다음 회차 1회 건너뛰기 후 자동 재개 흐름 확인",
+        "spans": [
+          {
+            "start": 0,
+            "end": 53,
+            "text": "고객이 다음 달 배송 한 번만 쉬고 그다음 달부터 자동으로 재개하는 흐름은 현재 기획대로 맞죠?"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-02"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-003": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-003",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-003-r1",
+      "scenario_id": "S3-CR-C-003"
+    },
+    "message_text": "한 달만 쉬는 게 아니라 고객이 3개월 연속 배송을 건너뛰도록 바꿀 수 있을까요? 신규 요구로 검토 부탁드립니다.",
+    "a1_result_id": "A1-S3-CR-C-003-v05",
+    "items": [
+      {
+        "item_id": "CR-C-003-1",
+        "case_id": "CR-C-003",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "구독 배송 3개월 연속 건너뛰기",
+        "spans": [
+          {
+            "start": 14,
+            "end": 45,
+            "text": "고객이 3개월 연속 배송을 건너뛰도록 바꿀 수 있을까요?"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-09"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-004": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-004",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-004-r1",
+      "scenario_id": "S3-CR-C-004"
+    },
+    "message_text": "[기획회의] 다음 달 한 번 건너뛰기는 그대로 유지하고, 매월 구독 결제 시 쿠폰이 자동 적용되도록 새 기능을 추가하면 좋겠어요.",
+    "a1_result_id": "A1-S3-CR-C-004-v05",
+    "items": [
+      {
+        "item_id": "CR-C-004-1",
+        "case_id": "CR-C-004",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "다음 달 1회 건너뛰기 기존대로 유지",
+        "spans": [
+          {
+            "start": 7,
+            "end": 30,
+            "text": "다음 달 한 번 건너뛰기는 그대로 유지하고"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-02"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      },
+      {
+        "item_id": "CR-C-004-2",
+        "case_id": "CR-C-004",
+        "display_no": "R2",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "매월 구독 결제 시 쿠폰 자동 적용",
+        "spans": [
+          {
+            "start": 32,
+            "end": 71,
+            "text": "매월 구독 결제 시 쿠폰이 자동 적용되도록 새 기능을 추가하면 좋겠어요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-10"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-005": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-005",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-005-r1",
+      "scenario_id": "S3-CR-C-005"
+    },
+    "message_text": "정기결제가 실패하면 고객 이메일로 안내가 나가고 발송 로그가 남는지 확인 부탁드립니다. 테스트 케이스에도 넣을게요.",
+    "a1_result_id": "A1-S3-CR-C-005-v05",
+    "items": [
+      {
+        "item_id": "CR-C-005-1",
+        "case_id": "CR-C-005",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "정기결제 실패 시 이메일 안내·발송 로그 확인",
+        "spans": [
+          {
+            "start": 0,
+            "end": 47,
+            "text": "정기결제가 실패하면 고객 이메일로 안내가 나가고 발송 로그가 남는지 확인 부탁드립니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-03"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-006": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-006",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-006-r1",
+      "scenario_id": "S3-CR-C-006"
+    },
+    "message_text": "이메일을 잘 안 보는 고객이 많아서 결제 실패 시 문자(SMS)도 자동 발송해 주세요. 기존 이메일은 유지합니다.",
+    "a1_result_id": "A1-S3-CR-C-006-v05",
+    "items": [
+      {
+        "item_id": "CR-C-006-1",
+        "case_id": "CR-C-006",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "결제 실패 시 SMS 자동 발송 추가",
+        "spans": [
+          {
+            "start": 20,
+            "end": 47,
+            "text": "결제 실패 시 문자(SMS)도 자동 발송해 주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-11"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      },
+      {
+        "item_id": "CR-C-006-2",
+        "case_id": "CR-C-006",
+        "display_no": "R2",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "기존 결제 실패 이메일 알림 유지",
+        "spans": [
+          {
+            "start": 49,
+            "end": 62,
+            "text": "기존 이메일은 유지합니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-03"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-007": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-007",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-007-r1",
+      "scenario_id": "S3-CR-C-007"
+    },
+    "message_text": "모바일 웹 말고 아이폰 앱스토어에 올릴 수 있는 앱도 이번에 만들어주세요. 안드로이드도 가능하면 같이요.",
+    "a1_result_id": "A1-S3-CR-C-007-v05",
+    "items": [
+      {
+        "item_id": "CR-C-007-1",
+        "case_id": "CR-C-007",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "iOS 앱(앱스토어 배포) 개발, (가능하면) Android 앱 포함",
+        "spans": [
+          {
+            "start": 9,
+            "end": 40,
+            "text": "아이폰 앱스토어에 올릴 수 있는 앱도 이번에 만들어주세요"
+          },
+          {
+            "start": 42,
+            "end": 57,
+            "text": "안드로이드도 가능하면 같이요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-12"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-008": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-008",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-008-r1",
+      "scenario_id": "S3-CR-C-008"
+    },
+    "message_text": "[QA 회의] 마이페이지에서 구독 해지 버튼을 눌러도 해지 확인창이 열리지 않아요. 테스트 계정으로 재현됩니다.",
+    "a1_result_id": "A1-S3-CR-C-008-v05",
+    "items": [
+      {
+        "item_id": "CR-C-008-1",
+        "case_id": "CR-C-008",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "defect",
+        "text": "마이페이지 구독 해지 버튼 클릭 시 해지 확인창 미표시",
+        "spans": [
+          {
+            "start": 8,
+            "end": 45,
+            "text": "마이페이지에서 구독 해지 버튼을 눌러도 해지 확인창이 열리지 않아요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-05"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-C-009": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-009",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-009-r1",
+      "scenario_id": "S3-CR-C-009"
+    },
+    "message_text": "고객 구독 상태와 다음 결제일을 외부 CRM에 실시간으로 보내는 API를 추가하고 싶습니다. 기존 CRM 담당자와 인터페이스 협의가 필요합니다.",
+    "a1_result_id": "A1-S3-CR-C-009-v05",
+    "items": [
+      {
+        "item_id": "CR-C-009-1",
+        "case_id": "CR-C-009",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "구독 상태·다음 결제일 외부 CRM 실시간 전송 API",
+        "spans": [
+          {
+            "start": 0,
+            "end": 50,
+            "text": "고객 구독 상태와 다음 결제일을 외부 CRM에 실시간으로 보내는 API를 추가하고 싶습니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-13"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [
+      {
+        "item_id": "CR-C-009-2",
+        "case_id": "CR-C-009",
+        "display_no": "R2",
+        "item_type": "dependency",
+        "intent": "constraint",
+        "text": "CRM 담당자와 인터페이스 협의 필요",
+        "spans": [
+          {
+            "start": 52,
+            "end": 79,
+            "text": "기존 CRM 담당자와 인터페이스 협의가 필요합니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "answers": []
+  },
+  "CR-C-010": {
+    "context": {
+      "project_id": "P-COM-103",
+      "case_id": "CR-C-010",
+      "request_revision": 1,
+      "baseline_id": "P-COM-103:BL-1",
+      "baseline_as_of": "2026-08-17",
+      "analysis_id": "AN-CR-C-010-r1",
+      "scenario_id": "S3-CR-C-010"
+    },
+    "message_text": "구독료가 29,900원인데 어떤 고객은 이번 달에 32,900원으로 표시됩니다. 배송비 때문인지 오류인지 확인해 주세요. 주문번호는 나중에 전달할게요.",
+    "a1_result_id": "A1-S3-CR-C-010-v05",
+    "items": [
+      {
+        "item_id": "CR-C-010-1",
+        "case_id": "CR-C-010",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "issue_report",
+        "text": "구독료 29,900원 대신 32,900원 표시 — 배송비 정책 또는 오류 확인",
+        "spans": [
+          {
+            "start": 0,
+            "end": 43,
+            "text": "구독료가 29,900원인데 어떤 고객은 이번 달에 32,900원으로 표시됩니다"
+          },
+          {
+            "start": 45,
+            "end": 66,
+            "text": "배송비 때문인지 오류인지 확인해 주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-C-001-v1.0:F-14"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-A-001": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-001",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-001-r1",
+      "scenario_id": null
+    },
+    "message_text": "안녕하세요. 상세페이지에 구매자 별점과 후기 텍스트를 넣고, 가능하면 사진도 3장까지 올리게 해주세요. 변경합의된 11월 24일 오픈일은 유지해야 합니다. 견적도 부탁드립니다.",
+    "a1_result_id": "A1-S3-CR-A-001-v05",
+    "items": [
+      {
+        "item_id": "CR-A-001-1",
+        "case_id": "CR-A-001",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "상세페이지 구매자 별점·후기 텍스트 등록, (가능하면) 사진 최대 3장 첨부",
+        "spans": [
+          {
+            "start": 7,
+            "end": 32,
+            "text": "상세페이지에 구매자 별점과 후기 텍스트를 넣고"
+          },
+          {
+            "start": 34,
+            "end": 56,
+            "text": "가능하면 사진도 3장까지 올리게 해주세요"
+          }
+        ],
+        "source": "ai",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-11"
+        ],
+        "inferred": false
+      }
+    ],
+    "constraints": [
+      {
+        "item_id": "CR-A-001-2",
+        "case_id": "CR-A-001",
+        "display_no": "R2",
+        "item_type": "deadline",
+        "intent": "constraint",
+        "text": "변경합의된 오픈일 2026-11-24 유지",
+        "spans": [
+          {
+            "start": 58,
+            "end": 85,
+            "text": "변경합의된 11월 24일 오픈일은 유지해야 합니다"
+          }
+        ],
+        "source": "ai",
+        "feature_candidates": [],
+        "inferred": false
+      }
+    ],
+    "answers": []
+  },
+  "CR-A-002": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-002",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-002-r1",
+      "scenario_id": "S3-CR-A-002"
+    },
+    "message_text": "상품 검색할 때 가격을 1만원~3만원으로 좁히고 브랜드도 동시에 고를 수 있게 되는 거죠? QA에서 같이 확인하려고요.",
+    "a1_result_id": "A1-S3-CR-A-002-v05",
+    "items": [
+      {
+        "item_id": "CR-A-002-1",
+        "case_id": "CR-A-002",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "검색 시 가격 범위(1만~3만원)·브랜드 필터 동시 적용 가능 여부 확인",
+        "spans": [
+          {
+            "start": 0,
+            "end": 50,
+            "text": "상품 검색할 때 가격을 1만원~3만원으로 좁히고 브랜드도 동시에 고를 수 있게 되는 거죠?"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-03"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-A-003": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-003",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-003-r1",
+      "scenario_id": "S3-CR-A-003"
+    },
+    "message_text": "관리자 주문목록을 엑셀(.xlsx)로 내려받을 수 있게 버튼 하나 추가해 주세요. 월말 정산 때문에 급합니다.",
+    "a1_result_id": "A1-S3-CR-A-003-v05",
+    "items": [
+      {
+        "item_id": "CR-A-003-1",
+        "case_id": "CR-A-003",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "관리자 주문목록 엑셀(.xlsx) 다운로드 버튼 추가",
+        "spans": [
+          {
+            "start": 0,
+            "end": 44,
+            "text": "관리자 주문목록을 엑셀(.xlsx)로 내려받을 수 있게 버튼 하나 추가해 주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-12"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [
+      {
+        "item_id": "CR-A-003-2",
+        "case_id": "CR-A-003",
+        "display_no": "R2",
+        "item_type": "deadline",
+        "intent": "constraint",
+        "text": "월말 정산 전 필요(급함, 날짜 미정)",
+        "spans": [
+          {
+            "start": 46,
+            "end": 60,
+            "text": "월말 정산 때문에 급합니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "answers": []
+  },
+  "CR-A-004": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-004",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-004-r1",
+      "scenario_id": "S3-CR-A-004"
+    },
+    "message_text": "[주간회의] 기존 가격/브랜드 필터는 예정대로 진행해 주세요. 추가로 해외 고객을 위한 영어 상품 상세페이지도 부탁드립니다. 오픈일은 11월 23일 그대로 가면 좋겠습니다.",
+    "a1_result_id": "A1-S3-CR-A-004-v05",
+    "items": [
+      {
+        "item_id": "CR-A-004-1",
+        "case_id": "CR-A-004",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "기존 가격/브랜드 필터 예정대로 진행",
+        "spans": [
+          {
+            "start": 7,
+            "end": 33,
+            "text": "기존 가격/브랜드 필터는 예정대로 진행해 주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-03"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      },
+      {
+        "item_id": "CR-A-004-2",
+        "case_id": "CR-A-004",
+        "display_no": "R2",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "해외 고객용 영어 상품 상세페이지 추가",
+        "spans": [
+          {
+            "start": 39,
+            "end": 68,
+            "text": "해외 고객을 위한 영어 상품 상세페이지도 부탁드립니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-13"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [
+      {
+        "item_id": "CR-A-004-3",
+        "case_id": "CR-A-004",
+        "display_no": "R3",
+        "item_type": "deadline",
+        "intent": "constraint",
+        "text": "오픈일 11월 23일 유지 희망(변경합의 기준 11/24와 다름)",
+        "spans": [
+          {
+            "start": 70,
+            "end": 95,
+            "text": "오픈일은 11월 23일 그대로 가면 좋겠습니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "answers": []
+  },
+  "CR-A-005": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-005",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-005-r1",
+      "scenario_id": "S3-CR-A-005"
+    },
+    "message_text": "스테이징에서 검색 결과가 느리게 나오는 것 같아요. 5초쯤 걸린 적이 있는데 개선해 주세요. 동시접속 조건이나 재현 로그는 아직 없습니다.",
+    "a1_result_id": "A1-S3-CR-A-005-v05",
+    "items": [
+      {
+        "item_id": "CR-A-005-1",
+        "case_id": "CR-A-005",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "issue_report",
+        "text": "스테이징 검색 응답 지연(약 5초) 개선",
+        "spans": [
+          {
+            "start": 0,
+            "end": 27,
+            "text": "스테이징에서 검색 결과가 느리게 나오는 것 같아요"
+          },
+          {
+            "start": 29,
+            "end": 50,
+            "text": "5초쯤 걸린 적이 있는데 개선해 주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-10"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-A-006": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-006",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-006-r1",
+      "scenario_id": "S3-CR-A-006"
+    },
+    "message_text": "지난 5일에 양쪽 서명한 배송사 조회 링크 추가 건은 어디까지 진행됐나요? 이건 승인된 거라 알고 있습니다.",
+    "a1_result_id": "A1-S3-CR-A-006-v05",
+    "items": [
+      {
+        "item_id": "CR-A-006-1",
+        "case_id": "CR-A-006",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "status_check",
+        "text": "변경합의(10/5 서명) 배송사 조회 링크 추가 건 진행 상황 문의",
+        "spans": [
+          {
+            "start": 0,
+            "end": 41,
+            "text": "지난 5일에 양쪽 서명한 배송사 조회 링크 추가 건은 어디까지 진행됐나요?"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "CO-A-001-v1.0:CO-01"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-A-007": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-007",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-007-r1",
+      "scenario_id": "S3-CR-A-007"
+    },
+    "message_text": "테스트 카드로 결제 버튼을 누르면 오류가 뜨고 주문이 안 만들어져요. 로그는 메일로 보내겠습니다.",
+    "a1_result_id": "A1-S3-CR-A-007-v05",
+    "items": [
+      {
+        "item_id": "CR-A-007-1",
+        "case_id": "CR-A-007",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "defect",
+        "text": "테스트 카드 결제 시 오류 발생, 주문 미생성",
+        "spans": [
+          {
+            "start": 0,
+            "end": 37,
+            "text": "테스트 카드로 결제 버튼을 누르면 오류가 뜨고 주문이 안 만들어져요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-05",
+          "FSP-A-001-v1.0:F-09"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-A-008": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-008",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-008-r1",
+      "scenario_id": "S3-CR-A-008"
+    },
+    "message_text": "[회의 메모] 사진은 빼고 별점만 넣으면 얼마나 더 드나요? 아직 개발 진행하라는 승인은 아니고 비용 검토만 부탁합니다.",
+    "a1_result_id": "A1-S3-CR-A-008-v05",
+    "items": [
+      {
+        "item_id": "CR-A-008-1",
+        "case_id": "CR-A-008",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "estimate_only",
+        "text": "상품 별점 기능만(사진 제외) 추가 시 비용 검토",
+        "spans": [
+          {
+            "start": 8,
+            "end": 33,
+            "text": "사진은 빼고 별점만 넣으면 얼마나 더 드나요?"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-11"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [
+      {
+        "item_id": "CR-A-008-2",
+        "case_id": "CR-A-008",
+        "display_no": "R2",
+        "item_type": "constraint",
+        "intent": "constraint",
+        "text": "개발 진행 승인 아님, 비용 검토만",
+        "spans": [
+          {
+            "start": 34,
+            "end": 66,
+            "text": "아직 개발 진행하라는 승인은 아니고 비용 검토만 부탁합니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "answers": []
+  },
+  "CR-A-009": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-009",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-009-r1",
+      "scenario_id": "S3-CR-A-009"
+    },
+    "message_text": "런칭 이벤트에서 신규회원 쿠폰과 배송비 쿠폰을 한 주문에 함께 적용하고 싶습니다. 지금 한 장만 되는 걸 두 장으로 바꿔주세요.",
+    "a1_result_id": "A1-S3-CR-A-009-v05",
+    "items": [
+      {
+        "item_id": "CR-A-009-1",
+        "case_id": "CR-A-009",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "한 주문에 쿠폰 2장(신규회원·배송비) 중복 적용",
+        "spans": [
+          {
+            "start": 9,
+            "end": 44,
+            "text": "신규회원 쿠폰과 배송비 쿠폰을 한 주문에 함께 적용하고 싶습니다"
+          },
+          {
+            "start": 46,
+            "end": 70,
+            "text": "지금 한 장만 되는 걸 두 장으로 바꿔주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-14"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-A-010": {
+    "context": {
+      "project_id": "P-COM-101",
+      "case_id": "CR-A-010",
+      "request_revision": 1,
+      "baseline_id": "P-COM-101:BL-2",
+      "baseline_as_of": "2026-10-05",
+      "analysis_id": "AN-CR-A-010-r1",
+      "scenario_id": "S3-CR-A-010"
+    },
+    "message_text": "8월 25일 회의 초안에는 영어 페이지가 있었던 것 같은데, 지금도 포함 아닌가요? 9월 1일 확정본 기준으로 확인 부탁해요.",
+    "a1_result_id": "A1-S3-CR-A-010-v05",
+    "items": [
+      {
+        "item_id": "CR-A-010-1",
+        "case_id": "CR-A-010",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "영어 페이지 포함 여부 확인(9/1 확정본 기준)",
+        "spans": [
+          {
+            "start": 0,
+            "end": 46,
+            "text": "8월 25일 회의 초안에는 영어 페이지가 있었던 것 같은데, 지금도 포함 아닌가요?"
+          },
+          {
+            "start": 47,
+            "end": 69,
+            "text": "9월 1일 확정본 기준으로 확인 부탁해요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-A-001-v1.0:F-13"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-001": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-001",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-001-r1",
+      "scenario_id": "S3-CR-B-001"
+    },
+    "message_text": "거래처에서 품목 800개가 담긴 CSV를 업로드하는 시나리오를 테스트하려고 합니다. 파일 형식과 오류 안내 화면 공유 부탁드립니다.",
+    "a1_result_id": "A1-S3-CR-B-001-v05",
+    "items": [
+      {
+        "item_id": "CR-B-001-1",
+        "case_id": "CR-B-001",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "800행 CSV 업로드 테스트 — 파일 형식·오류 안내 화면 공유 요청",
+        "spans": [
+          {
+            "start": 0,
+            "end": 45,
+            "text": "거래처에서 품목 800개가 담긴 CSV를 업로드하는 시나리오를 테스트하려고 합니다"
+          },
+          {
+            "start": 47,
+            "end": 72,
+            "text": "파일 형식과 오류 안내 화면 공유 부탁드립니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-02"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-002": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-002",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-002-r1",
+      "scenario_id": "S3-CR-B-002"
+    },
+    "message_text": "일부 거래처가 한 번에 5천 줄을 올립니다. 1천 줄 제한을 없애고 5천 줄까지 한 번에 받도록 바꿔주세요.",
+    "a1_result_id": "A1-S3-CR-B-002-v05",
+    "items": [
+      {
+        "item_id": "CR-B-002-1",
+        "case_id": "CR-B-002",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "CSV 업로드 한도 1,000행 → 5,000행 확대",
+        "spans": [
+          {
+            "start": 25,
+            "end": 59,
+            "text": "1천 줄 제한을 없애고 5천 줄까지 한 번에 받도록 바꿔주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-08"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-003": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-003",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-003-r1",
+      "scenario_id": "S3-CR-B-003"
+    },
+    "message_text": "ERP 재고가 바뀌면 포털에도 즉시 반영되게 해주세요. 기존 새벽 2시 배치는 그대로 두고요.",
+    "a1_result_id": "A1-S3-CR-B-003-v05",
+    "items": [
+      {
+        "item_id": "CR-B-003-1",
+        "case_id": "CR-B-003",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "ERP 재고 변경 즉시 포털 반영(실시간 동기화)",
+        "spans": [
+          {
+            "start": 0,
+            "end": 29,
+            "text": "ERP 재고가 바뀌면 포털에도 즉시 반영되게 해주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-09"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      },
+      {
+        "item_id": "CR-B-003-2",
+        "case_id": "CR-B-003",
+        "display_no": "R2",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "기존 새벽 2시 ERP 배치 유지",
+        "spans": [
+          {
+            "start": 31,
+            "end": 51,
+            "text": "기존 새벽 2시 배치는 그대로 두고요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-04"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-004": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-004",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-004-r1",
+      "scenario_id": "S3-CR-B-004"
+    },
+    "message_text": "[운영회의] 오늘 오전 9시에도 어젯밤 주문이 ERP에서 안 보였습니다. 연동 오류인지 원래 그런 건지 확인해주세요. 배치 성공 로그는 아직 못 받았습니다.",
+    "a1_result_id": "A1-S3-CR-B-004-v05",
+    "items": [
+      {
+        "item_id": "CR-B-004-1",
+        "case_id": "CR-B-004",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "issue_report",
+        "text": "전일 야간 주문이 익일 09시에도 ERP 미반영 — 연동 오류 여부 확인",
+        "spans": [
+          {
+            "start": 7,
+            "end": 39,
+            "text": "오늘 오전 9시에도 어젯밤 주문이 ERP에서 안 보였습니다"
+          },
+          {
+            "start": 41,
+            "end": 64,
+            "text": "연동 오류인지 원래 그런 건지 확인해주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-04"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-005": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-005",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-005-r1",
+      "scenario_id": "S3-CR-B-005"
+    },
+    "message_text": "주문 상세에서 세금계산서를 PDF로 발급받을 수 있도록 버튼을 넣고 싶습니다. ERP에 들어가는 번거로움을 없애고 싶어요.",
+    "a1_result_id": "A1-S3-CR-B-005-v05",
+    "items": [
+      {
+        "item_id": "CR-B-005-1",
+        "case_id": "CR-B-005",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "주문 상세 세금계산서 PDF 발급 버튼 추가",
+        "spans": [
+          {
+            "start": 0,
+            "end": 42,
+            "text": "주문 상세에서 세금계산서를 PDF로 발급받을 수 있도록 버튼을 넣고 싶습니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-10"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-006": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-006",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-006-r1",
+      "scenario_id": "S3-CR-B-006"
+    },
+    "message_text": "거래처 등급을 A/B/C에서 VIP까지 4단계로 늘릴 수 있을까요? VIP 단가는 별도로 관리하려고요.",
+    "a1_result_id": "A1-S3-CR-B-006-v05",
+    "items": [
+      {
+        "item_id": "CR-B-006-1",
+        "case_id": "CR-B-006",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "change_request",
+        "text": "거래처 가격 등급 4단계(VIP 추가) 및 VIP 단가 별도 관리",
+        "spans": [
+          {
+            "start": 0,
+            "end": 37,
+            "text": "거래처 등급을 A/B/C에서 VIP까지 4단계로 늘릴 수 있을까요?"
+          },
+          {
+            "start": 38,
+            "end": 56,
+            "text": "VIP 단가는 별도로 관리하려고요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-11"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-007": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-007",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-007-r1",
+      "scenario_id": "S3-CR-B-007"
+    },
+    "message_text": "거래처 담당자가 휴대폰 브라우저로 주문 목록을 확인하는 건 원래 되는 거죠? 앱 설치까지는 필요 없어요.",
+    "a1_result_id": "A1-S3-CR-B-007-v05",
+    "items": [
+      {
+        "item_id": "CR-B-007-1",
+        "case_id": "CR-B-007",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "휴대폰 브라우저에서 주문 목록 조회 가능 여부 확인",
+        "spans": [
+          {
+            "start": 0,
+            "end": 42,
+            "text": "거래처 담당자가 휴대폰 브라우저로 주문 목록을 확인하는 건 원래 되는 거죠?"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-05"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [
+      {
+        "item_id": "CR-B-007-2",
+        "case_id": "CR-B-007",
+        "display_no": "R2",
+        "item_type": "constraint",
+        "intent": "constraint",
+        "text": "앱 설치 불필요",
+        "spans": [
+          {
+            "start": 43,
+            "end": 57,
+            "text": "앱 설치까지는 필요 없어요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "answers": []
+  },
+  "CR-B-008": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-008",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-008-r1",
+      "scenario_id": "S3-CR-B-008"
+    },
+    "message_text": "[회의] 거래처 신규 가입 즉시 주문이 되도록 승인 단계를 없애면 어떨까요? 당장 반영하라는 건 아니고 영향 검토 부탁드립니다.",
+    "a1_result_id": "A1-S3-CR-B-008-v05",
+    "items": [
+      {
+        "item_id": "CR-B-008-1",
+        "case_id": "CR-B-008",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "estimate_only",
+        "text": "신규 거래처 승인 단계 제거(가입 즉시 주문) 영향 검토",
+        "spans": [
+          {
+            "start": 5,
+            "end": 42,
+            "text": "거래처 신규 가입 즉시 주문이 되도록 승인 단계를 없애면 어떨까요?"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-12"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [
+      {
+        "item_id": "CR-B-008-2",
+        "case_id": "CR-B-008",
+        "display_no": "R2",
+        "item_type": "constraint",
+        "intent": "constraint",
+        "text": "즉시 반영 아님, 영향 검토만",
+        "spans": [
+          {
+            "start": 43,
+            "end": 70,
+            "text": "당장 반영하라는 건 아니고 영향 검토 부탁드립니다"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "answers": []
+  },
+  "CR-B-009": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-009",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-009-r1",
+      "scenario_id": "S3-CR-B-009"
+    },
+    "message_text": "영업 미팅에서 사내 SSO도 가능하다고 들었는데, 정식 계약서와 기능명세서에는 안 보이네요. 이번 범위에 포함인지 확인해주세요.",
+    "a1_result_id": "A1-S3-CR-B-009-v05",
+    "items": [
+      {
+        "item_id": "CR-B-009-1",
+        "case_id": "CR-B-009",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "confirmation",
+        "text": "사내 SSO 로그인 포함 여부 확인(영업 미팅 구두 언급)",
+        "spans": [
+          {
+            "start": 0,
+            "end": 26,
+            "text": "영업 미팅에서 사내 SSO도 가능하다고 들었는데"
+          },
+          {
+            "start": 52,
+            "end": 70,
+            "text": "이번 범위에 포함인지 확인해주세요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-13"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  },
+  "CR-B-010": {
+    "context": {
+      "project_id": "P-COM-102",
+      "case_id": "CR-B-010",
+      "request_revision": 1,
+      "baseline_id": "P-COM-102:BL-1",
+      "baseline_as_of": "2026-09-14",
+      "analysis_id": "AN-CR-B-010-r1",
+      "scenario_id": "S3-CR-B-010"
+    },
+    "message_text": "주문 목록에서 CSV 내려받기를 누르면 빈 파일이 나옵니다. 거래처 필터 걸었을 때만 그런 것 같아요.",
+    "a1_result_id": "A1-S3-CR-B-010-v05",
+    "items": [
+      {
+        "item_id": "CR-B-010-1",
+        "case_id": "CR-B-010",
+        "display_no": "R1",
+        "item_type": "function",
+        "intent": "defect",
+        "text": "거래처 필터 적용 시 주문 목록 CSV가 빈 파일로 다운로드됨",
+        "spans": [
+          {
+            "start": 0,
+            "end": 32,
+            "text": "주문 목록에서 CSV 내려받기를 누르면 빈 파일이 나옵니다"
+          },
+          {
+            "start": 34,
+            "end": 56,
+            "text": "거래처 필터 걸었을 때만 그런 것 같아요"
+          }
+        ],
+        "source": "gold",
+        "feature_candidates": [
+          "FSP-B-001-v1.0:F-06"
+        ],
+        "inferred": false,
+        "gold_origin": "upstream_gold:PD_label+evidence;items_provisional;review_needed"
+      }
+    ],
+    "constraints": [],
+    "answers": []
+  }
+}

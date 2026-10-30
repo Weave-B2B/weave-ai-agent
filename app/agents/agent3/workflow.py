@@ -14,6 +14,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.agent3.guards import finalize_estimates
+from app.agents.agent3.effort import load_effort_rules
 from app.agents.agent3.prompts import TEMPLATE_VERSION
 from app.agents.base import Agent3
 from app.kb.loader import rate_cards
@@ -62,7 +63,7 @@ def _rate_hash(rate_card_id: str) -> str:
     cards = rate_cards()
     if rate_card_id not in cards:
         raise ValueError("unknown rate card")
-    return _hash(cards[rate_card_id])
+    return _hash({"rate_card": cards[rate_card_id], "effort_rules": load_effort_rules()})
 
 
 def _snapshot_hash(out: Agent3Output) -> str:
@@ -163,6 +164,7 @@ class Agent3Workflow:
                 if any(not math.isfinite(line.md) or line.md < 0 or (line.md * 2) % 1 for line in edit.lines):
                     raise ValueError("MD must be finite, nonnegative and use 0.5 steps")
                 estimate.lines, estimate.status = edit.lines, "draft"
+            out.questions = [q for q in out.questions if q.question_id != f"{s.inp.context.case_id}-A3QRULE"]
             out.questions = [q for q in out.questions if q.question_id != f"{s.inp.context.case_id}-A3Q9"]
             out.status = "NEEDS_INPUT" if any(q.blocking and q.status in ("open", "answered") for q in out.questions) else "IMPACT_DRAFT_READY"
             self._validate_targets(s.inp, out)

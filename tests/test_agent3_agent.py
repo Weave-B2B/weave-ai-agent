@@ -20,9 +20,9 @@ def a3_input():
 @pytest.fixture
 def a3_payload():
     return {"estimates": [{"item_numbers": [1], "status": "draft", "lines": [
-        {"task": "리뷰 API", "item_numbers": [1], "role": "BE", "md": 2.5, "assumption": "기존 저장소 재사용"},
-        {"task": "리뷰 UI, 선택적 사진 최대 3장", "item_numbers": [1], "role": "FE", "md": 2.0, "assumption": "사진 포함 가정"},
-        {"task": "테스트", "item_numbers": [1], "role": "QA", "md": 0.5, "assumption": ""}
+        {"task": "리뷰 API", "item_numbers": [1], "role": "BE", "rule_id": "review_be", "md": 2.5, "assumption": "기존 저장소 재사용"},
+        {"task": "리뷰 UI, 선택적 사진 최대 3장", "item_numbers": [1], "role": "FE", "rule_id": "review_fe", "md": 2.0, "assumption": "사진 포함 가정"},
+        {"task": "테스트", "item_numbers": [1], "role": "QA", "rule_id": "review_qa", "md": 0.5, "assumption": ""}
     ]}], "questions": []}
 
 
@@ -30,9 +30,9 @@ def test_agent3_uses_agent1_client_pattern_but_only_returns_impact(a3_input, a3_
     model = FakeLlm([a3_payload])
     output = LlmAgent3(model).run(a3_input)
     assert output.status == "IMPACT_DRAFT_READY" and output.draft is None
-    assert output.estimates[0].totals.md == 5.0
-    assert output.estimates[0].totals.price == 3300000
-    assert output.estimates[0].totals.cost == 2300000
+    assert output.estimates[0].totals.md == 8.0
+    assert output.estimates[0].totals.price == 5150000
+    assert output.estimates[0].totals.cost == 3590000
     assert output.estimates[0].totals_source == "calc_cost"
     assert output.estimates[0].schedule.business_days is None
     assert output.meta.model == "fake:fake" and output.meta.agent_version.startswith("agent3-")
@@ -112,3 +112,19 @@ def test_blocking_question_preserves_waiting_input(a3_input, a3_payload):
     a3_payload["questions"] = [{"item_numbers": [1], "text": "필수 조건?", "reason": "필수 정보 없음", "blocking": True}]
     out = LlmAgent3(FakeLlm([a3_payload])).run(a3_input)
     assert out.status == "NEEDS_INPUT" and out.draft is None
+
+
+def test_missing_rule_blocks_calculation(a3_input, a3_payload):
+    a3_payload["estimates"][0]["lines"][0]["rule_id"] = "unknown"
+    out = LlmAgent3(FakeLlm([a3_payload])).run(a3_input)
+    assert out.status == "NEEDS_INPUT"
+    assert out.estimates[0].status == "not_estimable"
+    assert out.estimates[0].totals is None
+    assert any(q.field == "effort_rule" and q.blocking for q in out.questions)
+
+
+def test_example_rules_do_not_apply_to_changed_request(a3_input, a3_payload):
+    a3_input.items[0].text = "다른 기능 요청"
+    out = LlmAgent3(FakeLlm([a3_payload])).run(a3_input)
+    assert out.status == "NEEDS_INPUT"
+    assert out.estimates[0].totals is None

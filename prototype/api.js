@@ -14,11 +14,12 @@ function detailMessage(detail) {
 }
 
 export class Agent3Api {
+  lab = false;
   async request(path, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 65000);
     try {
-      const response = await fetch(`/agent3/impacts${path}`, {
+      const response = await fetch(`${this.lab ? "/prototype-lab/impacts" : "/agent3/impacts"}${path}`, {
         ...options,
         headers: { "Content-Type": "application/json", ...options.headers },
         signal: controller.signal,
@@ -34,7 +35,7 @@ export class Agent3Api {
       clearTimeout(timer);
     }
   }
-  prepare(input) { return this.request("", { method: "POST", body: JSON.stringify(input) }); }
+  prepare(input, config = {}) { return this.request("", { method: "POST", body: JSON.stringify(this.lab ? { input, ...config } : input) }); }
   get(id) { return this.request(`/${encodeURIComponent(id)}`); }
   edit(id, input) { return this.request(`/${encodeURIComponent(id)}/edit`, { method: "POST", body: JSON.stringify(input) }); }
   review(id, input) { return this.request(`/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify(input) }); }
@@ -67,12 +68,12 @@ export class MockPreview {
 
 // Agent 2 범위 판단: POST /agent2/assessments (Agent2Input → Agent2Output). 결과는 저장하지 않으므로 세션이 없다.
 export class Agent2Api {
-  async assess(input) {
+  async assess(input, config = null) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000);   // 에이전트가 여러 번 조사하므로 Agent 3보다 길게
     try {
-      const response = await fetch("/agent2/assessments", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal: controller.signal,
+      const response = await fetch(config ? "/prototype-lab/agent2" : "/agent2/assessments", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config ? { input, ...config } : input), signal: controller.signal,
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new ApiError(response.status, detailMessage(body?.detail));
@@ -84,5 +85,24 @@ export class Agent2Api {
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+export class Agent1Api {
+  async run(input, config) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000);
+    try {
+      const response = await fetch('/prototype-lab/agent1', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ input, ...config }), signal: controller.signal,
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new ApiError(response.status, detailMessage(body?.detail));
+      if (!Array.isArray(body?.items) || !body?.meta) throw new ApiError(502, 'Agent 1 응답 형식을 확인해 주세요.');
+      return body;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(0, error.name === 'AbortError' ? '응답 시간이 초과됐습니다.' : 'AI 서버에 연결할 수 없습니다.');
+    } finally { clearTimeout(timer); }
   }
 }

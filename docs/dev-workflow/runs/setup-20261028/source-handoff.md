@@ -10,7 +10,7 @@
 - 기존 API: `app/api/agent3_routes.py`; 산정 생성·조회·공수 수정·승인/반려.
 - 기존 확인 화면: `app/demo_agent3.py`, `app/demo_streamlit.py`.
   이 화면은 API 대신 `Agent3Workflow`를 직접 실행한다.
-- 최신 구체 설명은 `docs/agent3-mvp.md`. README 뒤쪽에 미구현이라는 오래된 표현이 섞여 있다.
+- 최신 구체 설명은 `docs/agent3/agent3-mvp.md`. README 뒤쪽에 미구현이라는 오래된 표현이 섞여 있다.
 - `schema/schemas.py`, 공통 오케스트레이션, A1/A2와 데이터 딕셔너리는 협업 영역이다.
   이번 구성 작업에서 이 영역과 앱 코드를 변경하지 않는다.
 

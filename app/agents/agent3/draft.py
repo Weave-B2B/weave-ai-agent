@@ -15,12 +15,13 @@ class ProposedLine(_Proposal):
     task: str = Field(min_length=1)
     item_numbers: list[int] = Field(min_length=1)
     role: Role
-    md: float = Field(ge=0)
+    rule_id: str = ""
+    md: float | None = Field(default=None, ge=0)  # Legacy model value is never used for calculation.
     assumption: str = ""
 
     @model_validator(mode="after")
     def check_md(self):
-        if (self.md * 2) % 1:
+        if self.md is not None and (self.md * 2) % 1:
             raise ValueError("MD must use 0.5 steps")
         return self
 
