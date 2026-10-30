@@ -4,7 +4,7 @@
 
 **팀 개발 워크플로:** [공유 개발 스킬 사용법](docs/dev-workflow/README.md) — 다른 에이전트 개발·API/화면 기능 추가에 저장소의 역할 정의와 QA 절차를 재사용할 수 있습니다.
 
-**에이전트 3 MVP 추가 (#5):** [산정 → PM 승인 → 협의안 실행 안내](docs/agent3-mvp.md). 에이전트 1과 같은 구조화 LLM 클라이언트를 사용하며, 별도의 `/agent3` API로 먼저 연동합니다. 실제 모델 품질·CN DB 연동은 별도 검증 대상입니다. 아래 공통 `/cases` 흐름의 기존 상태 전이는 유지합니다.
+**에이전트 3 MVP 추가 (#5):** [산정 → PM 승인 → 협의안 실행 안내](docs/agent3/agent3-mvp.md). 에이전트 1과 같은 구조화 LLM 클라이언트를 사용하며, 별도의 `/agent3` API로 먼저 연동합니다. 실제 모델 품질·CN DB 연동은 별도 검증 대상입니다. 아래 공통 `/cases` 흐름의 기존 상태 전이는 유지합니다.
 
 **테스트 화면:** `python -m streamlit run app/demo_streamlit.py`의 **③ Agent3** 탭에서 입력·산정·공수 수정·승인·협의안을 확인할 수 있습니다. 에이전트 3만 열려면 `python -m streamlit run app/demo_agent3.py`를 사용합니다. 기본 모드는 반복 실행 가능한 오프라인 가상 응답입니다.
 

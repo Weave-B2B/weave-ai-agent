@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from app.agents.agent3.draft import Agent3ImpactDraft
+from app.agents.agent3.effort import load_effort_rules
 from app.agents.agent3.guards import finalize_estimates
 from app.agents.agent3.prompts import PLAN_SYSTEM, PROMPT_VERSION, build_user_prompt
 from app.agents.base import AgentFailure
@@ -55,19 +56,37 @@ class LlmAgent3:
             pass
 
         estimates = []
+        effort_rules = load_effort_rules()
+        missing_rules = []
         for estimate in proposal.estimates:
             item_ids = ids(estimate.item_numbers)
             lines = []
+            used_rules = set()
+            invalid_rule = False
             for line in estimate.lines:
                 line_ids = ids(line.item_numbers)
                 if not set(line_ids) <= set(item_ids):
                     self._invalid("task references a different estimate")
+                rule = effort_rules["rules"].get(line.rule_id)
+                matched_targets = {t.item_id: t.text for t in targets if t.item_id in line_ids}
+                sample_matches = bool(rule) and inp.context.case_id == rule.get("case_id") and (
+                    matched_targets == rule.get("targets") if "targets" in rule
+                    else bool(matched_targets) and all(text == rule.get("target_text") for text in matched_targets.values()))
+                if rule and "constraints" in rule:
+                    sample_matches = sample_matches and [item.text for item in inp.constraints] == rule["constraints"]
+                if not sample_matches or not rule or rule["role"] != line.role or line.rule_id in used_rules:
+                    invalid_rule = True
+                    continue
+                used_rules.add(line.rule_id)
                 lines.append(Line(task=line.task, item_ids=line_ids, role=line.role,
-                                  md=line.md, assumption=line.assumption))
+                                  md=rule["md"], assumption=f"{line.assumption} [테스트 공수 기준 {effort_rules['version']}:{line.rule_id}]"))
+            if invalid_rule:
+                missing_rules.extend(item_ids)
+                lines = []
             if lines and {i for line in lines for i in line.item_ids} != set(item_ids):
                 self._invalid("task lines must cover every estimate item")
             estimates.append(Estimate(
-                item_ids=item_ids, status=estimate.status, lines=lines,
+                item_ids=item_ids, status="not_estimable" if invalid_rule else estimate.status, lines=lines,
                 schedule=Schedule(business_days=None, basis=basis,
                     reason=estimate.reason or "가용 인력·선행 작업 정보가 없어 일정 영향 미산정"),
                 rate_card_id=inp.rate_card_id,
@@ -77,18 +96,24 @@ class LlmAgent3:
             stage="agent3", item_ids=ids(q.item_numbers), field=q.field,
             text=q.text, reason=q.reason, target=q.target, blocking=q.blocking,
         ) for n, q in enumerate(proposal.questions, 1)]
+        if missing_rules:
+            questions.append(Question(question_id=f"{inp.context.case_id}-A3QRULE", case_id=inp.context.case_id,
+                stage="agent3", item_ids=sorted(set(missing_rules)), field="effort_rule",
+                text="해당 작업에 적용할 공수 기준을 확인해주세요.",
+                reason="적합한 테스트 공수 기준이 없거나 중복됨", target="pm", blocking=True))
         if not questions and any(e.status == "not_estimable" for e in estimates):
             unresolved = [i for e in estimates if e.status == "not_estimable" for i in e.item_ids]
             questions.append(Question(question_id=f"{inp.context.case_id}-A3Q1", case_id=inp.context.case_id,
                 stage="agent3", item_ids=unresolved, field="estimation_details",
                 text="공수 산정을 위해 대상·규모·구현 조건을 구체화해주세요.",
-                reason="요구사항 또는 작업 규모 부족으로 산정할 수 없음", target="pm", blocking=False))
+                reason="요구사항 또는 작업 규모 부족으로 산정할 수 없음", target="pm", blocking=True))
         out = Agent3Output(
             context=inp.context,
             meta=Meta(model=result.label, latency_ms=result.latency_ms, agent_version="agent3-0.1.0",
                 debug={"prompt_version": PROMPT_VERSION, "retried": result.retried,
+                       "effort_rule_version": effort_rules["version"],
                        "input_tokens": result.usage.input_tokens, "output_tokens": result.usage.output_tokens}),
-            status="NEEDS_INPUT" if any(q.blocking for q in questions) else "IMPACT_DRAFT_READY",
+            status="NEEDS_INPUT" if any(q.blocking for q in questions) or any(e.status == "not_estimable" for e in estimates) else "IMPACT_DRAFT_READY",
             estimates=estimates, questions=questions, draft=None,
         )
         return finalize_estimates(out, inp.rate_card_id)

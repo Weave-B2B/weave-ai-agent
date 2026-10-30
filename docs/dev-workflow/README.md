@@ -43,6 +43,6 @@ $manager-dev-workflow
 기존 Agent 3 화면 작업의 현재 상태와 다음 필요한 작업을 확인해줘.
 ```
 
-Agent 3의 실제 산정·PM 승인·협의안 계약은 [MVP 문서](../agent3-mvp.md)를 따른다.
+Agent 3의 실제 산정·PM 승인·협의안 계약은 [MVP 문서](../agent3/agent3-mvp.md)를 따른다.
 이 계약은 다른 에이전트의 기본 계약이 아니다. 새 API를 개발한 것만으로 화면이
 자동 연결되는 것은 아니며 해당 화면 adapter·이벤트·상태와 관련 QA를 별도 작업으로 잡는다.

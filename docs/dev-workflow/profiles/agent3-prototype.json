@@ -101,7 +101,7 @@
       }
     ],
     "local": [
-      "docs/agent3-mvp.md",
+      "docs/agent3/agent3-mvp.md",
       "app/api/agent3_routes.py",
       "app/agents/agent3/workflow.py",
       "app/demo_agent3.py",

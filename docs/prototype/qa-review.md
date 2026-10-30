@@ -8,7 +8,7 @@
 
 - 저장소: `/Users/mac/Documents/Project/Practical_Project/development/weave-ai-agent`
 - 제품 검토 경로: `prototype/**`, `app/main.py`의 정적 mount 추가
-- 기준: `AGENTS.md`, 원본 `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/validate-conventions.yml`, `.agents/skills/manager-dev-workflow/SKILL.md` 및 protocol, `docs/dev-workflow/project.json`, `docs/prototype/source-map.md`, `readiness.md`, `implementation-plan.md`의 UI-01~13, `docs/agent3-mvp.md`
+- 기준: `AGENTS.md`, 원본 `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/validate-conventions.yml`, `.agents/skills/manager-dev-workflow/SKILL.md` 및 protocol, `docs/dev-workflow/project.json`, `docs/prototype/source-map.md`, `readiness.md`, `implementation-plan.md`의 UI-01~13, `docs/agent3/agent3-mvp.md`
 - 위 로컬 문서는 실제 읽었다. `source-map.md`에 연결된 Notion 원문은 이번 QA에서 재조회하지 않았다. 기획 문서의 제안/검토 상태를 전체 제품 승인으로 승격하지 않았다.
 - C02~C04는 명시적인 fixture, C05/C06은 기존 생성·조회·수정·review 네 API다. 새 업무 API·DB·인프라·실제 인증·고객 발송은 제외했다.
 - 사용자 미리보기 `127.0.0.1:8765`를 종료하거나 사용하지 않았다. QA 전용 `127.0.0.1:8766`과 별도 Chrome 탭 두 개를 사용했다.

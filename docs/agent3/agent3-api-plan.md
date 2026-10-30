@@ -12,7 +12,7 @@
 - `app/llm/local.py`: 이름은 local이지만 `/chat/completions`와 Bearer 인증을 사용하는 OpenAI 호환 HTTP 클라이언트다. API 주소·모델·키와 제공업체 호환성을 확인해야 한다.
 - `prototype/run_demo.py`: fake를 기본값으로 유지하고 명시적 Gemini/API 모드, 무호출 `--check`, 외부 단가 파일 선택을 지원한다.
 
-기존 계약의 자세한 사용법은 [Agent 3 MVP](agent3-mvp.md), 화면 범위는 [구현 계획](prototype/implementation-plan.md)을 따른다.
+기존 계약의 자세한 사용법은 [Agent 3 MVP](agent3-mvp.md), 화면 범위는 [구현 계획](../prototype/implementation-plan.md)을 따른다.
 
 ## 단가표는 계산용 구조화 데이터로 관리
 
@@ -36,17 +36,17 @@ LLM이 제안한 작업·직군·공수에 정확한 버전의 단가를 조회�
 
 ## Gemini 연결 준비 결과
 
-2026-10-28 공식 문서 확인 기준 stable model ID는 `gemini-3.5-flash-lite`다.
+2026-10-29 공식 문서 확인 기준 선택한 stable model ID는 `gemini-2.5-flash-lite`다.
 고정 preset을 사용하며, 향후 모델 변경은 `--model`로 사용자가 명시적으로 선택한다.
-이 모델은 structured outputs를 지원한다. [Google 모델 문서](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite).
+이 모델은 structured outputs를 지원한다. Google은 과거 2.5 모델을 사용한 계정에 접근을 제한한다고 안내하므로 키별 사용 가능 여부를 확인해야 한다. [Google 모델 문서](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash-lite).
 
 기존 `LocalLlm` HTTP 클라이언트를 재사용한다. `LLM_PROVIDER=local`이라는 내부 이름은 유지되며
-API metadata는 `local:gemini-3.5-flash-lite`다. 새 SDK·대형 provider·업무 서버를 추가하지 않았다.
+API metadata는 `local:gemini-2.5-flash-lite`다. 새 SDK·대형 provider·업무 서버를 추가하지 않았다.
 공식 호환 API의 base URL은 `https://generativelanguage.googleapis.com/v1beta/openai/`,
 인증은 Gemini 키의 Bearer 헤더이고 `/chat/completions`를 호출한다.
 [Google OpenAI 호환 API](https://ai.google.dev/gemini-api/docs/openai).
 
-실행은 [실행 안내](prototype/run.md)의 `--mode gemini` (`api` 별칭)를 사용한다.
+실행은 [실행 안내](../prototype/run.md)의 `--mode gemini` (`api` 별칭)를 사용한다.
 `GEMINI_API_KEY` > `LLM_API_KEY` 순으로 서버 환경 키를 선택한다. 키를 화면·로그·보고서에 쓰지 않는다.
 이전 provider의 환경 설정이 선택을 바꾸지 않도록 endpoint/provider/JSON 모드는 preset으로 덮어쓴다.
 모델 선택은 `--model` > preset이며 기존 `LLM_MODEL` 값은 무시한다. A1/A2는 fixture를 유지한다.

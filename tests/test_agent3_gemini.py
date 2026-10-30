@@ -66,11 +66,11 @@ def test_gemini_http_prepare_edit_review_draft_contract(a3_input, a3_payload, mo
         assert view["draft"] is None and view["impact"]["meta"]["model"] == "local:" + GEMINI_MODEL
         base = "/agent3/impacts/" + view["session_id"]
         edited = client.post(base + "/edit", json=edit_request(view).model_dump(mode="json")).json()
-        assert edited["impact"]["estimates"][0]["totals"]["price"] == 4000000
+        assert edited["impact"]["estimates"][0]["totals"]["price"] == 5850000
         assert edited["draft"] is None
         final = client.post(base + "/review", json=review_request(edited).model_dump(mode="json"))
         assert final.status_code == 200 and final.json()["phase"] == "DRAFT_READY"
-        assert "4,000,000원" in final.json()["draft"]["cost"]
+        assert "5,850,000원" in final.json()["draft"]["cost"]
         assert "mock-private-key" not in final.text
         assert len(calls) == 1  # edits and approved template do not call a model
     llm.client.close()
