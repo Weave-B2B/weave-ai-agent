@@ -61,6 +61,7 @@ function route() {
 }
 
 function selectCase(id) {
+  if (activeCase && activeCase !== id) rememberA1Case(activeCase);
   activeCase = id;
   agent2Input = agent2Inputs?.[id] ? structuredClone(agent2Inputs[id]) : null;
   a2.generation++; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
@@ -70,6 +71,7 @@ function selectCase(id) {
   state.scenario = "normal"; state.inputSource = "sample"; state.inputText = JSON.stringify(baseInput, null, 2); state.sampleInputText = state.inputText;
   state.view = null; state.edits = null; state.submittedInput = null; state.signature = null;
   state.error = null; state.conflicted = false; state.invalidated = false; state.originalLines = [];
+  restoreA1Case(id);
   if (id !== "CR-A-001") state.mode = "api";
   if (lab.enabled) lab.fakeText = JSON.stringify(samples.fake_responses[id] || lab.defaultFake, null, 2);
 }
@@ -174,8 +176,32 @@ function original() {
   return `<div class="columns"><div class="stack"><section class="card"><div class="card-heading"><div><h2>요청 원문</h2><p class="caption">원문은 조회용 합성 데이터이며 실제 수신함과 연결되지 않습니다.</p></div><span class="chip subtle">${icon("83533")}원문 보존</span></div><div class="metadata-box"><dl><dt>보낸 사람</dt><dd>${e(record().requester)} (고객 PM)</dd><dt>받는 사람</dt><dd>김서윤 (한빛디지털 · PM)</dd><dt>수신 일시</dt><dd>2026-${record().date} 09:12</dd><dt>채널</dt><dd>${record().channel} · 원문 예시</dd><dt>첨부</dt><dd>${icon("7502b")}첨부 업로드는 이번 범위 밖</dd></dl></div><div class="original-text"><strong>제목: [자사몰] 상품 리뷰 기능 요청드립니다</strong><p>안녕하세요. 지난 주간 회의에서 말씀드린 리뷰 기능을 정리해서 보내드립니다.</p>${(apiCase ? ["상세페이지에 구매자 별점과 후기 텍스트를 넣어 주세요.", "가능하면 사진도 3장까지 올리게 해주세요.", "변경 합의된 11월 24일 오픈일은 유지해야 합니다."] : ["상품 상세 페이지에서 별점(5점) 리뷰를 작성할 수 있게 해 주세요.", "텍스트 리뷰도 함께 작성·조회가 되어야 합니다.", "가능하면 사진도 여러 장 첨부할 수 있으면 좋겠습니다.", "리뷰는 실제 구매한 고객만 작성할 수 있어야 합니다.", "오픈 일정은 그대로 유지 부탁드립니다."]).map((line, i) => `<div class="highlight"><span class="number">${i + 1}</span><span>${line}</span></div>`).join("")}<p>검토 후 회신 부탁드립니다. 감사합니다.</p></div><div class="card-footer">${icon("2b0e7")}회색 하이라이트 = 항목으로 추출한 원문 위치</div></section><section class="card"><div class="card-heading"><div><h2>PM 메모</h2><p class="caption">실제 저장 기능은 연결 전입니다.</p></div>${button("메모 추가", "unused", { disabled: true, icon: "416f8" })}</div><p class="caption"><span class="avatar">김</span> 김서윤 · 로컬 예시</p><p style="margin-top:10px">사진 포함 여부와 기존 저장소 재사용 가정을 확인해야 합니다. 업무 확정·고객 전달은 별도 담당자가 결정합니다.</p></section></div><div class="stack"><section class="card"><div class="card-heading"><div><h2>${icon("2b0e7")} ${a1.result ? "Agent 1 실행 결과" : "AI 요청 항목화"}</h2><p class="caption">${a1.result ? "방금 실행한 Agent 1 요청 항목화 결과입니다." : "상위 Agent 1·2 결과의 합성 입력"}</p></div>${chip(a1.result ? "실행 완료" : "AI 제안", a1.result ? "success" : "ai")}</div>${items.map(item => `<div class="list-item"><span class="item-no">${e(item[0])}</span><span class="mini-tag">${e(item[1])}</span><div class="item-main"><strong>${e(item[2])}</strong><small>${icon("e0393")}${a1.result ? "Agent 1 실행 근거" : "원문 연결 · 합성 근거"}</small></div>${icon("e7746")}</div>`).join("")}<div class="card-footer">${button("항목 추가", "unused", { disabled: true, icon: "416f8" })}${button(a1.result ? "Agent 1 다시 실행" : "AI 재분석", "run-a1", { disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase], icon: "e4529" })}</div></section><section class="card"><h2>확인 질문</h2><p class="caption">${a1.result ? "Agent 1이 실행 결과에서 추가 확인이 필요한 항목입니다." : "실행 전 합성 확인 질문입니다."}</p>${questions}</section></div></div>`;
 }
 // ---- C04 범위 검토: Agent 2 실제 결과 (POST /agent2/assessments). 실행 전·조회 예시는 기존 합성 화면(scopeSample) ----
+const A1_MEMORY_STORAGE = "weave-prototype-agent1-memory-v1";
 const a1 = { result: null, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
 const a2 = { result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
+let a1Memory = {};
+try { a1Memory = JSON.parse(sessionStorage.getItem(A1_MEMORY_STORAGE) || "{}") || {}; } catch { a1Memory = {}; }
+function rememberA1Case(caseId = activeCase) {
+  if (!caseId) return;
+  a1Memory[caseId] = {
+    result: a1.result ? structuredClone(a1.result) : null,
+    error: a1.error ? structuredClone(a1.error) : null,
+    provider: a1.provider,
+    model: a1.model,
+    region: a1.region,
+  };
+  try { sessionStorage.setItem(A1_MEMORY_STORAGE, JSON.stringify(a1Memory)); } catch { /* Browser memory still works when session storage is unavailable. */ }
+}
+function restoreA1Case(caseId) {
+  const saved = a1Memory[caseId];
+  if (!saved) return;
+  a1.result = saved.result ? structuredClone(saved.result) : null;
+  a1.pending = false;
+  a1.error = saved.error ? structuredClone(saved.error) : null;
+  if (saved.provider) a1.provider = saved.provider;
+  if (saved.model) a1.model = saved.model;
+  if (saved.region) a1.region = saved.region;
+}
 function agentSettings(name, data) {
   if (!lab.enabled) return '<div class="notice">공급자를 선택하려면 서버를 <code>python prototype/run_demo.py --lab</code>로 실행하세요.</div>';
   return `<section class="card"><h2>${name === 'a1' ? 'Agent 1' : 'Agent 2'} 테스트 실행 설정</h2><p class="caption">가상 응답은 저장된 합성 사례를 반환합니다. Gemini·GPT·Bedrock은 외부 모델을 호출하며 인증 정보는 서버에서 사용합니다.</p><div class="button-group">${[['fake','가상 응답'],['gemini','Gemini API'],['openai','GPT API'],['bedrock','AWS Bedrock']].map(([value,label]) => `<label class="check"><input type="radio" name="${name}-provider" value="${value}" ${data.provider === value ? 'checked' : ''} ${data.pending ? 'disabled' : ''}>${label}</label>`).join('')}</div>${data.provider !== 'fake' ? `<label class="field">모델 ID<input id="${name}-model" value="${e(data.model)}" ${data.pending ? 'disabled' : ''}></label>` : ''}${data.provider === 'bedrock' ? `<label class="field">AWS 리전<input id="${name}-region" value="${e(data.region)}" ${data.pending ? 'disabled' : ''}></label>` : ''}</section>`;
@@ -190,9 +216,9 @@ async function runAgent1() {
     const result = await agent1.run(input, config);
     if (a1.generation !== generation || activeCase !== caseId) return;
     if (result.context?.case_id !== caseId || result.context?.project_id !== input.context.project_id) throw new Error('다른 요청의 Agent 1 결과가 반환되었습니다.');
-    a1.result = result; toast('Agent 1 요청 항목화 결과를 받았습니다.');
-  } catch (error) { if (a1.generation === generation && activeCase === caseId) a1.error = { status: error.status || 0, message: error.message }; }
-  finally { if (a1.generation === generation && activeCase === caseId) { a1.pending = false; render(); } }
+    a1.result = result; rememberA1Case(caseId); toast('Agent 1 요청 항목화 결과를 받았습니다.');
+  } catch (error) { if (a1.generation === generation && activeCase === caseId) { a1.error = { status: error.status || 0, message: error.message }; rememberA1Case(caseId); } }
+  finally { if (a1.generation === generation && activeCase === caseId) { a1.pending = false; rememberA1Case(caseId); render(); } }
 }
 function agent1Panel() {
   const label = a1.pending ? '요청 항목화 중… (최대 1~2분)' : a1.result ? '다시 실행' : 'Agent 1 요청 항목화 실행';
@@ -514,8 +540,8 @@ root.addEventListener("input", event => {
     const key = { "registration-project": "project_id", "registration-project-name": "project_name", "registration-case": "case_id", "registration-channel": "channel", "registration-channel-src": "channel_src", "registration-received": "received_at", "registration-sender-role": "sender_role", "registration-sender-name": "sender_name", "registration-subject": "subject", "registration-message": "message_text" }[target.id];
     if (key) state.registration[key] = target.value;
   }
-  if (target.id === "a1-model") { a1.model = target.value; a1.result = null; }
-  if (target.id === "a1-region") { a1.region = target.value; a1.result = null; }
+  if (target.id === "a1-model") { a1.model = target.value; a1.result = null; a1.error = null; rememberA1Case(activeCase); }
+  if (target.id === "a1-region") { a1.region = target.value; a1.result = null; a1.error = null; rememberA1Case(activeCase); }
   if (target.id === "a2-model") { a2.model = target.value; a2.result = null; invalidateLiveReview(); }
   if (target.id === "a2-region") { a2.region = target.value; a2.result = null; invalidateLiveReview(); }
   if (target.id === "input-json" && state.inputSource === "sample") { state.inputText = target.value; state.sampleInputText = target.value; updateFormControls(); }
@@ -537,7 +563,7 @@ root.addEventListener("change", async event => {
   if (target.dataset.pmEstimate) { const c = a2.choices[target.dataset.pmEstimate] || (a2.choices[target.dataset.pmEstimate] = {}); c.estimate = target.checked; invalidateLiveReview(); render(); }
   if (target.id === "draft-provider") { draftLab.provider = target.value; draftLab.model = defaultModel(target.value); render(); }
   if (target.name === "lab-provider") { if (state.view && state.mode === "api") { state.invalidated = true; persist(); } lab.provider = target.value; lab.model = defaultModel(target.value); render(); }
-  if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.result = null; agent.error = null; if (agent === a2) invalidateLiveReview(); render(); }
+  if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.result = null; agent.error = null; if (agent === a1) rememberA1Case(activeCase); if (agent === a2) invalidateLiveReview(); render(); }
   if (target.id === "scope-filter") { state.filter = target.value; state.pageNo = 1; render(); }
   if (target.id === "project-filter") { state.project = target.value; state.pageNo = 1; render(); }
   if (target.id === "sort") { state.order = target.value; state.pageNo = 1; render(); }
