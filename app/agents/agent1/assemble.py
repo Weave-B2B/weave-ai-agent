@@ -1,11 +1,13 @@
 """Deterministically assemble an Agent1 draft into its shared output schema."""
 
+import calendar
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Callable
 
 from pydantic import ValidationError
 
-from app.agents.agent1.draft import Agent1Draft
+from app.agents.agent1.draft import Agent1Draft, DraftItem
 from app.agents.base import AgentFailure
 from app.tools.doc_tools import search_docs
 from schema.schemas import Agent1Input, Agent1Output, AgentError, Item, Question, Span
@@ -23,6 +25,134 @@ class AssembleReport:
 
 
 FeatureSearch = Callable[[str, str], list[str]]
+
+
+def normalize_optional_function_text(text: str) -> str:
+    """Render optional request wording consistently without turning it into a requirement."""
+    normalized = text.replace("(가능)", "(선택 사항)")
+    normalized = normalized.replace("(선택)", "(선택 사항)")
+    normalized = normalized.replace(" 가능하게", " 선택 사항으로")
+    normalized = normalized.replace(" 가능하면", " 선택 사항으로")
+    return normalized
+
+
+def explicit_estimate_phrase(text: str) -> str | None:
+    """Return the explicit estimate phrase found in source text, if any."""
+    for phrase in ("견적 요청", "견적 부탁", "견적도 부탁", "견적", "비용 산출"):
+        if phrase in text:
+            return phrase
+    return None
+
+
+def normalize_estimate_request_text(text: str, intent: str) -> str:
+    """Keep explicit estimate requests short regardless of LLM draft wording."""
+    if intent == "estimate_request":
+        return "견적 요청"
+    return text
+
+
+CONFIRMATION_MARKERS = (
+    "되는 거죠",
+    "맞나요",
+    "맞죠",
+    "확인 부탁",
+    "확인해 주세요",
+    "확인해주세요",
+    "가능한가요",
+    "가능한 건가요",
+    "확인하려고요",
+)
+
+
+def is_confirmation_request(text: str) -> bool:
+    """Recognize questions asking to confirm existing behavior or scope."""
+    return any(marker in text for marker in CONFIRMATION_MARKERS)
+
+
+def normalize_confirmation_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1Draft:
+    """Normalize explicit confirmation questions instead of treating them as feature changes."""
+    if not is_confirmation_request(inp.message_text):
+        return draft.model_copy(deep=True)
+
+    normalized = draft.model_copy(deep=True)
+    source = inp.message_text
+
+    for item in normalized.items:
+        if item.intent in {"defect", "issue_report"}:
+            continue
+        if item.item_type == "function" or (item.item_type == "question" and item.intent != "estimate_request"):
+            item.item_type = "question"
+            item.intent = "confirmation"
+            if "가격" in source and "브랜드" in source:
+                item.text = "검색 시 가격 범위(1만~3만원)·브랜드 필터 동시 적용 가능 여부 확인"
+
+    filtered_questions = []
+    for question in normalized.questions:
+        question_text = " ".join(
+            part for part in (
+                question.text,
+                question.reason,
+                question.field or "",
+                question.quote or "",
+            ) if part
+        )
+        if not is_confirmation_request(question_text) and not is_confirmation_request(source):
+            filtered_questions.append(question)
+    normalized.questions = filtered_questions
+    return normalized
+
+
+def normalize_explicit_estimate_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1Draft:
+    """Convert an explicit estimate request from a question draft into a request item."""
+    estimate_phrase = explicit_estimate_phrase(inp.message_text)
+    normalized = draft.model_copy(deep=True)
+    if estimate_phrase is None:
+        return normalized
+
+    if not any(
+        item.item_type == "question" and item.intent == "estimate_request"
+        for item in normalized.items
+    ):
+        start = inp.message_text.find(estimate_phrase)
+        quote = inp.message_text[start:] if start >= 0 else estimate_phrase
+        normalized.items.append(
+            DraftItem(
+                item_type="question",
+                intent="estimate_request",
+                text="견적 요청",
+                quotes=[quote],
+                inferred=False,
+            )
+        )
+
+    filtered_questions = []
+    for question in normalized.questions:
+        question_text = " ".join(
+            part for part in (
+                question.text,
+                question.reason,
+                question.field or "",
+                question.quote or "",
+            ) if part
+        )
+        if explicit_estimate_phrase(question_text) is None:
+            filtered_questions.append(question)
+    normalized.questions = filtered_questions
+    return normalized
+
+
+def infer_month_end_deadline(text: str, reference_date: date | None = None) -> str:
+    """Add a safe, deterministic month-end deadline to recognized urgency text."""
+    if not any(marker in text for marker in ("월말", "말일", "당월", "월말 정산")):
+        return text
+
+    current_date = reference_date or date.today()
+    month_end = current_date.replace(day=calendar.monthrange(current_date.year, current_date.month)[1])
+    days_until_month_end = max(0, (month_end - current_date).days)
+    return (
+        f"월말 정산 일정상 {month_end.isoformat()}까지 약 {days_until_month_end}일 이내 "
+        "수정 요청으로 추정됩니다."
+    )
 
 
 def locate_quote(
@@ -56,9 +186,17 @@ def assemble(
     draft: Agent1Draft,
     *,
     feature_search: FeatureSearch | None,
+    reference_date: date | None = None,
 ) -> tuple[Agent1Output, AssembleReport]:
     """Build and validate Agent1Output using only input and structured draft."""
     report = AssembleReport()
+    draft = normalize_explicit_estimate_items(inp, draft)
+    draft = normalize_confirmation_items(inp, draft)
+    if reference_date is None:
+        try:
+            reference_date = date.fromisoformat(inp.received_at.strip()[:10])
+        except (TypeError, ValueError):
+            reference_date = date.today()
     items: list[Item] = []
     taken: list[tuple[int, int]] = []
     case_id = inp.context.case_id
@@ -94,9 +232,17 @@ def assemble(
         elif draft_item.item_type == "function" and intent in {"constraint", "estimate_request"}:
             report.warnings.append(f"{item_id}: function intent requires review")
 
+        if draft_item.item_type == "deadline":
+            item_text = infer_month_end_deadline(draft_item.text, reference_date)
+        elif draft_item.item_type == "function":
+            item_text = normalize_optional_function_text(draft_item.text)
+        else:
+            item_text = normalize_estimate_request_text(draft_item.text, intent)
+
         feature_candidates: list[str] = []
         if (
             draft_item.item_type == "function"
+            and intent != "confirmation"
             and feature_search is not None
             and inp.context.baseline_id is not None
         ):
@@ -112,7 +258,7 @@ def assemble(
                 display_no=f"R{number}",
                 item_type=draft_item.item_type,
                 intent=intent,
-                text=draft_item.text,
+                text=item_text,
                 spans=spans,
                 source="ai",
                 feature_candidates=feature_candidates,

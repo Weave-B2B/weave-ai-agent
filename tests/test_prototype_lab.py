@@ -50,6 +50,15 @@ def test_local_lab_rejects_external_origin_and_remote_local_endpoint():
         assert response.status_code == 422
 
 
+def test_request_original_tab_uses_agent1_test_layout():
+    source = Path('prototype/app.js').read_text()
+    assert 'function agent1Original(item)' in source
+    assert '1. 요청 원문 입력' in source
+    assert '2. Agent 1 항목화 결과' in source
+    assert '3. 확인 질문' in source
+    assert 'state.tab === "original" ? agent1Original(item)' in source
+
+
 @pytest.mark.parametrize('stage', ['agent1', 'agent2'])
 def test_each_local_agent_can_run_all_sample_fixtures(stage):
     app = FastAPI()
@@ -110,7 +119,7 @@ def test_lab_uses_distinct_provider_keys_and_environment_precedence(monkeypatch,
     lab.provider_client(SimpleNamespace(provider='openai', model='', region='ap-northeast-2'))
     assert captured[0].gemini_api_key == 'gemini-file-key' and captured[0].llm_api_key == ''
     assert captured[1].llm_api_key == 'gpt-file-key' and captured[1].gemini_api_key == ''
-    assert captured[1].llm_model == 'gpt-6-luna' and captured[1].llm_provider == 'openai'
+    assert captured[1].llm_model == 'gpt-4.1-mini' and captured[1].llm_provider == 'openai'
     monkeypatch.setenv('GEMINI_API_KEY', 'gemini-env-key')
     monkeypatch.setenv('LLM_API_KEY', 'gpt-env-key')
     lab.provider_client(SimpleNamespace(provider='gemini', model='', region='ap-northeast-2'))

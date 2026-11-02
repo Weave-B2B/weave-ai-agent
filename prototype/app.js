@@ -7,12 +7,14 @@ const agent2 = new Agent2Api();
 const agent1 = new Agent1Api();
 const STORAGE = "weave-prototype-agent3-session-v1";
 const PHASE = { APPROVED: "PM 승인 완료 · 협의안 생성 대기", WAITING_IMPACT_APPROVAL: "PM 산정 검토 대기", WAITING_INPUT: "추가 정보 필요", WAITING_UPSTREAM_REVIEW: "상위 PM 검토 필요", DRAFT_READY: "내부 협의안 초안 준비", NOT_REQUIRED: "산정 대상 없음", FAILED: "산정 실패" };
-const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "" };
+const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "", registration: { project_id: "P-COM-101", project_name: "신규 변경 요청 프로젝트", case_id: "", channel: "email", channel_src: "GMAIL", received_at: "", sender_role: "고객사 PM", sender_name: "", subject: "", message_text: "" }, registrationError: "" };
 let baseInput, agent1Inputs, agent2Input, agent2Inputs, previewClient, toastTimer, composingSearch = false, samples, activeCase;
-const defaultModel = provider => ({ gemini: "gemini-2.5-flash-lite", openai: "gpt-6-luna" })[provider] || "";
+const defaultModels = { gemini: "gemini-2.5-flash-lite", openai: "gpt-4.1-mini" };
+const defaultModel = provider => defaultModels[provider] || "";
 const draftLab = { provider: "gemini", model: "gemini-2.5-flash-lite", region: "ap-northeast-2" };
 const lab = { enabled: false, provider: "fake", model: "gemini-2.5-flash-lite", base_url: "http://127.0.0.1:11434/v1", region: "ap-northeast-2", fakeText: "" };
 const e = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+const itemTypeLabel = value => ({ function: "기능", question: "확인", constraint: "제약", deadline: "기한", dependency: "의존성" }[value] || value || "항목");
 const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "—";
 const rateCardButton = id => id ? `<button type="button" class="rate-card-link" data-rate-card="${e(id)}" aria-label="${e(id)} 단가표 보기">${e(id)}</button>` : "미선택";
 const money = value => typeof value === "number" && Number.isFinite(value) ? `${number(value)}원` : "미산정";
@@ -49,6 +51,7 @@ function acceptView(view, submittedInput = null) {
 }
 function navigate(id, tab = "original") { location.hash = id ? `#/request/${encodeURIComponent(id)}/${tab}` : "#/requests"; }
 function route() {
+  if (location.hash === "#/register") { state.page = "register"; render(); return; }
   const match = location.hash.match(/^#\/request\/([^/]+)\/(original|scope|impact|draft)$/);
   if (match && records.some(item => (item.api || item.datasetSample || item.id === "CR-001") && item.id === decodeURIComponent(match[1]))) {
     state.id = decodeURIComponent(match[1]); state.tab = match[2]; state.page = "detail";
@@ -59,15 +62,17 @@ function route() {
 }
 
 function selectCase(id) {
+  if (activeCase && activeCase !== id) rememberA1Case(activeCase);
   activeCase = id;
   agent2Input = agent2Inputs?.[id] ? structuredClone(agent2Inputs[id]) : null;
   a2.generation++; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
   a1.generation++; a1.result = null; a1.pending = false; a1.error = null;
   state.selectedItem = 0;
-  baseInput = structuredClone(samples.inputs[id]);
+  baseInput = structuredClone(samples.inputs[id] || { context: agent1Inputs?.[id]?.context || {}, items: [], constraints: [], pm_review: { items: [] }, a2_result: { assessments: [] } });
   state.scenario = "normal"; state.inputSource = "sample"; state.inputText = JSON.stringify(baseInput, null, 2); state.sampleInputText = state.inputText;
   state.view = null; state.edits = null; state.submittedInput = null; state.signature = null;
   state.error = null; state.conflicted = false; state.invalidated = false; state.originalLines = [];
+  restoreA1Case(id);
   if (id !== "CR-A-001") state.mode = "api";
   if (lab.enabled) lab.fakeText = JSON.stringify(samples.fake_responses[id] || lab.defaultFake, null, 2);
 }
@@ -77,13 +82,8 @@ function sidebar() {
   return `<aside class="sidebar" aria-label="주 메뉴"><div class="brand"><span class="brand-mark">S</span><span class="brand-name">Scopeline</span><span class="mini-tag">MVP</span></div><div class="workspace"><span class="workspace-mark">한</span><div class="workspace-copy">한빛디지털<small>수행사 워크스페이스</small></div>${icon("b05aa")}</div><div class="nav-section">업무</div>${nav.map(([label, file, count]) => `<button class="nav ${label === "변경 요청" ? "active" : ""}" ${label === "변경 요청" ? 'data-action="list" aria-current="page"' : 'disabled title="이번 구현 범위에 포함되지 않습니다"'}>${icon(file)}<span class="nav-label">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</button>`).join("")}<div class="nav-section">관리</div><button class="nav" disabled title="이번 구현 범위 밖">${icon("ed47e")}<span class="nav-label">설정</span></button><div class="sidebar-bottom"><div class="disclaimer"><strong>${icon("6bb27")}AI는 제안까지만</strong>범위 확정·가격·승인·고객 발송은 담당자가 결정합니다.</div><div class="profile"><span class="avatar large">김</span><div class="profile-copy">김서윤<small>로컬 확인 · 테스트 PM</small></div></div></div></aside>`;
 }
 function topbar() {
-  const path = state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
+  const path = state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
   return `<header class="topbar"><span class="breadcrumb">${e(path)}</span><label class="top-search">${icon("776e1")}<input id="global-search" placeholder="CR ID, 프로젝트, 문서 검색" aria-label="전체 요청 검색"></label><button class="icon-button" data-action="help" aria-label="로컬 확인 안내">${icon("c360b")}</button><button class="icon-button" data-action="help" aria-label="도움말">${icon("a340e")}</button><span class="top-separator"></span><span class="avatar large">김</span></header>`;
-}
-function localBar() {
-  const model = record().api && state.view?.impact?.meta?.model;
-  const modelLabel = state.mode === "mock" ? "가상 상태 미리보기" : typeof model === "string" && model ? `API 응답 ${model}` : "응답 정보 없음 · 서버 설정은 확인 불가";
-  return `<div class="local-bar"><strong>로컬 확인용</strong><span>목록·원문·범위: 합성 예시</span><span>모델: ${e(modelLabel)}</span><span class="spacer"></span><label class="mode-control">연결<select id="mode" aria-label="화면 연결 모드" ${state.pending ? "disabled" : ""}><option value="api" ${state.mode === "api" ? "selected" : ""}>기존 Agent 3 API</option>${record().id === "CR-A-001" ? `<option value="mock" ${state.mode === "mock" ? "selected" : ""}>상태 미리보기 · 읽기 전용</option>` : ""}</select></label>${button("안내", "help", { class: "small" })}</div>`;
 }
 function filteredRecords() {
   let result = records.filter(item => `${item.id} ${item.title} ${item.project} ${item.requester}`.toLowerCase().includes(state.query.toLowerCase()));
@@ -93,31 +93,78 @@ function filteredRecords() {
   if (state.order === "최근 접수순") result.sort((a, b) => Number(!a.api) - Number(!b.api) || b.date.localeCompare(a.date));
   return result;
 }
+function registrationPage() {
+  const d = state.registration;
+  const channelOptions = [["email", "GMAIL"], ["manual", "MEETING"]];
+  return `<div class="page-heading"><div><h1>변경 요청 등록</h1><p class="subtitle">Agent 1이 직접 구조화할 신규 요청 원문을 등록합니다.</p></div><div class="button-group">${button("목록으로", "list", { class: "plain" })}</div></div>${state.registrationError ? `<div class="notice error">${e(state.registrationError)}</div>` : ""}<section class="card"><h2>요청 정보</h2><div class="settings-grid"><label class="field">프로젝트 ID<input id="registration-project" value="${e(d.project_id)}"></label><label class="field">요청 ID<input id="registration-case" placeholder="예: CR-D-001" value="${e(d.case_id)}"></label><label class="field">프로젝트명<input id="registration-project-name" value="${e(d.project_name)}"></label><label class="field">채널<select id="registration-channel">${channelOptions.map(([value,label]) => `<option value="${value}" ${d.channel === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">채널 원본 값<input id="registration-channel-src" value="${e(d.channel_src)}"></label><label class="field">수신 일시<input id="registration-received" type="datetime-local" value="${e(d.received_at)}"></label><label class="field">요청자 역할<input id="registration-sender-role" value="${e(d.sender_role)}"></label><label class="field">요청자 이름<input id="registration-sender-name" value="${e(d.sender_name)}"></label></div><label class="field">제목<input id="registration-subject" value="${e(d.subject)}"></label><label class="field">요청 원문<textarea id="registration-message" rows="8" placeholder="고객이 전달한 요청 내용을 그대로 입력하세요.">${e(d.message_text)}</textarea></label><div class="form-actions">${button("등록하고 Agent 1 실행 화면 열기", "submit-registration", { class: "primary" })}</div></section>`;
+}
+function registerChangeRequest() {
+  const d = state.registration;
+  const required = [["project_id", "프로젝트 ID"], ["case_id", "요청 ID"], ["sender_name", "요청자 이름"], ["subject", "제목"], ["message_text", "요청 원문"]];
+  const missing = required.find(([key]) => !String(d[key] || "").trim());
+  if (missing) { state.registrationError = `${missing[1]}을(를) 입력해 주세요.`; render(); return; }
+  const caseId = d.case_id.trim().toUpperCase();
+  if (!/^CR-[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(caseId)) { state.registrationError = "요청 ID는 CR-D-001 형식으로 입력해 주세요."; render(); return; }
+  if (records.some(item => item.id === caseId)) { state.registrationError = "이미 존재하는 요청 ID입니다."; render(); return; }
+  const receivedAt = d.received_at ? new Date(d.received_at).toISOString() : new Date().toISOString();
+  const input = { context: { project_id: d.project_id.trim(), case_id: caseId, request_revision: 1, baseline_id: `${d.project_id.trim()}:BL-1`, baseline_as_of: new Date(receivedAt).toISOString().slice(0, 10), analysis_id: `AN-${caseId}-r1`, scenario_id: null }, channel: d.channel, channel_src: d.channel_src.trim() || null, received_at: receivedAt, sender_role: d.sender_role.trim(), sender_name: d.sender_name.trim(), subject: d.subject.trim(), message_text: d.message_text.trim(), pm_notes: [], answers: [] };
+  agent1Inputs = agent1Inputs || {}; agent1Inputs[caseId] = input;
+  records.unshift({ id: caseId, title: input.subject, project: d.project_name.trim() || "신규 변경 요청 프로젝트", requester: input.sender_name, requesterRole: input.sender_role, channel: input.channel_src || input.channel, date: receivedAt.slice(5, 10), receivedAt, messageText: input.message_text, datasetSample: true, scope: "미분석", process: "접수", approval: "미요청", customer: "미요청", md: "미산정", price: "—", owner: "—", elapsed: "—", api: true });
+  state.registrationError = ""; state.id = caseId; state.tab = "original"; selectCase(caseId); navigate(caseId, "original");
+}
 function inbox() {
   const result = filteredRecords(), pages = Math.max(1, Math.ceil(result.length / 10));
   state.pageNo = Math.min(state.pageNo, pages);
   const shown = result.slice((state.pageNo - 1) * 10, state.pageNo * 10);
   const groups = ["열린 요청", "PM 검토 필요", "내부 승인 대기", "고객 협의 중", "실행 중", "완료·종료"];
-  return `<div class="page-heading"><div><h1>변경 요청</h1><p class="subtitle">전체 프로젝트 · 합성 요청 ${records.length}건 · Agent 1 테스트 30건 포함</p></div><div class="button-group">${button("내보내기", "unused", { disabled: true, icon: "e95f2", title: "업무 내보내기는 이번 범위 밖" })}${button("변경 요청 등록", "unused", { class: "primary", disabled: true, icon: "416f8", title: "이번에는 기존 합성 요청을 조회합니다" })}</div></div>${localBar()}<div class="tabs" role="tablist" aria-label="요청 처리 상태">${groups.map(group => `<button class="tab" role="tab" aria-selected="${state.group === group}" data-group="${group}">${group}<small>${group === "열린 요청" ? records.length : records.filter(item => item.process === group).length}</small></button>`).join("")}</div><div class="filters"><label class="search-field">${icon("776e1")}<input id="request-search" placeholder="CR ID, 제목, 요청자 검색" aria-label="요청 검색" value="${e(state.query)}"></label><label class="filter">프로젝트<select id="project-filter" aria-label="프로젝트 필터">${["전체", ...new Set(records.map(item => item.project))].map(value => `<option ${state.project === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select></label><label class="filter">범위 판단<select id="scope-filter" aria-label="범위 판단 필터">${["전체", "범위 밖", "판단 보류", "미분석"].map(value => `<option ${state.filter === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><span class="filter">상업적 결정 · 예시</span><label class="filter last">정렬<select id="sort" aria-label="요청 정렬"><option ${state.order === "기본" ? "selected" : ""}>기본</option><option ${state.order === "최근 접수순" ? "selected" : ""}>최근 접수순</option></select></label></div><div class="table-wrap"><table class="inbox-table"><thead><tr>${["CR ID", "요청 · 프로젝트", "요청자 · 채널", "접수일", "범위 판단", "요청 처리", "내부 승인", "고객 협의", "영향 (MD · 금액)", "담당", "경과"].map(title => `<th>${title}</th>`).join("")}</tr></thead><tbody>${shown.length ? shown.map(item => `<tr><td class="id-cell"><button class="row-open" data-open="${item.id}">${item.id}${item.api ? '<span class="api-marker">API 연결 샘플</span>' : ""}</button></td><td class="title-cell"><button class="row-open" data-open="${item.id}"><strong>${e(item.title)}</strong><small>${e(item.project)}</small></button></td><td>${e(item.requester)}<small>${item.channel}</small></td><td>${item.date}</td><td>${chip(item.scope, item.scope.includes("가능성") ? "ai" : "neutral")}</td><td>${chip(item.process, "info")}</td><td>${chip(item.approval)}</td><td>${chip(item.customer)}</td><td class="numeric">${e(item.md)}<small>${e(item.price)}</small></td><td><span class="avatar">${item.owner}</span></td><td class="numeric">${item.elapsed}</td></tr>`).join("") : '<tr><td colspan="11"><div class="empty-state"><h3>검색 결과가 없습니다</h3><p>검색어나 필터를 바꿔 주세요.</p></div></td></tr>'}</tbody></table></div><div class="pagination"><span>${shown.length} / ${result.length}건 표시 · 범위 밖은 유상 확정을 의미하지 않습니다.</span><div class="button-group">${button("이전", "previous", { disabled: state.pageNo <= 1 })}<span>${state.pageNo} / ${pages}</span>${button("다음", "next", { disabled: state.pageNo >= pages })}</div></div>`;
+  return `<div class="page-heading"><div><h1>변경 요청</h1><p class="subtitle">전체 프로젝트 · 합성 요청 ${records.length}건 · Agent 1 테스트 30건 포함</p></div><div class="button-group">${button("내보내기", "unused", { disabled: true, icon: "e95f2", title: "업무 내보내기는 이번 범위 밖" })}${button("변경 요청 등록", "register", { class: "primary", icon: "416f8" })}</div></div><div class="tabs" role="tablist" aria-label="요청 처리 상태">${groups.map(group => `<button class="tab" role="tab" aria-selected="${state.group === group}" data-group="${group}">${group}<small>${group === "열린 요청" ? records.length : records.filter(item => item.process === group).length}</small></button>`).join("")}</div><div class="filters"><label class="search-field">${icon("776e1")}<input id="request-search" placeholder="CR ID, 제목, 요청자 검색" aria-label="요청 검색" value="${e(state.query)}"></label><label class="filter">프로젝트<select id="project-filter" aria-label="프로젝트 필터">${["전체", ...new Set(records.map(item => item.project))].map(value => `<option ${state.project === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select></label><label class="filter">범위 판단<select id="scope-filter" aria-label="범위 판단 필터">${["전체", "범위 밖", "판단 보류", "미분석"].map(value => `<option ${state.filter === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><span class="filter">상업적 결정 · 예시</span><label class="filter last">정렬<select id="sort" aria-label="요청 정렬"><option ${state.order === "기본" ? "selected" : ""}>기본</option><option ${state.order === "최근 접수순" ? "selected" : ""}>최근 접수순</option></select></label></div><div class="table-wrap"><table class="inbox-table"><thead><tr>${["CR ID", "요청 · 프로젝트", "요청자 · 채널", "접수일", "범위 판단", "요청 처리", "내부 승인", "고객 협의", "영향 (MD · 금액)", "담당", "경과"].map(title => `<th>${title}</th>`).join("")}</tr></thead><tbody>${shown.length ? shown.map(item => `<tr><td class="id-cell"><button class="row-open" data-open="${item.id}">${item.id}${item.api ? '<span class="api-marker">API 연결 샘플</span>' : ""}</button></td><td class="title-cell"><button class="row-open" data-open="${item.id}"><strong>${e(item.title)}</strong><small>${e(item.project)}</small></button></td><td>${e(item.requester)}<small>${item.channel}</small></td><td>${item.date}</td><td>${chip(item.scope, item.scope.includes("가능성") ? "ai" : "neutral")}</td><td>${chip(item.process, "info")}</td><td>${chip(item.approval)}</td><td>${chip(item.customer)}</td><td class="numeric">${e(item.md)}<small>${e(item.price)}</small></td><td><span class="avatar">${item.owner}</span></td><td class="numeric">${item.elapsed}</td></tr>`).join("") : '<tr><td colspan="11"><div class="empty-state"><h3>검색 결과가 없습니다</h3><p>검색어나 필터를 바꿔 주세요.</p></div></td></tr>'}</tbody></table></div><div class="pagination"><span>${shown.length} / ${result.length}건 표시 · 범위 밖은 유상 확정을 의미하지 않습니다.</span><div class="button-group">${button("이전", "previous", { disabled: state.pageNo <= 1 })}<span>${state.pageNo} / ${pages}</span>${button("다음", "next", { disabled: state.pageNo >= pages })}</div></div>`;
 }
 function statusStrip() {
   const actual = record().api && state.view;
   const cells = [["요청 처리", "PM 검토 필요", "합성 입력"], ["범위 판단", "범위 밖", "상위 PM 검토: 예시"], ["상업적 결정", "미결정", "이번 범위 밖"], ["PM 산정 승인", actual ? state.view.approval?.approved ? "승인됨" : state.view.approval ? "반려 · 재검토" : "미승인" : "미요청", actual ? PHASE[state.view.phase] : "API 결과 없음"], ["고객 협의", "미요청", "외부 발송 없음"], ["실행", "미착수", "이번 범위 밖"], ["청구", "청구 대상 아님", "자동 확정 없음"]];
   return `<div class="status-strip">${cells.map(([label, value, sub]) => `<div class="status-cell"><span>${label}</span>${chip(value)}<small>${e(sub)}</small></div>`).join("")}</div>`;
 }
+function tabTestGuide() {
+  const guides = {
+    original: ["Agent 1", "요청 원문 탭에서 Agent 1 공급자와 모델을 선택하고 바로 실행할 수 있습니다."],
+    scope: ["Agent 2", "범위 검토 탭에서 Agent 2 공급자와 모델을 선택하고 범위 검토를 실행할 수 있습니다."],
+    impact: ["Agent 3", "영향 산정 탭에서 Agent 3 공급자와 모델을 선택하고 영향 산정을 실행할 수 있습니다."],
+    draft: ["Agent 3", "승인·협의 탭에서 협의안을 생성할 Agent 3 공급자와 모델을 선택하고 실행할 수 있습니다."],
+  };
+  const [agent, description] = guides[state.tab] || guides.original;
+  return `<div class="notice"><strong>독립 테스트 · ${e(agent)}</strong>${e(description)}</div>`;
+}
 function detail() {
   const item = record();
   if (item.datasetSample) {
     const tabs = [["original", "요청 원문"], ["scope", "범위 검토"], ["impact", "영향 산정"], ["draft", "승인·협의"]];
-    const actions = state.tab === "impact" ? button(state.pending ? "처리 중…" : "영향 산정 실행", "prepare", { class: "primary", disabled: state.pending }) : button("영향 산정으로", "go-impact", { class: "primary" });
-    return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span>${e(item.title)}</h1><p class="subtitle">${e(item.project)} · 에이전트 테스트 요청</p></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div>${localBar()}<div class="notice"><strong>독립 테스트</strong>Agent 1·2를 각각 실행할 수 있습니다. Agent 2는 저장된 Agent 1 항목을, Agent 3은 별도의 합성 Agent 2·PM 검토 결과를 사용합니다.</div><div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? agent1Panel() + datasetOriginal(item) : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}`;
+    const actions = state.tab === "original" ? button(a1.pending ? "항목화 중…" : "Agent 1 실행", "run-a1", { class: "primary", disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase], icon: "a1cb9" }) : state.tab === "impact" ? button(state.pending ? "처리 중…" : "영향 산정 실행", "prepare", { class: "primary", disabled: state.pending }) : button("영향 산정으로", "go-impact", { class: "primary" });
+    return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span>${e(item.title)}</h1><p class="subtitle">${e(item.project)} · 에이전트 테스트 요청</p></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div>${tabTestGuide()}<div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? agent1Original(item) : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}`;
   }
   const tabs = [["original", "요청 원문"], ["scope", "범위 검토"], ["impact", "영향 산정"], ["draft", "승인·협의"]];
-  let actions = state.tab === "original" ? button("범위 검토 시작", "go-scope", { class: "primary", icon: "ec151" }) : state.tab === "scope" ? button("영향 산정으로", "go-impact", { class: "primary", icon: "ec151" }) : state.tab === "impact" ? button(state.pending ? "처리 중…" : "영향 산정 실행", "prepare", { class: "primary", icon: "a1cb9", disabled: state.pending || !item.api }) : button("영향 산정으로", "go-impact", { icon: "ec991" });
-  return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span>${e(item.title)}</h1></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div><div class="detail-meta"><span>${icon("91f0e")}${e(item.project)}</span><span>${icon("e56db")}요청자 ${e(item.requester)} (고객 PM)</span><span>${icon("29cce")}${item.channel} · ${item.date} 수신</span><span>${icon("d6187")}판단 기준선 ${item.api ? "BL-2 · 합성" : "v1.2 · 예시"}</span><span><span class="avatar">김</span>담당 김서윤</span></div>${localBar()}${!item.api ? `<div class="notice"><strong>조회용 예시 요청입니다.</strong>이 요청은 화면 흐름만 확인할 수 있습니다. 실제 Agent 3 연결은 ${button("CR-A-001 열기", "open-api", { class: "small" })}에서 확인해 주세요.</div>` : ""}${statusStrip()}<div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}${["실행·검수", "청구", "이력"].map(label => `<button class="tab" role="tab" aria-selected="false" disabled title="이번 구현 범위 밖">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? (item.api ? agent1Panel() : "") + original() : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}`;
+  let actions = state.tab === "original" ? button(a1.pending ? "항목화 중…" : "Agent 1 실행", "run-a1", { class: "primary", icon: "a1cb9", disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase] || !item.api }) : state.tab === "scope" ? button("영향 산정으로", "go-impact", { class: "primary", icon: "ec151" }) : state.tab === "impact" ? button(state.pending ? "처리 중…" : "영향 산정 실행", "prepare", { class: "primary", icon: "a1cb9", disabled: state.pending || !item.api }) : button("영향 산정으로", "go-impact", { icon: "ec991" });
+  return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span>${e(item.title)}</h1></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div><div class="detail-meta"><span>${icon("91f0e")}${e(item.project)}</span><span>${icon("e56db")}요청자 ${e(item.requester)} (고객 PM)</span><span>${icon("29cce")}${item.channel} · ${item.date} 수신</span><span>${icon("d6187")}판단 기준선 ${item.api ? "BL-2 · 합성" : "v1.2 · 예시"}</span><span><span class="avatar">김</span>담당 김서윤</span></div>${tabTestGuide()}${!item.api ? `<div class="notice"><strong>조회용 예시 요청입니다.</strong>이 요청은 화면 흐름만 확인할 수 있습니다. 실제 Agent 3 연결은 ${button("CR-A-001 열기", "open-api", { class: "small" })}에서 확인해 주세요.</div>` : ""}${statusStrip()}<div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}${["실행·검수", "청구", "이력"].map(label => `<button class="tab" role="tab" aria-selected="false" disabled title="이번 구현 범위 밖">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? agent1Original(item) : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}`;
+}
+function agent1Items() {
+  if (a1.result?.items?.length) return a1.result.items;
+  return baseInput?.items || [];
+}
+function agent1Original(item) {
+  const source = agent1Inputs?.[activeCase];
+  const message = source?.message_text || item?.messageText || "요청 원문 데이터를 찾을 수 없습니다.";
+  const context = source?.context || baseInput?.context || {};
+  const items = a1.result?.items || [];
+  const questions = a1.result?.questions || [];
+  const statusLabel = a1.pending ? "실행 중" : a1.result ? (a1.result.status === "NEEDS_INPUT" ? "추가 정보 필요" : "항목화 완료") : "실행 전";
+  const statusTone = a1.pending ? "info" : a1.result?.status === "NEEDS_INPUT" ? "warning" : a1.result ? "success" : "neutral";
+  return `${agent1Panel()}<div class="metric-grid">${metric("Agent 1 상태", statusLabel, a1.pending ? "모델 응답을 기다리는 중" : a1.result ? "최근 실행 결과" : "아직 실행하지 않았습니다", false)}${metric("추출 항목", `${items.length}<small>건</small>`, items.length ? "Agent 1 실행 결과 기준" : "실행 전 또는 결과 없음", false)}${metric("확인 질문", `${questions.length}<small>건</small>`, questions.length ? "추가 확인이 필요한 항목" : "현재 추가 질문 없음", false)}${metric("실행 모델", a1.provider === "openai" ? "GPT" : a1.provider === "gemini" ? "Gemini" : a1.provider === "bedrock" ? "Bedrock" : "fixture", e(a1.model || "모델 미선택"), true)}</div><div class="columns impact"><div class="stack"><section class="card"><div class="card-heading"><div><h2>1. 요청 원문 입력</h2><p class="caption">실행에 전달되는 원문과 요청 컨텍스트입니다.</p></div><span class="chip subtle">${icon("83533")}원문 보존</span></div><div class="metadata-box"><dl><dt>요청 ID</dt><dd>${e(context.case_id || item?.id || "—")}</dd><dt>프로젝트</dt><dd>${e(context.project_id || item?.project || "—")}</dd><dt>보낸 사람</dt><dd>${e(context.sender_name || item?.requester || "—")}</dd><dt>채널</dt><dd>${e(context.channel || item?.channel || "—")}</dd></dl></div><div class="original-text"><strong>제목: ${e(context.subject || item?.title || "변경 요청")}</strong><p style="white-space:pre-wrap">${e(message)}</p></div></section></div><div class="stack"><section class="card"><div class="card-heading"><div><h2>2. Agent 1 항목화 결과</h2><p class="caption">실행 후 추출된 기능·제약·확인 항목을 확인합니다.</p></div>${chip(statusLabel, statusTone)}</div>${a1.pending ? '<div class="loading-line" role="status"><span class="inline-spinner"></span>Agent 1 요청 항목화를 실행하는 중입니다…</div>' : items.length ? items.map((x, index) => `<div class="list-item"><span class="item-no">${e(x.display_no || x.item_id || `R${index + 1}`)}</span><span class="mini-tag">${e(itemTypeLabel(x.item_type || x.intent || "항목"))}</span><div class="item-main"><strong>${e(x.text)}</strong><small>${x.spans?.length ? e(x.spans.map(span => span.text).join(" · ")) : "원문 구간 없음"}</small></div></div>`).join("") : `<div class="empty-state"><h3>${a1.result ? "항목화 결과가 없습니다" : "아직 실행 전입니다"}</h3><p>${a1.result ? "실행 상태와 응답을 확인해 주세요." : "모델 공급자와 모델을 선택한 뒤 Agent 1을 실행하세요."}</p></div>`}${a1.result?.meta ? `<details class="input-settings"><summary>실행 메타데이터</summary><div class="metadata-box"><dl><dt>결과 ID</dt><dd>${e(a1.result.meta.result_id || "—")}</dd><dt>모델</dt><dd>${e(a1.result.meta.model || a1.result.meta.agent_version || "—")}</dd><dt>버전</dt><dd>${e(a1.result.meta.agent_version || "—")}</dd><dt>토큰</dt><dd>${e(a1.result.meta.debug?.input_tokens ?? "—")} / ${e(a1.result.meta.debug?.output_tokens ?? "—")}</dd></dl></div></details>` : ""}</section><section class="card"><h2>3. 확인 질문</h2><p class="caption">Agent 1이 항목화 중 추가 확인이 필요한 질문입니다.</p>${questions.length ? questions.map((q, index) => `<div class="question"><strong>Q${index + 1} · ${e(q.text)}</strong><span class="muted">${e(q.reason || q.target || "확인 필요")}</span></div>`).join("") : '<p class="muted">실행 결과가 있으면 확인 질문이 여기에 표시됩니다.</p>'}</section></div></div>`;
 }
 function datasetOriginal(item) {
-  return `<div class="columns"><section class="card"><div class="card-heading"><div><h2>요청 원문</h2><p class="caption">Agent 1 테스트 데이터의 합성 요청입니다.</p></div></div><div class="metadata-box"><dl><dt>보낸 사람</dt><dd>${e(item.requester)} · ${e(item.requesterRole)}</dd><dt>수신 일시</dt><dd>${e(item.receivedAt)}</dd><dt>채널</dt><dd>${e(item.channel)}</dd></dl></div><div class="original-text"><strong>제목: ${e(item.title)}</strong><p style="white-space:pre-wrap">${e(item.messageText)}</p></div></section><section class="card"><h2>상위 합성 요청 항목</h2><p class="caption">Agent 1을 실행하지 않고 준비된 예시를 표시합니다.</p>${baseInput.items.map(x => `<div class="list-item"><span class="item-no">${e(x.display_no)}</span><span>${e(x.text)}</span></div>`).join("")}</section></div>`;
+  const items = agent1Items();
+  const label = a1.result ? "Agent 1 실행 결과" : "상위 합성 요청 항목";
+  const caption = a1.result ? "아래 항목은 방금 실행한 Agent 1 결과입니다." : "Agent 1 실행 전 합성 예시 항목입니다.";
+  const empty = a1.result ? "실행 결과 항목이 없습니다. Agent 1 상태를 확인해 주세요." : "상위 합성 요청 항목이 없습니다.";
+  return `<div class="columns"><section class="card"><div class="card-heading"><div><h2>요청 원문</h2><p class="caption">Agent 1 테스트 데이터의 합성 요청입니다.</p></div></div><div class="metadata-box"><dl><dt>보낸 사람</dt><dd>${e(item.requester)} · ${e(item.requesterRole)}</dd><dt>수신 일시</dt><dd>${e(item.receivedAt)}</dd><dt>채널</dt><dd>${e(item.channel)}</dd></dl></div><div class="original-text"><strong>제목: ${e(item.title)}</strong><p style="white-space:pre-wrap">${e(item.messageText)}</p></div></section><section class="card"><h2>${label}</h2><p class="caption">${caption}</p>${items.length ? items.map(x => `<div class="list-item"><span class="item-no">${e(x.display_no || x.item_id)}</span><span><strong>${e(x.text)}</strong>${x.item_type || x.intent ? `<small class="tiny">${e(itemTypeLabel(x.item_type || "항목"))}${x.intent ? ` · ${e(x.intent)}` : ""}</small>` : ""}</span></div>`).join("") : `<p class="muted">${empty}</p>`}</section></div>`;
 }
 function datasetScope() {
   const labels = { in_scope: "범위 내", out_of_scope: "범위 밖", unclear: "판단 보류" };
@@ -125,11 +172,42 @@ function datasetScope() {
 }
 function original() {
   const apiCase = record().api;
-  return `<div class="columns"><div class="stack"><section class="card"><div class="card-heading"><div><h2>요청 원문</h2><p class="caption">원문은 조회용 합성 데이터이며 실제 수신함과 연결되지 않습니다.</p></div><span class="chip subtle">${icon("83533")}원문 보존</span></div><div class="metadata-box"><dl><dt>보낸 사람</dt><dd>${e(record().requester)} (고객 PM)</dd><dt>받는 사람</dt><dd>김서윤 (한빛디지털 · PM)</dd><dt>수신 일시</dt><dd>2026-${record().date} 09:12</dd><dt>채널</dt><dd>${record().channel} · 원문 예시</dd><dt>첨부</dt><dd>${icon("7502b")}첨부 업로드는 이번 범위 밖</dd></dl></div><div class="original-text"><strong>제목: [자사몰] 상품 리뷰 기능 요청드립니다</strong><p>안녕하세요. 지난 주간 회의에서 말씀드린 리뷰 기능을 정리해서 보내드립니다.</p>${(apiCase ? ["상세페이지에 구매자 별점과 후기 텍스트를 넣어 주세요.", "가능하면 사진도 3장까지 올리게 해주세요.", "변경 합의된 11월 24일 오픈일은 유지해야 합니다."] : ["상품 상세 페이지에서 별점(5점) 리뷰를 작성할 수 있게 해 주세요.", "텍스트 리뷰도 함께 작성·조회가 되어야 합니다.", "가능하면 사진도 여러 장 첨부할 수 있으면 좋겠습니다.", "리뷰는 실제 구매한 고객만 작성할 수 있어야 합니다.", "오픈 일정은 그대로 유지 부탁드립니다."]).map((line, i) => `<div class="highlight"><span class="number">${i + 1}</span><span>${line}</span></div>`).join("")}<p>검토 후 회신 부탁드립니다. 감사합니다.</p></div><div class="card-footer">${icon("2b0e7")}회색 하이라이트 = 항목으로 추출한 원문 위치</div></section><section class="card"><div class="card-heading"><div><h2>PM 메모</h2><p class="caption">실제 저장 기능은 연결 전입니다.</p></div>${button("메모 추가", "unused", { disabled: true, icon: "416f8" })}</div><p class="caption"><span class="avatar">김</span> 김서윤 · 로컬 예시</p><p style="margin-top:10px">사진 포함 여부와 기존 저장소 재사용 가정을 확인해야 합니다. 업무 확정·고객 전달은 별도 담당자가 결정합니다.</p></section></div><div class="stack"><section class="card"><div class="card-heading"><div><h2>${icon("2b0e7")} AI 요청 항목화</h2><p class="caption">상위 Agent 1·2 결과의 합성 입력</p></div>${chip("AI 제안", "ai")}</div>${(apiCase ? [["R1", "기능", baseInput.items[0].text], ["R2", "기한", baseInput.constraints[0].text]] : sampleItems).map(item => `<div class="list-item"><span class="item-no">${item[0]}</span><span class="mini-tag">${item[1]}</span><div class="item-main"><strong>${e(item[2])}</strong><small>${icon("e0393")}원문 연결 · 합성 근거</small></div>${icon("e7746")}</div>`).join("")}<div class="card-footer">${button("항목 추가", "unused", { disabled: true, icon: "416f8" })}${button("AI 재분석", "unused", { disabled: true, icon: "e4529" })}</div></section><section class="card"><h2>확인 질문</h2><p class="caption">이번에는 질문·답변의 실제 저장과 A1 재분석을 연결하지 않습니다.</p><div class="question"><strong>Q1 · 기존 이미지 저장소를 재사용할 수 있나요?</strong><span class="muted">저장 방식에 따라 공수가 달라질 수 있습니다.</span></div><div class="question"><strong>Q2 · 사진 첨부는 이번 변경에 포함되나요?</strong><span class="muted">현재 입력은 사진 최대 3장을 포함한 합성 가정입니다.</span></div></section></div></div>`;
+  const resultItems = a1.result?.items;
+  const items = resultItems?.length
+    ? resultItems.map(item => [item.display_no || item.item_id, itemTypeLabel(item.item_type || item.intent || "항목"), item.text])
+    : apiCase ? [["R1", "기능", baseInput.items[0]?.text || ""], ...(baseInput.constraints?.length ? [["R2", "기한", baseInput.constraints[0].text]] : [])] : sampleItems.map(item => [item[0], item[1], item[2]]);
+  const questions = a1.result?.questions?.length
+    ? a1.result.questions.map((q, index) => `<div class="question"><strong>Q${index + 1} · ${e(q.text)}</strong><span class="muted">${e(q.reason)}</span></div>`).join("")
+    : `<div class="question"><strong>Q1 · 기존 이미지 저장소를 재사용할 수 있나요?</strong><span class="muted">저장 방식에 따라 공수가 달라질 수 있습니다.</span></div><div class="question"><strong>Q2 · 사진 첨부는 이번 변경에 포함되나요?</strong><span class="muted">현재 입력은 사진 최대 3장을 포함한 합성 가정입니다.</span></div>`;
+  return `<div class="columns"><div class="stack"><section class="card"><div class="card-heading"><div><h2>요청 원문</h2><p class="caption">원문은 조회용 합성 데이터이며 실제 수신함과 연결되지 않습니다.</p></div><span class="chip subtle">${icon("83533")}원문 보존</span></div><div class="metadata-box"><dl><dt>보낸 사람</dt><dd>${e(record().requester)} (고객 PM)</dd><dt>받는 사람</dt><dd>김서윤 (한빛디지털 · PM)</dd><dt>수신 일시</dt><dd>2026-${record().date} 09:12</dd><dt>채널</dt><dd>${record().channel} · 원문 예시</dd><dt>첨부</dt><dd>${icon("7502b")}첨부 업로드는 이번 범위 밖</dd></dl></div><div class="original-text"><strong>제목: [자사몰] 상품 리뷰 기능 요청드립니다</strong><p>안녕하세요. 지난 주간 회의에서 말씀드린 리뷰 기능을 정리해서 보내드립니다.</p>${(apiCase ? ["상세페이지에 구매자 별점과 후기 텍스트를 넣어 주세요.", "가능하면 사진도 3장까지 올리게 해주세요.", "변경 합의된 11월 24일 오픈일은 유지해야 합니다."] : ["상품 상세 페이지에서 별점(5점) 리뷰를 작성할 수 있게 해 주세요.", "텍스트 리뷰도 함께 작성·조회가 되어야 합니다.", "가능하면 사진도 여러 장 첨부할 수 있으면 좋겠습니다.", "리뷰는 실제 구매한 고객만 작성할 수 있어야 합니다.", "오픈 일정은 그대로 유지 부탁드립니다."]).map((line, i) => `<div class="highlight"><span class="number">${i + 1}</span><span>${line}</span></div>`).join("")}<p>검토 후 회신 부탁드립니다. 감사합니다.</p></div><div class="card-footer">${icon("2b0e7")}회색 하이라이트 = 항목으로 추출한 원문 위치</div></section><section class="card"><div class="card-heading"><div><h2>PM 메모</h2><p class="caption">실제 저장 기능은 연결 전입니다.</p></div>${button("메모 추가", "unused", { disabled: true, icon: "416f8" })}</div><p class="caption"><span class="avatar">김</span> 김서윤 · 로컬 예시</p><p style="margin-top:10px">사진 포함 여부와 기존 저장소 재사용 가정을 확인해야 합니다. 업무 확정·고객 전달은 별도 담당자가 결정합니다.</p></section></div><div class="stack"><section class="card"><div class="card-heading"><div><h2>${icon("2b0e7")} ${a1.result ? "Agent 1 실행 결과" : "AI 요청 항목화"}</h2><p class="caption">${a1.result ? "방금 실행한 Agent 1 요청 항목화 결과입니다." : "상위 Agent 1·2 결과의 합성 입력"}</p></div>${chip(a1.result ? "실행 완료" : "AI 제안", a1.result ? "success" : "ai")}</div>${items.map(item => `<div class="list-item"><span class="item-no">${e(item[0])}</span><span class="mini-tag">${e(item[1])}</span><div class="item-main"><strong>${e(item[2])}</strong><small>${icon("e0393")}${a1.result ? "Agent 1 실행 근거" : "원문 연결 · 합성 근거"}</small></div>${icon("e7746")}</div>`).join("")}<div class="card-footer">${button("항목 추가", "unused", { disabled: true, icon: "416f8" })}${button(a1.result ? "Agent 1 다시 실행" : "AI 재분석", "run-a1", { disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase], icon: "e4529" })}</div></section><section class="card"><h2>확인 질문</h2><p class="caption">${a1.result ? "Agent 1이 실행 결과에서 추가 확인이 필요한 항목입니다." : "실행 전 합성 확인 질문입니다."}</p>${questions}</section></div></div>`;
 }
 // ---- C04 범위 검토: Agent 2 실제 결과 (POST /agent2/assessments). 실행 전·조회 예시는 기존 합성 화면(scopeSample) ----
+const A1_MEMORY_STORAGE = "weave-prototype-agent1-memory-v1";
 const a1 = { result: null, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
 const a2 = { result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
+let a1Memory = {};
+try { a1Memory = JSON.parse(sessionStorage.getItem(A1_MEMORY_STORAGE) || "{}") || {}; } catch { a1Memory = {}; }
+function rememberA1Case(caseId = activeCase) {
+  if (!caseId) return;
+  a1Memory[caseId] = {
+    result: a1.result ? structuredClone(a1.result) : null,
+    error: a1.error ? structuredClone(a1.error) : null,
+    provider: a1.provider,
+    model: a1.model,
+    region: a1.region,
+  };
+  try { sessionStorage.setItem(A1_MEMORY_STORAGE, JSON.stringify(a1Memory)); } catch { /* Browser memory still works when session storage is unavailable. */ }
+}
+function restoreA1Case(caseId) {
+  const saved = a1Memory[caseId];
+  if (!saved) return;
+  a1.result = saved.result ? structuredClone(saved.result) : null;
+  a1.pending = false;
+  a1.error = saved.error ? structuredClone(saved.error) : null;
+  if (saved.provider) a1.provider = saved.provider;
+  if (saved.model) a1.model = saved.model;
+  if (saved.region) a1.region = saved.region;
+}
 function agentSettings(name, data) {
   if (!lab.enabled) return '<div class="notice">공급자를 선택하려면 서버를 <code>python prototype/run_demo.py --lab</code>로 실행하세요.</div>';
   return `<section class="card"><h2>${name === 'a1' ? 'Agent 1' : 'Agent 2'} 테스트 실행 설정</h2><p class="caption">가상 응답은 저장된 합성 사례를 반환합니다. Gemini·GPT·Bedrock은 외부 모델을 호출하며 인증 정보는 서버에서 사용합니다.</p><div class="button-group">${[['fake','가상 응답'],['gemini','Gemini API'],['openai','GPT API'],['bedrock','AWS Bedrock']].map(([value,label]) => `<label class="check"><input type="radio" name="${name}-provider" value="${value}" ${data.provider === value ? 'checked' : ''} ${data.pending ? 'disabled' : ''}>${label}</label>`).join('')}</div>${data.provider !== 'fake' ? `<label class="field">모델 ID<input id="${name}-model" value="${e(data.model)}" ${data.pending ? 'disabled' : ''}></label>` : ''}${data.provider === 'bedrock' ? `<label class="field">AWS 리전<input id="${name}-region" value="${e(data.region)}" ${data.pending ? 'disabled' : ''}></label>` : ''}</section>`;
@@ -144,14 +222,17 @@ async function runAgent1() {
     const result = await agent1.run(input, config);
     if (a1.generation !== generation || activeCase !== caseId) return;
     if (result.context?.case_id !== caseId || result.context?.project_id !== input.context.project_id) throw new Error('다른 요청의 Agent 1 결과가 반환되었습니다.');
-    a1.result = result; toast('Agent 1 요청 항목화 결과를 받았습니다.');
-  } catch (error) { if (a1.generation === generation && activeCase === caseId) a1.error = { status: error.status || 0, message: error.message }; }
-  finally { if (a1.generation === generation && activeCase === caseId) { a1.pending = false; render(); } }
+    a1.result = result; rememberA1Case(caseId); toast('Agent 1 요청 항목화 결과를 받았습니다.');
+  } catch (error) { if (a1.generation === generation && activeCase === caseId) { a1.error = { status: error.status || 0, message: error.message }; rememberA1Case(caseId); } }
+  finally { if (a1.generation === generation && activeCase === caseId) { a1.pending = false; rememberA1Case(caseId); render(); } }
 }
 function agent1Panel() {
-  const error = a1.error ? `<div class="notice error">${e(a1.error.message)}</div>` : '';
-  const result = a1.result ? `<section class="card"><h2>Agent 1 실행 결과</h2><p class="caption">${e(a1.result.meta.model || a1.result.meta.agent_version || 'fixture')} · ${e(a1.result.status)}</p>${a1.result.items.map(item => `<div class="list-item"><span class="item-no">${e(item.display_no)}</span><span>${e(item.text)}</span></div>`).join('')}${(a1.result.questions || []).map(q => `<div class="question"><strong>${e(q.text)}</strong><span>${e(q.reason)}</span></div>`).join('')}<p class="caption">이 결과는 Agent 2에 자동 전달되지 않습니다.</p></section>` : '';
-  return `${agentSettings('a1', a1)}<div class="form-actions">${button(a1.pending ? '요청 항목화 중…' : 'Agent 1 요청 항목화 실행', 'run-a1', { class: 'primary', disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase] })}</div>${error}${result}`;
+  const label = a1.pending ? '요청 항목화 중… (최대 1~2분)' : a1.result ? '다시 실행' : 'Agent 1 요청 항목화 실행';
+  const status = a1.result
+    ? `${chip(a1.result.status === 'NEEDS_INPUT' ? '추가 정보 필요' : '항목화 완료', a1.result.status === 'NEEDS_INPUT' ? 'warning' : 'success')}<span class="tiny">결과 ${e(a1.result.meta?.result_id || '없음')} · ${e(a1.result.meta?.model || a1.result.meta?.agent_version || '서버 설정 확인')}</span>`
+    : '<span class="muted">아래는 실행 전 합성 요청 항목입니다. 실행 방식은 선택한 Agent 1 공급자에 따릅니다.</span>';
+  const error = a1.error ? `<div class="notice inline"><strong>Agent 1 실행 실패${a1.error.status ? ` (HTTP ${a1.error.status})` : ''}</strong>${e(a1.error.message)}</div>` : '';
+  return `${agentSettings('a1', a1)}<div class="baseline">${icon('2b0e7')}<strong>Agent 1 요청 항목화</strong>${status}${button(label, 'run-a1', { class: 'primary small', icon: 'a1cb9', disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase] })}</div>${error}`;
 }
 const A2_LABEL = { in_scope: ["기존 범위 내", "success"], out_of_scope: ["범위 밖 가능성", "ai"], unclear: ["판단 보류", "warning"], approved_change: ["승인된 변경 (재청구 안 함)", "info"] };
 const A2_LEVEL = { strong: "강", medium: "중", none: "근거 없음", interpretation_needed: "해석 필요" };
@@ -411,7 +492,7 @@ function draft() {
 function render() {
   const active = document.activeElement;
   const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
-  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. AI 서버는 메모리 세션을 사용하며 CN 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
+  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "register" ? registrationPage() : state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. AI 서버는 메모리 세션을 사용하며 CN 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
   if (focus) { const target = document.getElementById(focus.id); if (target && !target.disabled) { target.focus({ preventScroll: true }); if (typeof focus.start === "number" && target.setSelectionRange && !["number", "checkbox"].includes(target.type)) target.setSelectionRange(focus.start, focus.end); } }
 }
 function updateSearchResults() {
@@ -520,6 +601,8 @@ root.addEventListener("click", event => {
   const control = event.target.closest("[data-action]"); if (!control || control.disabled) return;
   const action = control.dataset.action;
   if (action === "list") navigate(null);
+  if (action === "register") { location.hash = "#/register"; }
+  if (action === "submit-registration") registerChangeRequest();
   if (action === "open-api") navigate("CR-A-001", "impact");
   if (action === "go-scope") navigate(state.id, "scope");
   if (action === "go-impact") navigate(state.id, "impact");
@@ -552,8 +635,12 @@ root.addEventListener("input", event => {
   if (target.id === "lab-model") lab.model = target.value;
   if (target.id === "lab-url") lab.base_url = target.value;
   if (target.id === "lab-region") lab.region = target.value;
-  if (target.id === "a1-model") { a1.model = target.value; a1.result = null; }
-  if (target.id === "a1-region") { a1.region = target.value; a1.result = null; }
+  if (target.id?.startsWith("registration-")) {
+    const key = { "registration-project": "project_id", "registration-project-name": "project_name", "registration-case": "case_id", "registration-channel": "channel", "registration-channel-src": "channel_src", "registration-received": "received_at", "registration-sender-role": "sender_role", "registration-sender-name": "sender_name", "registration-subject": "subject", "registration-message": "message_text" }[target.id];
+    if (key) state.registration[key] = target.value;
+  }
+  if (target.id === "a1-model") { a1.model = target.value; a1.result = null; a1.error = null; rememberA1Case(activeCase); }
+  if (target.id === "a1-region") { a1.region = target.value; a1.result = null; a1.error = null; rememberA1Case(activeCase); }
   if (target.id === "a2-model") { a2.model = target.value; a2.result = null; invalidateLiveReview(); }
   if (target.id === "a2-region") { a2.region = target.value; a2.result = null; invalidateLiveReview(); }
   if (target.id === "input-json" && state.inputSource === "sample") { state.inputText = target.value; state.sampleInputText = target.value; updateFormControls(); }
@@ -569,6 +656,7 @@ root.addEventListener("compositionstart", event => { if (event.target.id === "re
 root.addEventListener("compositionend", event => { if (event.target.id === "request-search") { composingSearch = false; state.query = event.target.value; state.pageNo = 1; updateSearchResults(); } });
 root.addEventListener("change", async event => {
   const target = event.target;
+  if (target.id === "registration-channel") state.registration.channel = target.value;
   if (target.dataset.editRole) { const [i,j] = target.dataset.editRole.split(":").map(Number); state.edits[i].lines[j].role = target.value; render(); }
   if (target.name === "input-source") switchInputSource(target.value);
   if (target.id === "input-json" && state.inputSource === "sample") render();
@@ -576,7 +664,7 @@ root.addEventListener("change", async event => {
   if (target.dataset.pmEstimate) { const c = a2.choices[target.dataset.pmEstimate] || (a2.choices[target.dataset.pmEstimate] = {}); c.estimate = target.checked; invalidateLiveReview(); render(); }
   if (target.id === "draft-provider") { draftLab.provider = target.value; draftLab.model = defaultModel(target.value); render(); }
   if (target.name === "lab-provider") { if (state.view && state.mode === "api") { state.invalidated = true; persist(); } lab.provider = target.value; lab.model = defaultModel(target.value); render(); }
-  if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.result = null; agent.error = null; if (agent === a2) invalidateLiveReview(); render(); }
+  if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.result = null; agent.error = null; if (agent === a1) rememberA1Case(activeCase); if (agent === a2) invalidateLiveReview(); render(); }
   if (target.id === "scope-filter") { state.filter = target.value; state.pageNo = 1; render(); }
   if (target.id === "project-filter") { state.project = target.value; state.pageNo = 1; render(); }
   if (target.id === "sort") { state.order = target.value; state.pageNo = 1; render(); }
@@ -596,7 +684,7 @@ try {
   const [inputResponse, previewResponse, sampleResponse] = await Promise.all([fetch(new URL("./data/agent3-input.json?v=common-rate-2", import.meta.url)), fetch(new URL("./data/agent3-preview.json", import.meta.url)), fetch(new URL("./data/agent3-samples.json?v=common-rate-2", import.meta.url))]);
   if (!inputResponse.ok || !previewResponse.ok || !sampleResponse.ok) throw new Error("합성 입력 파일을 불러오지 못했습니다.");
   baseInput = await inputResponse.json(); samples = await sampleResponse.json(); samples.inputs["CR-A-001"] = baseInput; previewClient = new MockPreview(await previewResponse.json()); state.inputText = JSON.stringify(baseInput, null, 2);
-  try { const response = await fetch("/prototype-lab/defaults"); if (response.ok) { const defaults = await response.json(); if (defaults.fake_response && defaults.model) { lab.enabled = true; api.lab = true; lab.defaultFake = defaults.fake_response; lab.fakeText = JSON.stringify(defaults.fake_response, null, 2); lab.model = defaults.model; } } } catch { /* Ordinary server retains the existing API mode. */ }
+  try { const response = await fetch("/prototype-lab/defaults"); if (response.ok) { const defaults = await response.json(); if (defaults.fake_response && defaults.model) { lab.enabled = true; api.lab = true; lab.defaultFake = defaults.fake_response; lab.fakeText = JSON.stringify(defaults.fake_response, null, 2); lab.model = defaults.model; if (defaults.default_models) Object.assign(defaultModels, defaults.default_models); } } } catch { /* Ordinary server retains the existing API mode. */ }
   try { const a2Response = await fetch(new URL("./data/agent2-inputs.json", import.meta.url)); if (a2Response.ok) agent2Inputs = await a2Response.json(); }
   catch { /* Agent 2 입력이 없어도 나머지 화면은 동작한다 (실행 버튼만 비활성). */ }
   try { const a1Response = await fetch(new URL("./data/agent1-inputs.json", import.meta.url)); if (a1Response.ok) agent1Inputs = await a1Response.json(); }

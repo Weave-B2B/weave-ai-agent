@@ -1,9 +1,18 @@
 import re
+from datetime import date
 
 import pytest
 
 from conftest import EVAL, jl, split_rows
-from app.agents.agent1.assemble import assemble, locate_quote
+from app.agents.agent1.assemble import (
+    assemble,
+    infer_month_end_deadline,
+    locate_quote,
+    normalize_explicit_estimate_items,
+    normalize_optional_function_text,
+    normalize_estimate_request_text,
+    normalize_confirmation_items,
+)
 from app.agents.agent1.draft import Agent1Draft, DraftItem, DraftQuestion
 from app.tools.errors import ToolInputError
 from schema.schemas import Agent1Input, Agent1Output
@@ -43,6 +52,110 @@ def _item(
         quotes=[quote] if quote else [],
         inferred=inferred,
     )
+
+
+def test_month_end_deadline_text_is_deterministic() -> None:
+    assert infer_month_end_deadline(
+        "월말 정산 때문에 급합니다.", reference_date=date(2026, 11, 2)
+    ) == "월말 정산 일정상 2026-11-30까지 약 28일 이내 수정 요청으로 추정됩니다."
+    assert infer_month_end_deadline("다음 주까지 검토", reference_date=date(2026, 11, 2)) == "다음 주까지 검토"
+
+
+def test_month_end_deadline_uses_received_date_without_changing_source_span() -> None:
+    inp = Agent1Input.model_validate(
+        {
+            "context": {"project_id": "P-TEST", "case_id": "CASE-DEADLINE", "request_revision": 1,
+                         "baseline_id": "BASELINE-TEST", "analysis_id": "ANALYSIS-DEADLINE"},
+            "received_at": "2026-11-02T09:00:00+09:00",
+            "sender_role": "고객",
+            "message_text": "월말 정산 때문에 급합니다.",
+        }
+    )
+    draft = Agent1Draft(items=[_item("월말 정산 때문에 급합니다", "월말 정산 때문에 급합니다", item_type="deadline")])
+
+    output, _ = assemble(inp, draft, feature_search=None)
+
+    assert output.items[0].text == "월말 정산 일정상 2026-11-30까지 약 28일 이내 수정 요청으로 추정됩니다."
+    assert output.items[0].spans[0].text == "월말 정산 때문에 급합니다"
+
+
+def test_explicit_estimate_request_is_item_not_confirmation_question() -> None:
+    inp = _input("상세페이지에 구매자 별점과 후기 기능을 추가해주세요. 견적도 부탁드립니다.")
+    draft = Agent1Draft(
+        items=[_item("상품 리뷰 기능 추가", "상세페이지에 구매자 별점과 후기 기능을 추가해주세요", item_type="function")],
+        questions=[
+            DraftQuestion(
+                item_numbers=[1],
+                field="estimate_scope",
+                text="상품 리뷰 기능에 대한 구체적 견적 범위 확인",
+                reason="원문에 견적 요청이 있으나 세부 항목 확인이 필요합니다.",
+                target="pm",
+                blocking=True,
+                quote="견적도 부탁드립니다",
+            )
+        ],
+    )
+
+    normalized = normalize_explicit_estimate_items(inp, draft)
+    output, _ = assemble(inp, normalized, feature_search=None)
+
+    assert any(item.item_type == "question" and item.intent == "estimate_request" for item in output.items)
+    assert output.questions == []
+
+
+def test_confirmation_request_is_not_normalized_as_change_request() -> None:
+    inp = _input(
+        "상품 검색할 때 가격을 1만원~3만원으로 좁히고 브랜드도 동시에 고를 수 있게 되는 거죠? "
+        "QA에서 같이 확인하려고요."
+    )
+    draft = Agent1Draft(
+        items=[_item("가격 범위 및 브랜드 동시 선택 필터 기능", "상품 검색할 때 가격을 1만원~3만원으로")],
+    )
+
+    normalized = normalize_confirmation_items(inp, draft)
+    output, _ = assemble(inp, normalized, feature_search=None)
+
+    assert len(output.items) == 1
+    assert output.items[0].item_type == "question"
+    assert output.items[0].intent == "confirmation"
+    assert output.items[0].text == "검색 시 가격 범위(1만~3만원)·브랜드 필터 동시 적용 가능 여부 확인"
+    assert output.questions == []
+
+
+def test_confirmation_from_question_draft_is_function_confirmation() -> None:
+    inp = _input("이 기능이 현재 검색 화면에서도 적용 가능한지 확인 부탁드립니다.")
+    draft = Agent1Draft(
+        items=[
+            DraftItem(
+                item_type="question",
+                intent="change_request",
+                text="검색 화면 적용 가능 여부",
+                quotes=["이 기능이 현재 검색 화면에서도 적용 가능한지"],
+            )
+        ]
+    )
+
+    output, _ = assemble(inp, draft, feature_search=None)
+
+    assert output.items[0].item_type == "question"
+    assert output.items[0].intent == "confirmation"
+
+
+def test_estimate_request_text_is_kept_short() -> None:
+    assert normalize_estimate_request_text(
+        "상품 리뷰 기능 추가에 대한 구체적 견적 요청",
+        "estimate_request",
+    ) == "견적 요청"
+    assert normalize_estimate_request_text("일반 요청", "change_request") == "일반 요청"
+
+
+def test_optional_function_marker_is_rendered_as_explicit_selection() -> None:
+    assert normalize_optional_function_text(
+        "상품 리뷰 기능 추가 — 별점, 후기 텍스트, 사진 최대 3장(가능)"
+    ) == "상품 리뷰 기능 추가 — 별점, 후기 텍스트, 사진 최대 3장(선택 사항)"
+    assert normalize_optional_function_text(
+        "상품 리뷰 기능 추가 — 사진 최대 3장(선택)"
+    ) == "상품 리뷰 기능 추가 — 사진 최대 3장(선택 사항)"
 
 
 def test_locate_quote_exact_whitespace_missing_and_empty() -> None:
