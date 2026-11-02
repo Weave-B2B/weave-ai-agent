@@ -25,6 +25,8 @@ def approve(app):
     app.checkbox(key=PREFIX + "ack_schedule").check()
     app.button(key=PREFIX + "approve").click().run(timeout=10)
     assert not app.exception
+    app.button(key=PREFIX + "generate").click().run(timeout=10)
+    assert not app.exception
     return app.session_state[PREFIX + "view"]
 
 
