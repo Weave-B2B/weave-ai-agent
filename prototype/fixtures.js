@@ -42,7 +42,7 @@ export const sampleItems = [
 
 export function scenarioInput(base, scenario) {
   const input = structuredClone(base);
-  if (scenario === "missing-rate") input.rate_card_id = "RC-SYNTH-2026H2-noQA";
+  if (scenario === "missing-rate") input.rate_card_id = "RC-SYNTH-2026H2-v2-noQA";
   if (scenario === "upstream") input.pm_review.status = "PENDING";
   if (scenario === "no-target") for (const item of input.pm_review.items) item.estimate = false;
   return input;

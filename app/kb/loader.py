@@ -3,6 +3,7 @@
 eval/dataset(정답·chain·noisy 등)은 절대 읽지 않는다 (manifest.never_index).
 """
 import json
+import os
 import uuid
 from functools import lru_cache
 from pathlib import Path
@@ -78,7 +79,17 @@ def baselines() -> dict[str, dict]:
 def rate_cards() -> dict[str, dict]:
     # Avoid stale rates after a supplied file is replaced.
     path = settings.rate_card_file or settings.data_dir / "kb" / "rate_cards.json"
-    return load_rate_cards(path)
+    cards = load_rate_cards(path)
+    # Local prototype edits are separate, immutable versions; never overwrite source files.
+    if os.environ.get("PROTOTYPE_LAB") == "1":
+        directory = settings.data_dir.parent / ".prototype-rate-cards"
+        if directory.is_dir():
+            for local_file in sorted(directory.glob("*.json")):
+                local_cards = load_rate_cards(local_file)
+                if cards.keys() & local_cards.keys():
+                    raise ValueError("duplicate local rate card ID")
+                cards.update(local_cards)
+    return cards
 
 
 @lru_cache

@@ -111,3 +111,23 @@ def test_existing_factory_constructs_gemini_compatible_client_without_sdk():
     client = build_llm(settings)
     assert isinstance(client, LocalLlm) and client.model_id == GEMINI_MODEL
     client.client.close()
+
+
+def test_gemini_duplicate_rule_receives_one_corrective_request(a3_input, a3_payload):
+    import copy
+    valid = Agent3ImpactDraft.model_validate(a3_payload).model_dump(mode='json')
+    duplicate = copy.deepcopy(valid)
+    duplicate['estimates'][0]['lines'].append(copy.deepcopy(duplicate['estimates'][0]['lines'][0]))
+    calls = []
+    def handler(request):
+        body = json.loads(request.content)
+        calls.append(body)
+        result = duplicate if len(calls) == 1 else valid
+        return httpx.Response(200, json={'choices': [{'message': {'content': json.dumps(result)}, 'finish_reason': 'stop'}],
+            'usage': {'prompt_tokens': 10, 'completion_tokens': 20}})
+    llm = client_for(handler)
+    output = LlmAgent3(llm).run(a3_input)
+    assert len(calls) == 2 and '중복' in calls[1]['messages'][1]['content']
+    assert output.status == 'IMPACT_DRAFT_READY' and output.estimates[0].totals.md == 8
+    assert output.meta.debug['input_tokens'] == 20 and output.meta.debug['output_tokens'] == 40
+    llm.client.close()
