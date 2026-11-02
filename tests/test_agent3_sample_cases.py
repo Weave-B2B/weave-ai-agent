@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.agents.agent3.agent import LlmAgent3
-from app.agents.agent3.workflow import Agent3Workflow, ReviewImpact
+from app.agents.agent3.workflow import Agent3Workflow, ReviewImpact, GenerateDraft
 from app.llm.fake import FakeLlm
 from schema.schemas import Agent3Input
 
@@ -17,7 +17,7 @@ DEFAULT = json.loads(Path("examples/agent3/fake_responses.json").read_text())[0]
 def test_sample_case_runs_through_agent3(case_id):
     inp = Agent3Input.model_validate(SAMPLES["inputs"][case_id])
     response = SAMPLES["fake_responses"].get(case_id, DEFAULT)
-    workflow = Agent3Workflow(LlmAgent3(FakeLlm([response])))
+    workflow = Agent3Workflow(LlmAgent3(FakeLlm([response, {"narrative": "안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다."}])))
     result = workflow.prepare(inp)
     assert result["impact"]["context"]["case_id"] == case_id
     selected = [r for r in inp.pm_review.items if r.estimate]
@@ -33,6 +33,7 @@ def test_sample_case_runs_through_agent3(case_id):
             target_result_id=result["impact"]["meta"]["result_id"], snapshot_hash=result["snapshot_hash"],
             request_id="test", reviewer_ref="test", approved=True, acknowledge_unknown_schedule=True)
         approved = workflow.review(result["session_id"], review)
+        approved = workflow.generate_draft(result["session_id"], GenerateDraft(state_revision=approved["state_revision"], review_id=approved["approval"]["review_id"]))
         assert approved["phase"] == "DRAFT_READY"
         assert case_id in approved["draft"]["summary"]
 

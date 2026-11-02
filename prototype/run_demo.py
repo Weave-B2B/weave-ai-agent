@@ -29,9 +29,9 @@ def configuration(args, environ) -> RunConfig:
     """Select explicit presets. Never load .env or construct an HTTP client here."""
     mode = "gemini" if args.mode == "api" else args.mode
     path = Path(args.rate_card_file or environ.get("RATE_CARD_FILE") or ROOT / "data/kb/rate_cards.json").expanduser().resolve()
-    key = ((environ.get("GEMINI_API_KEY") or "").strip() or (environ.get("LLM_API_KEY") or "").strip()) if mode == "gemini" else ""
+    key = (environ.get("GEMINI_API_KEY") or "").strip() if mode == "gemini" else ""
     if mode == "gemini" and not key:
-        raise ValueError("Gemini mode requires server GEMINI_API_KEY or LLM_API_KEY")
+        raise ValueError("Gemini mode requires server GEMINI_API_KEY")
     model = (args.model or GEMINI_MODEL) if mode == "gemini" else "fake-ui-demo"
     if not model.strip() or any(char.isspace() for char in model):
         raise ValueError("model must be a nonempty model ID without whitespace")
@@ -64,7 +64,7 @@ def apply_environment(config: RunConfig, responses: Path | None = None) -> None:
         "LLM_PROVIDER": "local" if config.mode == "gemini" else "fake",
         "LLM_MODEL": config.model,
         "LLM_BASE_URL": GEMINI_BASE_URL if config.mode == "gemini" else "",
-        "LLM_API_KEY": config.api_key,
+        "GEMINI_API_KEY": config.api_key if config.mode == "gemini" else os.environ.get("GEMINI_API_KEY", ""),
         "LLM_LOCAL_JSON_MODE": "schema",
         "LLM_FAKE_RESPONSES": str(responses) if responses else "",
         "RATE_CARD_FILE": str(config.rate_file),
@@ -118,7 +118,7 @@ def main(argv=None) -> None:
 
         print(f"Local prototype: http://{args.host}:{args.port}/prototype/")
         print("Offline synthetic AI responses." if config.mode == "fake" else "Gemini API mode: impact estimation sends selected requirements to Google; no fake fallback.")
-        print("Existing code calculation, PM review, and deterministic internal draft; A1 fixture.")
+        print("Code calculation, PM review, and model-generated internal draft; A1 fixture.")
         print("Agent 2 scope review (C04): real agent via Gemini." if config.mode == "gemini" else "Agent 2 scope review (C04): dataset fixture.")
         uvicorn.run("app.main:app", host=args.host, port=args.port, workers=1)
 

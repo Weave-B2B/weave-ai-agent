@@ -39,6 +39,7 @@ export class Agent3Api {
   get(id) { return this.request(`/${encodeURIComponent(id)}`); }
   edit(id, input) { return this.request(`/${encodeURIComponent(id)}/edit`, { method: "POST", body: JSON.stringify(input) }); }
   review(id, input) { return this.request(`/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify(input) }); }
+  draft(id, input, config = {}) { return this.request(`/${encodeURIComponent(id)}/draft`, { method: "POST", body: JSON.stringify(this.lab ? { ...input, ...config } : input) }); }
 }
 
 // State preview is deliberately read-only; it never calculates a replacement quote.

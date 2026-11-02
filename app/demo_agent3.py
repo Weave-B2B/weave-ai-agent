@@ -9,7 +9,7 @@ from uuid import uuid4
 import streamlit as st
 
 from app.agents.agent3.agent import LlmAgent3
-from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact
+from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft
 from app.agents.base import AgentFailure
 from app.core.config import ROOT, Settings, settings as env_settings
 from app.llm.client import FakeLlm, build_llm
@@ -48,7 +48,7 @@ def _fake_response() -> str:
 def _client(provider, model, base_url, api_key, region, fake_json):
     if provider == "fake":
         # A fresh queue for each click; rerunning never exhausts a shared fake client.
-        return FakeLlm([json.loads(fake_json)])
+        return FakeLlm([json.loads(fake_json)] + [{"narrative": "안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다."}] * 20)
     config = Settings(_env_file=None, llm_provider=provider, llm_model=model.strip(),
         llm_base_url=base_url.strip(), llm_api_key=api_key or env_settings.llm_api_key,
         aws_region=region.strip(), llm_max_tokens=env_settings.llm_max_tokens,
@@ -60,6 +60,8 @@ def _client(provider, model, base_url, api_key, region, fake_json):
 
 
 def _draft_markdown(draft: dict) -> str:
+    if draft.get("email_body"):
+        return f"# 협의안 초안 · 내부 검토용\n\n제목: {draft['email_subject']}\n\n{draft['email_body']}"
     scope = "\n\n".join(draft["scope"].splitlines())
     impact = "\n".join(f"- {line}" for line in draft["impact"].splitlines())
     parts = [("요약", draft["summary"]), ("범위 판단과 근거", scope),
@@ -127,6 +129,18 @@ def _edit_form(workflow: Agent3Workflow, view: dict, changed: bool) -> None:
 
 def _review_form(workflow: Agent3Workflow, view: dict, changed: bool) -> None:
     st.subheader("3. PM 검토")
+    if view["phase"] == "APPROVED":
+        st.success("PM 산정 승인이 완료됐습니다.")
+        if st.button("LLM 협의안 생성", key=PREFIX + "generate", disabled=changed):
+            try:
+                st.session_state[PREFIX + "view"] = workflow.generate_draft(view["session_id"], GenerateDraft(
+                    state_revision=view["state_revision"], review_id=view["approval"]["review_id"]))
+                st.rerun()
+            except AgentFailure as error:
+                st.error(f"{error.error.code}: {error.error.message}")
+            except (ValueError, ToolInputError) as error:
+                st.error(str(error))
+        return
     if view["phase"] == "DRAFT_READY":
         st.success("승인한 산정 결과로 협의안 초안을 작성했습니다.")
         return
@@ -149,7 +163,7 @@ def _review_form(workflow: Agent3Workflow, view: dict, changed: bool) -> None:
                 snapshot_hash=view["snapshot_hash"], request_id=uuid4().hex, reviewer_ref=reviewer,
                 approved=approve, reason=note, acknowledge_unknown_schedule=acknowledged))
             st.session_state[PREFIX + "view"] = new_view
-            st.session_state[PREFIX + "notice"] = "협의안 초안을 작성했습니다." if approve else "반려 사유를 기록했습니다. 공수를 수정하거나 검토 후 다시 승인할 수 있습니다."
+            st.session_state[PREFIX + "notice"] = "PM 산정 승인이 완료됐습니다. 협의안을 생성해 주세요." if approve else "반려 사유를 기록했습니다. 공수를 수정하거나 검토 후 다시 승인할 수 있습니다."
             st.rerun()
         except (ValueError, ToolInputError) as error:
             st.error(str(error))

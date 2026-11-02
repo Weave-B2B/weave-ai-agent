@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     llm_model: str = ""
     llm_api_key: str = ""
+    gemini_api_key: str = ""
     llm_provider: str = "fake"
     llm_max_tokens: int = Field(default=4096, ge=1)
     llm_temperature: float = Field(default=0.0, ge=0, le=2)

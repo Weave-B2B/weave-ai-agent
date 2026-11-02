@@ -51,9 +51,10 @@ def test_gemini_http_prepare_edit_review_draft_contract(a3_input, a3_payload, mo
         assert body["response_format"]["type"] == "json_schema"
         assert body["response_format"]["json_schema"]["strict"] is True
         assert_strict_schema(body["response_format"]["json_schema"]["schema"])
-        assert "RC-SYNTH" not in body["messages"][1]["content"]
+        if len(calls) == 1:
+            assert "RC-SYNTH" not in body["messages"][1]["content"]
         assert "mock-private-key" not in json.dumps(body)
-        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload)}, "finish_reason": "stop"}],
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload if len(calls) == 1 else {"narrative": "안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다."})}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 10, "completion_tokens": 20}})
     llm = client_for(handler)
     # Reuse one workflow across every API call, as the real cached route does.
@@ -69,10 +70,13 @@ def test_gemini_http_prepare_edit_review_draft_contract(a3_input, a3_payload, mo
         assert edited["impact"]["estimates"][0]["totals"]["price"] == 5850000
         assert edited["draft"] is None
         final = client.post(base + "/review", json=review_request(edited).model_dump(mode="json"))
+        assert final.status_code == 200 and final.json()["phase"] == "APPROVED"
+        approved = final.json()
+        final = client.post(base + "/draft", json={"state_revision": approved["state_revision"], "review_id": approved["approval"]["review_id"]})
         assert final.status_code == 200 and final.json()["phase"] == "DRAFT_READY"
         assert "5,850,000원" in final.json()["draft"]["cost"]
         assert "mock-private-key" not in final.text
-        assert len(calls) == 1  # edits and approved template do not call a model
+        assert len(calls) == 2  # impact and approved narrative each invoke the model
     llm.client.close()
 
 
@@ -103,7 +107,7 @@ def test_gemini_failures_surface_without_fake_fallback(a3_input, monkeypatch, ou
 
 def test_existing_factory_constructs_gemini_compatible_client_without_sdk():
     settings = Settings(_env_file=None, llm_provider="local", llm_model=GEMINI_MODEL,
-        llm_api_key="mock-private-key", llm_base_url=GEMINI_BASE_URL, llm_local_json_mode="schema")
+        gemini_api_key="mock-private-key", llm_base_url=GEMINI_BASE_URL, llm_local_json_mode="schema")
     client = build_llm(settings)
     assert isinstance(client, LocalLlm) and client.model_id == GEMINI_MODEL
     client.client.close()

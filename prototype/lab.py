@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from app.agents.agent3.agent import LlmAgent3
-from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact
+from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft
 from app.api.agent3_routes import _guard
 from app.core.config import ROOT, Settings
 from app.llm.factory import build_llm
@@ -32,7 +32,7 @@ GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/'
 class LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     input: Agent3Input
-    provider: Literal['fake', 'gemini', 'bedrock'] = 'fake'
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
     model: str = ''
     base_url: str = ''
     region: str = 'ap-northeast-2'
@@ -41,28 +41,34 @@ class LabInput(BaseModel):
 class Agent1LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     input: Agent1Input
-    provider: Literal['fake', 'gemini', 'bedrock'] = 'fake'
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
     model: str = ''
     region: str = 'ap-northeast-2'
 
 class Agent2LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     input: Agent2Input
-    provider: Literal['fake', 'gemini', 'bedrock'] = 'fake'
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
+    model: str = ''
+    region: str = 'ap-northeast-2'
+
+class LabGenerateDraft(GenerateDraft):
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
     model: str = ''
     region: str = 'ap-northeast-2'
 
 def provider_client(body):
     values = dotenv_values(ROOT / '.env') if (ROOT / '.env').is_file() else {}
-    key = os.environ.get('GEMINI_API_KEY') or values.get('GEMINI_API_KEY') or os.environ.get('LLM_API_KEY') or values.get('LLM_API_KEY') or ''
-    if body.provider == 'gemini' and not key:
-        raise HTTPException(422, '서버 .env에 GEMINI_API_KEY를 설정해 주세요.')
-    model = body.model.strip() or ('gemini-2.5-flash-lite' if body.provider == 'gemini' else '')
+    key_name = 'GEMINI_API_KEY' if body.provider == 'gemini' else 'LLM_API_KEY'
+    key = os.environ.get(key_name) or values.get(key_name) or ''
+    if body.provider in ('gemini', 'openai') and not key:
+        raise HTTPException(422, f'서버 .env에 {key_name}를 설정해 주세요.')
+    model = body.model.strip() or {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna'}.get(body.provider, '')
     if not model:
         raise HTTPException(422, '모델 이름을 입력해 주세요.')
-    config = Settings(_env_file=None, llm_provider='bedrock' if body.provider == 'bedrock' else 'local',
+    config = Settings(_env_file=None, llm_provider={'bedrock': 'bedrock', 'gemini': 'local', 'openai': 'openai'}[body.provider],
         llm_model=model, llm_base_url=GEMINI_URL if body.provider == 'gemini' else '',
-        llm_api_key=key if body.provider == 'gemini' else '',
+        llm_api_key=key if body.provider == 'openai' else '', gemini_api_key=key if body.provider == 'gemini' else '',
         llm_local_json_mode='schema' if body.provider == 'gemini' else 'prompt', aws_region=body.region)
     return build_llm(config)
 
@@ -130,20 +136,10 @@ def prepare(request: Request, body: LabInput):
         fake = body.fake_response
         if fake is None:
             fake = json.loads((ROOT / 'examples/agent3/fake_responses.json').read_text(encoding='utf-8'))[0]
-        client = FakeLlm([fake], model_id='prototype-fake')
+        narrative = {'narrative': '안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다.'}
+        client = FakeLlm([fake] + [narrative] * 20, model_id='prototype-fake')
     else:
-        values = dotenv_values(ROOT / '.env') if (ROOT / '.env').is_file() else {}
-        key = os.environ.get('GEMINI_API_KEY') or values.get('GEMINI_API_KEY') or os.environ.get('LLM_API_KEY') or values.get('LLM_API_KEY') or ''
-        if body.provider == 'gemini' and not key:
-            raise HTTPException(422, '서버 .env에 GEMINI_API_KEY를 설정해 주세요.')
-        base = GEMINI_URL if body.provider == 'gemini' else ''
-        model = body.model.strip() or ('gemini-2.5-flash-lite' if body.provider == 'gemini' else '')
-        if not model:
-            raise HTTPException(422, '모델 이름을 입력해 주세요.')
-        config = Settings(_env_file=None, llm_provider='bedrock' if body.provider == 'bedrock' else 'local',
-            llm_model=model, llm_base_url=base, llm_api_key=key if body.provider == 'gemini' else '',
-            llm_local_json_mode='schema' if body.provider == 'gemini' else 'prompt', aws_region=body.region)
-        client = build_llm(config)
+        client = provider_client(body)
     workflow = Agent3Workflow(LlmAgent3(client))
     view = _guard(lambda: workflow.prepare(body.input))
     case = (body.input.context.project_id, body.input.context.case_id)
@@ -171,3 +167,16 @@ def review(request: Request, sid: str, body: ReviewImpact):
     local_only(request)
     with lock:
         return _guard(lambda: workflow_for(sid).review(sid, body))
+
+
+@router.post('/impacts/{sid}/draft')
+def draft(request: Request, sid: str, body: LabGenerateDraft):
+    local_only(request)
+    workflow = workflow_for(sid)
+    client = FakeLlm([{'narrative': '안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다.'}]) if body.provider == 'fake' else provider_client(body)
+    if body.provider == 'gemini':
+        client.provider = 'gemini'
+    req = GenerateDraft(state_revision=body.state_revision, review_id=body.review_id)
+    result = _guard(lambda: workflow.generate_draft(sid, req, draft_llm=client))
+    workflow_for(sid)
+    return result
