@@ -44,3 +44,17 @@ def test_other_request_cannot_reuse_case_rules():
     out = LlmAgent3(FakeLlm([SAMPLES["fake_responses"]["CR-A-003"]])).run(inp)
     assert out.status == "NEEDS_INPUT"
     assert out.estimates[0].totals is None
+
+
+def test_common_sample_rate_card_matches_shared_test_baseline():
+    from app.kb.loader import rate_cards
+    common = 'RC-SYNTH-2026H2-v2'
+    assert {entry['rate_card_id'] for entry in SAMPLES['inputs'].values()} == {common}
+    assert rate_cards()[common]['rates'] == {
+        'PM': {'cost': 520000, 'price': 750000},
+        'UX': {'cost': 450000, 'price': 650000},
+        'FE': {'cost': 450000, 'price': 650000},
+        'BE': {'cost': 500000, 'price': 700000},
+        'QA': {'cost': 350000, 'price': 500000},
+    }
+    assert 'QA' not in rate_cards()['RC-SYNTH-2026H2-v2-noQA']['rates']

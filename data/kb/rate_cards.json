@@ -51,6 +51,58 @@
           "price": 700000
         }
       }
+    },
+    "RC-SYNTH-2026H2-v2": {
+      "synthetic": true,
+      "unit": "KRW/MD",
+      "vat_included": false,
+      "rates": {
+        "PM": {
+          "cost": 520000,
+          "price": 750000
+        },
+        "UX": {
+          "cost": 450000,
+          "price": 650000
+        },
+        "FE": {
+          "cost": 450000,
+          "price": 650000
+        },
+        "BE": {
+          "cost": 500000,
+          "price": 700000
+        },
+        "QA": {
+          "cost": 350000,
+          "price": 500000
+        }
+      },
+      "_note": "프로토타입 공통 테스트 기준. 합성 데이터이며 실제 계약 단가 아님."
+    },
+    "RC-SYNTH-2026H2-v2-noQA": {
+      "synthetic": true,
+      "unit": "KRW/MD",
+      "vat_included": false,
+      "rates": {
+        "PM": {
+          "cost": 520000,
+          "price": 750000
+        },
+        "UX": {
+          "cost": 450000,
+          "price": 650000
+        },
+        "FE": {
+          "cost": 450000,
+          "price": 650000
+        },
+        "BE": {
+          "cost": 500000,
+          "price": 700000
+        }
+      },
+      "_note": "계약 테스트: QA 단가 누락"
     }
   }
 }

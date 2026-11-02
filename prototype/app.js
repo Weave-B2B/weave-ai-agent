@@ -1,5 +1,5 @@
 import { Agent1Api, Agent2Api, Agent3Api, ApiError, MockPreview } from "./api.js";
-import { records, sampleItems, scenarioInput } from "./fixtures.js";
+import { records, sampleItems, scenarioInput } from "./fixtures.js?v=common-rate-2";
 
 const root = document.querySelector("#app");
 const api = new Agent3Api();
@@ -14,6 +14,7 @@ const draftLab = { provider: "gemini", model: "gemini-2.5-flash-lite", region: "
 const lab = { enabled: false, provider: "fake", model: "gemini-2.5-flash-lite", base_url: "http://127.0.0.1:11434/v1", region: "ap-northeast-2", fakeText: "" };
 const e = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "—";
+const rateCardButton = id => id ? `<button type="button" class="rate-card-link" data-rate-card="${e(id)}" aria-label="${e(id)} 단가표 보기">${e(id)}</button>` : "미선택";
 const money = value => typeof value === "number" && Number.isFinite(value) ? `${number(value)}원` : "미산정";
 const icon = file => `<span class="icon"><img src="./assets/${file}.svg" alt=""></span>`;
 const chip = (label, tone = "neutral") => `<span class="chip ${tone}">${icon(tone === "ai" ? "1b8e7" : tone === "success" ? "396d8" : tone === "info" ? "59318" : tone === "warning" ? "691d6" : "edb5c")}<span>${e(label)}</span></span>`;
@@ -266,7 +267,7 @@ function inputSummary(input) {
     return `<article class="input-preview-item"><div class="input-preview-item-title"><span class="input-preview-number">${e(item.display_no || "요청")}</span><strong>${e(item.text)}</strong></div><div class="input-preview-tags"><span>Agent 2 <b>${e(A2_LABEL[a?.label]?.[0] || a?.label || "미확인")}</b></span><span>PM 판단 <b>${e(pmLabels[r?.pm_label] || "미검토")}</b></span><span class="${r?.estimate ? "selected" : ""}">산정 대상: <b>${r?.estimate ? "선택" : "미선택"}</b></span></div></article>`;
   }).join("") || '<p class="input-preview-muted">등록된 요청 항목이 없습니다.</p>';
   const conditions = (input.constraints || []).map(item => `<li>${e(item.text)}</li>`).join("");
-  return `<div class="input-preview-grid"><section class="input-preview-panel"><div class="input-preview-label">요청 항목 및 범위 판단 <span>${(input.items || []).length}건</span></div>${items}</section><section class="input-preview-panel"><div class="input-preview-label">일정 · 조건</div>${conditions ? `<ul class="input-preview-conditions">${conditions}</ul>` : '<p class="input-preview-muted">등록된 일정이나 조건이 없습니다.</p>'}<dl class="input-preview-meta"><div><dt>적용 단가표</dt><dd>${e(input.rate_card_id || "미선택")}</dd></div><div><dt>PM 검토</dt><dd>${e(reviewStatus)}</dd></div></dl></section></div>`;
+  return `<div class="input-preview-grid"><section class="input-preview-panel"><div class="input-preview-label">요청 항목 및 범위 판단 <span>${(input.items || []).length}건</span></div>${items}</section><section class="input-preview-panel"><div class="input-preview-label">일정 · 조건</div>${conditions ? `<ul class="input-preview-conditions">${conditions}</ul>` : '<p class="input-preview-muted">등록된 일정이나 조건이 없습니다.</p>'}<dl class="input-preview-meta"><div><dt>적용 단가표</dt><dd>${rateCardButton(input.rate_card_id)}</dd></div><div><dt>PM 검토</dt><dd>${e(reviewStatus)}</dd></div></dl></section></div>`;
 }
 function settings() {
   const scenarios = [["normal", "선택한 요청의 기본 입력"], ["missing-rate", "QA 단가 누락"], ["upstream", "범위 PM 검토 전"], ["no-target", "산정 대상 없음"]];
@@ -279,6 +280,93 @@ function settings() {
   }).join("") : '<p class="caption">범위 검토 탭에서 Agent 2를 실행해 주세요.</p>';
   return `<section class="card"><h2>2. 영향 산정 입력 선택</h2><fieldset class="field"><legend>입력 출처</legend><div class="button-group">${[["sample", "기존 샘플 입력"], ["agent2", "Agent 2 실행 결과"]].map(([v,l]) => `<label class="check"><input type="radio" name="input-source" value="${v}" ${state.inputSource === v ? "checked" : ""} ${state.pending ? "disabled" : ""}>${l}</label>`).join("")}</div></fieldset>${state.inputSource === "agent2" ? `<p class="caption">현재 요청의 Agent 2 결과를 PM이 직접 검토합니다. 선택과 기록은 이 브라우저의 로컬 테스트용입니다.</p>${a2.result ? `<p class="tiny">결과 ${e(a2.result.meta?.result_id || "없음")} · ${e(a2.result.meta?.model || a2.result.meta?.agent_version || "모델 정보 없음")} · ${e(a2.result.status)}</p>` : ""}${reviewRows}${button("PM 판단 적용", "confirm-live-review", { class: "small", disabled: !a2.result || state.pending })}${a2.review ? '<p class="tiny">현재 Agent 2 결과에 대한 로컬 PM 판단이 적용되었습니다.</p>' : '<p class="tiny">모든 항목의 판단을 선택하고 적용해 주세요. 범위 밖만 산정 대상으로 선택할 수 있습니다.</p>'}` : `<label class="field">샘플 시나리오<select id="scenario" ${state.pending ? "disabled" : ""}>${scenarios.map(([v,l]) => `<option value="${v}" ${state.scenario === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>`}<div class="input-preview-heading"><div><h3>산정 입력 미리보기</h3><p>선택한 입력의 주요 내용을 확인하세요.</p></div></div>${inputSummary(current)}<details class="input-settings input-preview-json"><summary>입력 JSON · 고급 확인</summary><label class="field">Agent 3 입력 JSON<textarea id="input-json" class="json-input" spellcheck="false" ${state.pending || !record().api || state.inputSource === "agent2" ? "readonly" : ""}>${e(state.inputText)}</textarea></label><div class="form-actions">${state.inputSource === "sample" ? button("기본 입력 복원", "reset-input", { disabled: state.pending }) : ""}${button("로컬 세션 지우기", "clear-session", { disabled: state.pending })}</div></details></section>`;
 }
+async function showRateCard(id) {
+  const dialog = document.querySelector("#rate-card-dialog");
+  const content = document.querySelector("#rate-card-content");
+  document.querySelector("#rate-card-title").textContent = "단가표 · " + id;
+  content.innerHTML = '<p class="rate-card-loading">단가표를 불러오는 중입니다…</p>';
+  dialog.showModal();
+  try {
+    const response = await fetch(`/prototype-data/rate-cards/${encodeURIComponent(id)}`, { cache: "no-store" });
+    const card = await response.json();
+    if (!response.ok) throw new Error(typeof card?.detail === "string" ? card.detail : "단가표를 불러오지 못했습니다.");
+    const current = state.view?.impact?.estimates?.some(row => row.rate_card_id === id) && state.view?.rate_card_fingerprint;
+    const status = current ? (current === card.fingerprint ? '<div class="rate-card-status">현재 산정 결과와 동일한 기준입니다.</div>' : '<div class="notice error rate-card-status">단가표 또는 공수 기준이 산정 이후 변경되었습니다. 표시된 표는 현재 기준이며 산정을 다시 실행해 주세요.</div>') : '<div class="rate-card-status">현재 서버에 설정된 단가표입니다.</div>';
+    const kind = card.synthetic === true ? '테스트용 합성 단가표입니다. 실제 계약이나 견적에 사용할 수 없습니다.' : '현재 서버에 설정된 단가표입니다. 사용 전 적용 기준을 확인해 주세요.';
+    const rateMoney = value => typeof value === "number" && Number.isFinite(value) ? `${value.toLocaleString("ko-KR", { maximumFractionDigits: 20 })}원` : "미산정";
+    const roles = [["PM", "프로젝트 관리"], ["UX", "UX / 디자인"], ["FE", "프론트엔드"], ["BE", "백엔드"], ["QA", "QA / 테스트"]];
+    const rows = roles.map(([role, label]) => {
+      const rate = card.rates?.[role];
+      const field = key => lab.enabled ? `<input class="rate-edit-input" type="number" min="0" step="any" inputmode="decimal" data-rate-role="${role}" data-rate-field="${key}" value="${e(rate?.[key] ?? "")}" aria-label="${role} ${key === "cost" ? "원가" : "판매 단가"} 원/MD" placeholder="미설정">` : rateMoney(rate?.[key]);
+      return `<tr><th scope="row">${e(label)} <span>${e(role)}</span></th><td>${field("cost")}</td><td>${field("price")}</td></tr>`;
+    }).join("");
+    content.innerHTML = `<p class="rate-card-description">${e(kind)}</p>${status}<div class="rate-card-meta"><span>단위: 원 / MD</span><span>부가세 별도</span><span>원가 · 내부 확인용</span></div><div class="table-wrap"><table class="rate-card-table"><thead><tr><th scope="col">직군</th><th scope="col">원가 / MD</th><th scope="col">판매 단가 / MD</th></tr></thead><tbody>${rows}</tbody></table></div><p class="rate-card-note">빈 칸은 미설정입니다. 공수는 별도의 작업별 기준으로 산정합니다.</p>${lab.enabled ? `<label class="field">단가 수정 사유<input id="rate-edit-reason" maxlength="500" placeholder="예: 계약 단가 검토"></label><div id="rate-edit-message" role="status" aria-live="polite"></div><div class="form-actions"><button type="button" class="button primary" id="save-rate-version">새 버전 저장 및 적용</button></div><p class="rate-card-note">원본 표는 보존되고 수정한 값은 이 서버의 로컬 단가표로 저장됩니다. 현재 산정이 있으면 저장 즉시 작업과 공수를 유지한 채 금액을 다시 계산하고 기존 승인을 해제합니다.</p>` : '<p class="rate-card-note">단가를 수정하려면 --lab 모드로 실행해 주세요.</p>'}`;
+    if (lab.enabled) document.querySelector("#save-rate-version").addEventListener("click", () => saveRateVersion(card));
+  } catch (error) {
+    content.innerHTML = `<div class="notice error rate-card-error" role="alert"><strong>단가표를 확인할 수 없습니다.</strong>${e(error.message || "연결 상태를 확인해 주세요.")}</div>`;
+  }
+}
+async function saveRateVersion(card) {
+  const message = document.querySelector("#rate-edit-message"), save = document.querySelector("#save-rate-version");
+  const showError = text => { message.innerHTML = `<div class="notice error rate-card-error" role="alert">${e(text)}</div>`; };
+  let input;
+  try { input = parsedInput(); } catch { return showError("먼저 유효한 산정 입력을 준비해 주세요."); }
+  if (state.pending || state.mode !== "api" || input.rate_card_id !== card.id) return showError("현재 산정 입력에 선택된 단가표에서만 수정할 수 있습니다.");
+  if (state.inputSource === "agent2" && !a2.review) return showError("먼저 Agent 2 결과의 PM 판단을 적용해 주세요.");
+  if (state.view && editsChanged()) return showError("작업·공수의 미저장 수정 사항을 먼저 반영하거나 취소해 주세요.");
+  const reason = document.querySelector("#rate-edit-reason").value.trim();
+  if (!reason) return showError("단가 수정 사유를 입력해 주세요.");
+  const rates = {};
+  for (const role of ["PM", "UX", "FE", "BE", "QA"]) {
+    rates[role] = {};
+    for (const field of ["cost", "price"]) {
+      const el = document.querySelector(`[data-rate-role="${role}"][data-rate-field="${field}"]`);
+      const value = el.value.trim();
+      if (value && (!el.validity.valid || !Number.isFinite(Number(value)) || Number(value) < 0)) return showError(`${role} 단가는 0 이상의 숫자로 입력해 주세요.`);
+      rates[role][field] = value ? Number(value) : null;
+    }
+  }
+  const before = state.inputText, activeId = state.id;
+  const canReprice = !!state.view && !state.invalidated && !state.conflicted && !inputChanged() && state.edits?.length > 0;
+  save.disabled = true; message.textContent = "단가표를 저장하는 중입니다…";
+  try {
+    const response = await fetch(`/prototype-data/rate-cards/${encodeURIComponent(card.id)}/versions`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_fingerprint: card.fingerprint, reason, rates }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(typeof result?.detail === "string" ? result.detail : "단가표를 저장하지 못했습니다.");
+    if (state.id !== activeId || state.inputText !== before) {
+      showError(`새 단가표 ${result.id}를 저장했지만 현재 입력이 바뀌어 자동 적용하지 않았습니다.`); return;
+    }
+    input.rate_card_id = result.id;
+    state.inputText = JSON.stringify(input, null, 2);
+    if (state.inputSource === "sample") state.sampleInputText = state.inputText;
+    if (state.inputSource === "agent2" && a2.review) a2.review.rate_card_id = result.id;
+    let detail = "영향 산정을 실행하면 새 단가로 계산합니다.";
+    if (state.view) state.invalidated = true;
+    if (canReprice) {
+      try {
+        const view = await api.edit(state.view.session_id, {
+          state_revision: state.view.state_revision,
+          target_result_id: state.view.impact.meta.result_id,
+          estimates: state.edits, reason: `단가표 수정: ${reason}`, rate_card_id: result.id,
+        });
+        const originalLines = state.originalLines;
+        acceptView(view, input);
+        state.originalLines = originalLines;
+        detail = "기존 작업과 공수는 유지하고 새 단가로 다시 계산했습니다. 기존 승인과 초안은 해제되어 다시 승인해야 합니다.";
+      } catch (error) {
+        if (error.status === 409) state.conflicted = true;
+        detail = `단가표는 저장했지만 기존 결과 재계산에 실패했습니다: ${error.message || "연결 오류"}. 영향 산정을 다시 실행해 주세요.`;
+      }
+    }
+    persist(); render();
+    document.querySelector("#rate-card-content").innerHTML = `<div class="rate-save-success"><strong>새 단가표를 저장하고 입력에 적용했습니다.</strong><p>${e(result.id)}</p><p>${e(detail)}</p><button type="button" class="button" id="rate-save-done">확인</button></div>`;
+    document.querySelector("#rate-save-done").addEventListener("click", () => document.querySelector("#rate-card-dialog").close());
+  } catch (error) { showError(error.message || "단가표 저장에 실패했습니다."); save.disabled = false; }
+}
+
 function submittedConditions() {
   const current = record().api && state.view;
   const input = current ? state.submittedInput : null;
@@ -294,13 +382,15 @@ function impact() {
   const current = record().api ? state.view : null;
   const original = state.originalLines;
   const writable = canEdit();
-  let position = 0;
-  const rows = list.map((item, i) => item.lines.map((line, j) => {
-    const initial = original[position++];
-    const edit = state.edits?.[i]?.lines?.[j] || line;
-    return `<tr><td><strong style="font-weight:500">${e(line.task)}</strong><small>${e(line.item_ids.join(" · "))}</small></td><td>${e(line.role)}</td><td class="numeric">${initial ? number(initial.md) : "—"}</td><td><input class="md-input" id="md-${i}-${j}" type="number" min="0" step="0.5" value="${e(edit.md)}" aria-label="${e(line.role)} 공수 MD" data-edit-md="${i}:${j}" ${writable ? "" : "disabled"}></td><td class="tiny">API 미제공</td><td class="tiny">API 미제공</td></tr><tr class="assumption-row"><td colspan="6"><label class="tiny">가정 <input class="assumption-input" id="assumption-${i}-${j}" data-edit-assumption="${i}:${j}" value="${e(edit.assumption)}" aria-label="${e(line.role)} 가정" ${writable ? "" : "disabled"}></label></td></tr>`;
-  }).join("")).join("");
-  return `${record().api ? "" : '<div class="notice">이 예시는 API 산정 대상이 아닙니다. CR-A-001을 열어 기존 API 흐름을 확인하세요.</div>'}${labControls()}${settings()}${state.pending ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>기존 Agent 3 API 응답을 기다리는 중입니다…</p>' : ""}${stateNotice()}<div class="version-row"><span>산정 버전</span><span class="version-pill">선택된 입력: ${state.inputSource === "agent2" ? "Agent 2 실행 결과 · 로컬 PM 검토" : "샘플"}</span><span class="version-pill current">${current ? `현재 v${current.state_revision}` : "실행 전"}</span><span style="margin-left:auto">단가표 ${e(rate)} · VAT 별도</span>${button("현재 상태 확인", "refresh", { disabled: !current || state.pending || state.mode !== "api", icon: "ec991" })}</div><div class="metric-grid">${metric("총 공수", totals ? `${number(totals.md)}<small>MD</small>` : "미산정", "응답의 코드 계산 결과", !totals)}${metric("예상 직접원가 · 내부", totals ? money(totals.cost) : "미산정", "합성 단가 기준 · 행별 단가 미제공", !totals)}${metric("고객 제안가 · 판매", totals ? money(totals.price) : "미산정", "실제 고객 합의 금액이 아닙니다", !totals)}${metric("예상 마진", margin === null ? "미산정" : `${number(margin)}<small>%</small>`, "API 총 원가·판매가의 표시용 비율", margin === null)}${metric("일정 영향", current && list.length && !unknownSchedule() ? "항목별 확인" : "미산정", "MD를 달력 일수로 환산하지 않습니다", true)}</div><div class="columns impact"><div class="stack"><section class="card"><div class="card-heading"><div><h2>작업 분해 · 공수</h2><p class="caption">공수·가정을 수정하면 기존 API가 금액을 재계산하고 재승인을 요구합니다.</p></div>${chip(state.mode === "mock" ? "가상 상태" : "API 응답")}</div><div class="table-wrap"><table class="impact-table"><thead><tr><th>작업 · 연결 항목</th><th>직군</th><th>최초 MD</th><th>수정 MD</th><th>직군 단가</th><th>행별 금액</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="empty-state"><h3>표시할 산정 작업이 없습니다</h3><p>산정 실행 결과와 필요한 입력을 확인해 주세요.</p></div></td></tr>'}${totals ? `<tr class="total-row"><td>합계</td><td></td><td></td><td class="numeric">${number(totals.md)} MD</td><td colspan="2" class="numeric">${money(totals.price)}</td></tr>` : ""}</tbody></table></div><label class="field">수정 사유<input id="edit-reason" placeholder="공수·가정을 수정한 이유를 입력하세요" value="${e(state.editReason)}" ${writable ? "" : "disabled"}></label><p id="edit-notice" class="tiny" style="margin-top:8px">${editsChanged() ? "아직 저장하지 않은 수정이 있습니다. 수정 반영 후 승인해 주세요." : "직접 금액·일정 편집은 현재 계약에 포함되지 않습니다."}</p><div class="form-actions">${button("수정 반영·재계산", "edit", { disabled: !writable || !editsChanged(), icon: "ec991" })}${button("편집 취소", "cancel-edit", { disabled: !editsChanged() || state.pending })}</div><div class="notice inline">${icon("2b0e7")}AI가 작업과 테스트 기준을 제안하고 서버가 기준 공수와 단가로 계산합니다. 사례별 합성 기준이며 실제 견적에 사용할 수 없습니다. PM은 공수를 수동 수정할 수 있습니다.</div></section><section class="card"><div class="card-heading"><div><h2>일정 영향</h2><p class="caption">선행 작업·인력 정보가 없으면 임의 일수 대신 미산정으로 표시합니다.</p></div>${chip("확정 아님")}</div><div class="schedule-grid">${submittedConditions()}<div class="schedule-box"><h3>산정 결과의 근거</h3>${list.length ? list.map(item => `<p>${item.schedule.business_days == null ? "미산정" : `${number(item.schedule.business_days)} 영업일`}</p><p class="tiny">${e(item.schedule.reason || "항목별 근거 확인")}</p>`).join("") : '<p>산정 결과가 아직 없습니다.</p>'}</div></div>${(current?.impact.questions || []).map(question => `<div class="question"><strong>${question.blocking ? "필수 확인" : "확인 사항"} · ${e(question.text)}</strong><span class="muted">${e(question.reason || "필요한 정보 확인 후 다시 산정해 주세요.")}</span></div>`).join("")}</section></div><div class="stack"><section class="card"><div class="card-heading"><div><h2>PM 산정 검토</h2><p class="caption">상업 승인·고객 합의와 별개인 로컬 검토입니다.</p></div></div><div class="radio-option selected"><span class="radio-dot"></span><div>산정 결과 확인<div class="tiny">현재 결과와 일정 미산정의 한계를 확인합니다.</div></div></div><label class="field">검토자 · 로컬 테스트용<input id="reviewer" value="${e(state.reviewer)}" ${state.pending ? "disabled" : ""}></label><label class="field">검토 메모 / 반려 사유<textarea id="review-reason" placeholder="반려할 때는 사유가 필요합니다" ${state.pending ? "disabled" : ""}>${e(state.reviewReason)}</textarea></label>${unknownSchedule() ? `<label class="check"><input id="ack-schedule" type="checkbox" ${state.ack ? "checked" : ""} ${state.pending ? "disabled" : ""}><span>일정 영향이 미산정이며 추가 확인이 필요함을 확인했습니다.</span></label>` : ""}<div class="form-actions">${button("PM 산정 승인", "approve", { class: "primary", disabled: !canApprove() || (unknownSchedule() && !state.ack), icon: "6ce49" })}${button("반려", "reject", { disabled: !canApprove() })}</div><p class="tiny" style="margin-top:12px">수정되면 기존 승인·초안은 이력으로 남고 현재 결과는 재승인이 필요합니다.</p>${["APPROVED", "DRAFT_READY"].includes(current?.phase) ? `<div class="notice inline"><strong>PM 산정 승인 완료</strong>${button("협의안 생성 화면", "go-draft", { class: "small", icon: "ec151" })}</div>` : ""}</section><section class="card"><h2>산정 이력</h2><p class="caption">현재 API 세션의 실제 변경 이력</p>${history()}${current ? `<details style="margin-top:16px"><summary class="caption">결과 JSON · 버전</summary><pre class="raw-json">${e(JSON.stringify(current, null, 2))}</pre></details>` : '<p class="caption" style="margin-top:14px">산정 후 표시됩니다.</p>'}</section></div></div>`;
+  const rows = list.map((item, i) => {
+    const lines = state.edits?.[i]?.lines || item.lines;
+    return lines.map((line, j) => {
+      const initial = original.find(old => old.task === line.task && old.role === line.role && JSON.stringify(old.item_ids) === JSON.stringify(line.item_ids));
+      const roles = ["PM", "UX", "FE", "BE", "QA"];
+      return `<tr><td><input class="task-edit-input" type="text" value="${e(line.task)}" aria-label="작업 내용" data-edit-task="${i}:${j}" ${writable ? "" : "disabled"}><small>${e(line.item_ids.join(" · "))}</small></td><td><select class="role-edit-select" aria-label="직군" data-edit-role="${i}:${j}" ${writable ? "" : "disabled"}>${roles.map(role => `<option value="${role}" ${role === line.role ? "selected" : ""}>${role}</option>`).join("")}</select></td><td class="numeric">${initial ? number(initial.md) : "—"}</td><td><input class="md-input" id="md-${i}-${j}" type="number" min="0" step="0.5" value="${e(line.md)}" aria-label="${e(line.role)} 공수 MD" data-edit-md="${i}:${j}" ${writable ? "" : "disabled"}></td><td class="tiny">API 미제공</td><td class="tiny">API 미제공 ${writable ? `<button type="button" class="task-remove" data-remove-line="${i}:${j}" aria-label="${e(line.task || "새 작업")} 삭제">삭제</button>` : ""}</td></tr><tr class="assumption-row"><td colspan="6"><label class="tiny">가정 <input class="assumption-input" id="assumption-${i}-${j}" data-edit-assumption="${i}:${j}" value="${e(line.assumption)}" aria-label="${e(line.role)} 가정" ${writable ? "" : "disabled"}></label></td></tr>`;
+    }).join("") + (writable ? `<tr><td colspan="6"><button type="button" class="button small" data-add-line="${i}">+ 작업 추가</button></td></tr>` : "");
+  }).join("");
+  return `${record().api ? "" : '<div class="notice">이 예시는 API 산정 대상이 아닙니다. CR-A-001을 열어 기존 API 흐름을 확인하세요.</div>'}${labControls()}${settings()}${state.pending ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>기존 Agent 3 API 응답을 기다리는 중입니다…</p>' : ""}${stateNotice()}<div class="version-row"><span>산정 버전</span><span class="version-pill">선택된 입력: ${state.inputSource === "agent2" ? "Agent 2 실행 결과 · 로컬 PM 검토" : "샘플"}</span><span class="version-pill current">${current ? `현재 v${current.state_revision}` : "실행 전"}</span><span style="margin-left:auto">단가표 ${rate === "응답 전" ? "응답 전" : rateCardButton(rate)} · VAT 별도</span>${button("현재 상태 확인", "refresh", { disabled: !current || state.pending || state.mode !== "api", icon: "ec991" })}</div><div class="metric-grid">${metric("총 공수", totals ? `${number(totals.md)}<small>MD</small>` : "미산정", "응답의 코드 계산 결과", !totals)}${metric("예상 직접원가 · 내부", totals ? money(totals.cost) : "미산정", "합성 단가 기준 · 행별 단가 미제공", !totals)}${metric("고객 제안가 · 판매", totals ? money(totals.price) : "미산정", "실제 고객 합의 금액이 아닙니다", !totals)}${metric("예상 마진", margin === null ? "미산정" : `${number(margin)}<small>%</small>`, "API 총 원가·판매가의 표시용 비율", margin === null)}${metric("일정 영향", current && list.length && !unknownSchedule() ? "항목별 확인" : "미산정", "MD를 달력 일수로 환산하지 않습니다", true)}</div><div class="columns impact"><div class="stack"><section class="card"><div class="card-heading"><div><h2>작업 분해 · 공수</h2><p class="caption">작업 내용·직군·공수·가정을 수정하면 금액이 재계산되고 재승인이 필요합니다.</p></div>${chip(state.mode === "mock" ? "가상 상태" : "API 응답")}</div><div class="table-wrap"><table class="impact-table"><thead><tr><th>작업 · 연결 항목</th><th>직군</th><th>최초 MD</th><th>수정 MD</th><th>직군 단가</th><th>행별 금액</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="empty-state"><h3>표시할 산정 작업이 없습니다</h3><p>산정 실행 결과와 필요한 입력을 확인해 주세요.</p></div></td></tr>'}${totals ? `<tr class="total-row"><td>합계</td><td></td><td></td><td class="numeric">${number(totals.md)} MD</td><td colspan="2" class="numeric">${money(totals.price)}</td></tr>` : ""}</tbody></table></div><label class="field">수정 사유<input id="edit-reason" placeholder="공수·가정을 수정한 이유를 입력하세요" value="${e(state.editReason)}" ${writable ? "" : "disabled"}></label><p id="edit-notice" class="tiny" style="margin-top:8px">${editsChanged() ? "아직 저장하지 않은 수정이 있습니다. 수정 반영 후 승인해 주세요." : "단가는 단가표 이름을 눌러 수정할 수 있습니다. 일정은 직접 편집할 수 없습니다."}</p><div class="form-actions">${button("수정 반영·재계산", "edit", { disabled: !writable || !editsChanged(), icon: "ec991" })}${button("편집 취소", "cancel-edit", { disabled: !editsChanged() || state.pending })}</div><div class="notice inline">${icon("2b0e7")}AI가 작업과 테스트 기준을 제안하고 서버가 기준 공수와 단가로 계산합니다. 사례별 합성 기준이며 실제 견적에 사용할 수 없습니다. PM은 공수를 수동 수정할 수 있습니다.</div></section><section class="card"><div class="card-heading"><div><h2>일정 영향</h2><p class="caption">선행 작업·인력 정보가 없으면 임의 일수 대신 미산정으로 표시합니다.</p></div>${chip("확정 아님")}</div><div class="schedule-grid">${submittedConditions()}<div class="schedule-box"><h3>산정 결과의 근거</h3>${list.length ? list.map(item => `<p>${item.schedule.business_days == null ? "미산정" : `${number(item.schedule.business_days)} 영업일`}</p><p class="tiny">${e(item.schedule.reason || "항목별 근거 확인")}</p>`).join("") : '<p>산정 결과가 아직 없습니다.</p>'}</div></div>${(current?.impact.questions || []).map(question => `<div class="question"><strong>${question.blocking ? "필수 확인" : "확인 사항"} · ${e(question.text)}</strong><span class="muted">${e(question.reason || "필요한 정보 확인 후 다시 산정해 주세요.")}</span></div>`).join("")}</section></div><div class="stack"><section class="card"><div class="card-heading"><div><h2>PM 산정 검토</h2><p class="caption">상업 승인·고객 합의와 별개인 로컬 검토입니다.</p></div></div><div class="radio-option selected"><span class="radio-dot"></span><div>산정 결과 확인<div class="tiny">현재 결과와 일정 미산정의 한계를 확인합니다.</div></div></div><label class="field">검토자 · 로컬 테스트용<input id="reviewer" value="${e(state.reviewer)}" ${state.pending ? "disabled" : ""}></label><label class="field">검토 메모 / 반려 사유<textarea id="review-reason" placeholder="반려할 때는 사유가 필요합니다" ${state.pending ? "disabled" : ""}>${e(state.reviewReason)}</textarea></label>${unknownSchedule() ? `<label class="check"><input id="ack-schedule" type="checkbox" ${state.ack ? "checked" : ""} ${state.pending ? "disabled" : ""}><span>일정 영향이 미산정이며 추가 확인이 필요함을 확인했습니다.</span></label>` : ""}<div class="form-actions">${button("PM 산정 승인", "approve", { class: "primary", disabled: !canApprove() || (unknownSchedule() && !state.ack), icon: "6ce49" })}${button("반려", "reject", { disabled: !canApprove() })}</div><p class="tiny" style="margin-top:12px">수정되면 기존 승인·초안은 이력으로 남고 현재 결과는 재승인이 필요합니다.</p>${["APPROVED", "DRAFT_READY"].includes(current?.phase) ? `<div class="notice inline"><strong>PM 산정 승인 완료</strong>${button("협의안 생성 화면", "go-draft", { class: "small", icon: "ec151" })}</div>` : ""}</section><section class="card"><h2>산정 이력</h2><p class="caption">현재 API 세션의 실제 변경 이력</p>${history()}${current ? `<details style="margin-top:16px"><summary class="caption">결과 JSON · 버전</summary><pre class="raw-json">${e(JSON.stringify(current, null, 2))}</pre></details>` : '<p class="caption" style="margin-top:14px">산정 후 표시됩니다.</p>'}</section></div></div>`;
 }
 function history() {
   const list = record().api ? state.view?.history || [] : [];
@@ -342,7 +432,7 @@ function updateFormControls() {
   if (edit) edit.disabled = !canEdit() || !editsChanged();
   if (cancel) cancel.disabled = !editsChanged() || state.pending;
   const note = document.querySelector("#edit-notice");
-  if (note) note.textContent = editsChanged() ? "아직 저장하지 않은 수정이 있습니다. 수정 반영 후 승인해 주세요." : "직접 금액·일정 편집은 현재 계약에 포함되지 않습니다.";
+  if (note) note.textContent = editsChanged() ? "아직 저장하지 않은 수정이 있습니다. 수정 반영 후 승인해 주세요." : "단가는 단가표 이름을 눌러 수정할 수 있습니다. 일정은 직접 편집할 수 없습니다.";
 }
 async function operation(action) {
   if (state.pending) return;
@@ -383,6 +473,7 @@ async function refresh() {
 async function edit() {
   if (!canEdit()) return;
   if (!state.editReason.trim()) { state.error = { status: 422, local: true, message: "공수·가정을 수정한 사유를 입력해 주세요." }; render(); return; }
+  if (state.edits.some(item => !item.lines.length || item.lines.some(line => !line.task.trim()))) { state.error = { status: 422, local: true, message: "각 산정 항목에 하나 이상의 작업과 작업 내용을 입력해 주세요." }; render(); return; }
   const invalid = state.edits.some(item => item.lines.some(line => !Number.isFinite(line.md) || line.md < 0 || (line.md * 2) % 1));
   if (invalid) { state.error = { status: 422, local: true, message: "MD는 0 이상인 유한한 수이며 0.5 단위여야 합니다." }; render(); return; }
   await operation(async () => {
@@ -423,6 +514,9 @@ root.addEventListener("click", event => {
   const tab = event.target.closest("[data-tab]"); if (tab) return navigate(state.id, tab.dataset.tab);
   const group = event.target.closest("[data-group]"); if (group) { state.group = group.dataset.group; state.pageNo = 1; render(); return; }
   const item = event.target.closest("[data-item]"); if (item) { state.selectedItem = Number(item.dataset.item); render(); return; }
+  const addLine = event.target.closest("[data-add-line]"); if (addLine && canEdit()) { const i = Number(addLine.dataset.addLine); state.edits[i].lines.push({ task: "", item_ids: [...state.edits[i].item_ids], role: "FE", md: 0.5, assumption: "" }); render(); return; }
+  const removeLine = event.target.closest("[data-remove-line]"); if (removeLine && canEdit()) { const [i,j] = removeLine.dataset.removeLine.split(":").map(Number); state.edits[i].lines.splice(j, 1); render(); return; }
+  const cardButton = event.target.closest("[data-rate-card]"); if (cardButton) { showRateCard(cardButton.dataset.rateCard); return; }
   const control = event.target.closest("[data-action]"); if (!control || control.disabled) return;
   const action = control.dataset.action;
   if (action === "list") navigate(null);
@@ -467,6 +561,7 @@ root.addEventListener("input", event => {
   if (target.id === "edit-reason") state.editReason = target.value;
   if (target.id === "reviewer") state.reviewer = target.value;
   if (target.id === "review-reason") state.reviewReason = target.value;
+  if (target.dataset.editTask) { const [i, j] = target.dataset.editTask.split(":").map(Number); state.edits[i].lines[j].task = target.value; updateFormControls(); }
   if (target.dataset.editMd) { const [i, j] = target.dataset.editMd.split(":").map(Number); state.edits[i].lines[j].md = target.value === "" ? NaN : Number(target.value); updateFormControls(); }
   if (target.dataset.editAssumption) { const [i, j] = target.dataset.editAssumption.split(":").map(Number); state.edits[i].lines[j].assumption = target.value; updateFormControls(); }
 });
@@ -474,6 +569,7 @@ root.addEventListener("compositionstart", event => { if (event.target.id === "re
 root.addEventListener("compositionend", event => { if (event.target.id === "request-search") { composingSearch = false; state.query = event.target.value; state.pageNo = 1; updateSearchResults(); } });
 root.addEventListener("change", async event => {
   const target = event.target;
+  if (target.dataset.editRole) { const [i,j] = target.dataset.editRole.split(":").map(Number); state.edits[i].lines[j].role = target.value; render(); }
   if (target.name === "input-source") switchInputSource(target.value);
   if (target.id === "input-json" && state.inputSource === "sample") render();
   if (target.dataset.pmLabel) { const c = a2.choices[target.dataset.pmLabel] || (a2.choices[target.dataset.pmLabel] = {}); c.label = target.value; if (c.label !== "out_of_scope") c.estimate = false; invalidateLiveReview(); render(); }
@@ -493,10 +589,11 @@ root.addEventListener("change", async event => {
 });
 root.addEventListener("keydown", event => { if (event.target.id === "global-search" && event.key === "Enter") { state.query = event.target.value; state.group = "열린 요청"; state.pageNo = 1; navigate(null); if (state.page === "list") render(); } });
 document.querySelector('[data-action="close-help"]').addEventListener("click", () => document.querySelector("#help-dialog").close());
+document.querySelector("#close-rate-card").addEventListener("click", () => document.querySelector("#rate-card-dialog").close());
 window.addEventListener("hashchange", route);
 
 try {
-  const [inputResponse, previewResponse, sampleResponse] = await Promise.all([fetch(new URL("./data/agent3-input.json", import.meta.url)), fetch(new URL("./data/agent3-preview.json", import.meta.url)), fetch(new URL("./data/agent3-samples.json", import.meta.url))]);
+  const [inputResponse, previewResponse, sampleResponse] = await Promise.all([fetch(new URL("./data/agent3-input.json?v=common-rate-2", import.meta.url)), fetch(new URL("./data/agent3-preview.json", import.meta.url)), fetch(new URL("./data/agent3-samples.json?v=common-rate-2", import.meta.url))]);
   if (!inputResponse.ok || !previewResponse.ok || !sampleResponse.ok) throw new Error("합성 입력 파일을 불러오지 못했습니다.");
   baseInput = await inputResponse.json(); samples = await sampleResponse.json(); samples.inputs["CR-A-001"] = baseInput; previewClient = new MockPreview(await previewResponse.json()); state.inputText = JSON.stringify(baseInput, null, 2);
   try { const response = await fetch("/prototype-lab/defaults"); if (response.ok) { const defaults = await response.json(); if (defaults.fake_response && defaults.model) { lab.enabled = true; api.lab = true; lab.defaultFake = defaults.fake_response; lab.fakeText = JSON.stringify(defaults.fake_response, null, 2); lab.model = defaults.model; } } } catch { /* Ordinary server retains the existing API mode. */ }

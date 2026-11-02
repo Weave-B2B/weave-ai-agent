@@ -5,13 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
     <title>Scopeline · 변경 요청 확인</title>
-    <link rel="stylesheet" href="./styles.css?v=input-preview-1">
-    <script type="module" src="./app.js"></script>
+    <link rel="stylesheet" href="./styles.css?v=rate-edit-2">
+    <script type="module" src="./app.js?v=common-rate-2"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">본문으로 이동</a>
     <div id="app"><p class="boot-message">변경 요청 화면을 준비하고 있습니다…</p></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <dialog id="rate-card-dialog" aria-labelledby="rate-card-title">
+      <div class="dialog-heading"><h2 id="rate-card-title">단가표</h2><button type="button" class="button" id="close-rate-card">닫기</button></div>
+      <div id="rate-card-content" aria-live="polite"></div>
+    </dialog>
     <dialog id="help-dialog" aria-labelledby="help-title">
       <div class="dialog-heading"><h2 id="help-title">로컬 AI 화면 확인</h2><button class="button" data-action="close-help">닫기</button></div>
       <p>요청 목록·원문·범위 검토는 합성 예시 데이터입니다. 영향 산정과 협의안은 기존 Agent 3 API에 연결합니다.</p>
