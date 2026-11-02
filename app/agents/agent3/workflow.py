@@ -42,6 +42,7 @@ class EditImpact(_Request):
     target_result_id: str
     estimates: list[EstimateEdit] = Field(min_length=1)
     reason: str = Field(min_length=1)
+    rate_card_id: str | None = None
 
 
 class ReviewImpact(_Request):
@@ -202,6 +203,8 @@ class Agent3Workflow:
                 raise ValueError("edit must keep the current estimate item groups")
             for estimate in out.estimates:
                 edit = edits[tuple(sorted(estimate.item_ids))]
+                if any(not line.task.strip() for line in edit.lines):
+                    raise ValueError("task description is required")
                 if any(not math.isfinite(line.md) or line.md < 0 or (line.md * 2) % 1 for line in edit.lines):
                     raise ValueError("MD must be finite, nonnegative and use 0.5 steps")
                 estimate.lines, estimate.status = edit.lines, "draft"
@@ -210,18 +213,22 @@ class Agent3Workflow:
             out.status = "NEEDS_INPUT" if any(q.blocking and q.status in ("open", "answered") for q in out.questions) else "IMPACT_DRAFT_READY"
             self._validate_targets(s.inp, out)
             rid = new_result_id("agent3-impact", s.inp.context.case_id)
-            before = _rate_hash(s.inp.rate_card_id)
+            rate_id = req.rate_card_id or s.inp.rate_card_id
+            before = _rate_hash(rate_id)
+            for estimate in out.estimates:
+                estimate.rate_card_id = rate_id
             token = current_result_id.set(rid)
             try:
-                out = finalize_estimates(out, s.inp.rate_card_id)
+                out = finalize_estimates(out, rate_id)
             finally:
                 current_result_id.reset(token)
-            if before != _rate_hash(s.inp.rate_card_id):
+            if before != _rate_hash(rate_id):
                 raise WorkflowConflict("rate card changed during calculation")
             s.history.append({"impact": s.view["impact"], "approval": s.view["approval"],
                 "draft": s.view["draft"], "draft_result_id": s.view["draft_result_id"], "reason": req.reason})
             out.meta.result_id, out.meta.created_at = rid, now_iso()
             out.meta.result_revision += 1
+            s.inp.rate_card_id = rate_id
             s.rate_hash = before
             s.view.update(impact=out.model_dump(mode="json"), snapshot_hash=_snapshot_hash(out),
                 rate_card_fingerprint=before,
