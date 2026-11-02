@@ -52,7 +52,7 @@ async function boot(options = {}) {
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, switchAgent2Source, agent2InputFromAgent1 }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -287,4 +287,36 @@ test('Agent1 execution bar matches Agent2 and replaces upper synthetic items wit
   const panel = app.agent1Panel();
   assert.match(panel, /다시 실행/);
   assert.match(app.datasetOriginal({ requester: '한유진', requesterRole: '고객사 운영', receivedAt: '2026-10-07T10:22:00+09:00', channel: 'SMS', title: '주문 엑셀 내려받기', messageText: '관리자 주문목록을 엑셀로 내려받아 주세요.' }), /Agent 1 실행 결과/);
+});
+
+test('Agent2 can run on the Agent1 result: function items to items, constraints kept, quote requests dropped', async t => {
+  let received;
+  const item = (n, type) => ({ item_id: `CR-A-001-${n}`, case_id: 'CR-A-001', display_no: `R${n}`, item_type: type, intent: 'change_request', text: `항목 ${n}`, spans: [] });
+  const a1Out = body => ({ context: structuredClone(body.context), meta: { result_id: 'a1-live' }, status: 'READY', questions: [],
+    items: [item(1, 'function'), item(2, 'deadline'), item(3, 'question')] });
+  const app = await boot({ callbacks: { agent1: a1Out, assess: body => { received = body; return { ...structuredClone(input.a2_result), context: structuredClone(body.context) }; } } });
+  t.after(app.cleanup);
+  app.switchAgent2Source('agent1');
+  await app.runAgent2();
+  assert.equal(received, undefined);
+  assert.match(app.a2.error.message, /Agent 1을 먼저/);
+  app.lab.enabled = true; await app.runAgent1();
+  await app.runAgent2();
+  assert.equal(received.a1_result_id, 'a1-live');
+  assert.equal(received.message_text, agent1Inputs['CR-A-001'].message_text);
+  assert.deepEqual(received.items.map(i => i.item_id), ['CR-A-001-1']);
+  assert.deepEqual(received.constraints.map(i => i.item_id), ['CR-A-001-2']);
+  assert.equal(app.a2.sourceInput.a1_result_id, 'a1-live');
+  await app.runAgent1();
+  assert.equal(app.a2.result, null);
+});
+
+test('Agent1 result without function items or awaiting input does not reach Agent2', async t => {
+  let status = 'NEEDS_INPUT';
+  const app = await boot({ callbacks: { agent1: body => ({ context: structuredClone(body.context), meta: { result_id: 'a1' }, status, questions: [], items: [] }) } });
+  t.after(app.cleanup); app.lab.enabled = true;
+  await app.runAgent1(); app.switchAgent2Source('agent1');
+  assert.throws(() => app.agent2InputFromAgent1(), /추가 정보/);
+  status = 'READY'; await app.runAgent1();
+  assert.throws(() => app.agent2InputFromAgent1(), /기능 항목이 없어/);
 });
