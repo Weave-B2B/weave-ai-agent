@@ -1,9 +1,10 @@
 import re
+from datetime import date
 
 import pytest
 
 from conftest import EVAL, jl, split_rows
-from app.agents.agent1.assemble import assemble, locate_quote
+from app.agents.agent1.assemble import assemble, infer_month_end_deadline, locate_quote
 from app.agents.agent1.draft import Agent1Draft, DraftItem, DraftQuestion
 from app.tools.errors import ToolInputError
 from schema.schemas import Agent1Input, Agent1Output
@@ -43,6 +44,31 @@ def _item(
         quotes=[quote] if quote else [],
         inferred=inferred,
     )
+
+
+def test_month_end_deadline_text_is_deterministic() -> None:
+    assert infer_month_end_deadline(
+        "월말 정산 때문에 급합니다.", reference_date=date(2026, 11, 2)
+    ) == "월말 정산 일정상 2026-11-30까지 약 28일 이내 수정 요청으로 추정됩니다."
+    assert infer_month_end_deadline("다음 주까지 검토", reference_date=date(2026, 11, 2)) == "다음 주까지 검토"
+
+
+def test_month_end_deadline_uses_received_date_without_changing_source_span() -> None:
+    inp = Agent1Input.model_validate(
+        {
+            "context": {"project_id": "P-TEST", "case_id": "CASE-DEADLINE", "request_revision": 1,
+                         "baseline_id": "BASELINE-TEST", "analysis_id": "ANALYSIS-DEADLINE"},
+            "received_at": "2026-11-02T09:00:00+09:00",
+            "sender_role": "고객",
+            "message_text": "월말 정산 때문에 급합니다.",
+        }
+    )
+    draft = Agent1Draft(items=[_item("월말 정산 때문에 급합니다", "월말 정산 때문에 급합니다", item_type="deadline")])
+
+    output, _ = assemble(inp, draft, feature_search=None)
+
+    assert output.items[0].text == "월말 정산 일정상 2026-11-30까지 약 28일 이내 수정 요청으로 추정됩니다."
+    assert output.items[0].spans[0].text == "월말 정산 때문에 급합니다"
 
 
 def test_locate_quote_exact_whitespace_missing_and_empty() -> None:

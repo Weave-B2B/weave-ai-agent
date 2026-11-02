@@ -56,7 +56,7 @@ def test_openai_team_key_is_default_api_key(tmp_path, monkeypatch):
     selected.mode = "api"
     config = run_demo.configuration(selected, {})
     assert config.provider == "openai" and config.api_key == "team-openai-key"
-    assert config.model == "gpt-4.1-mini"
+    assert config.model == "gpt-team-model"
 
     selected.mode = "gemini"
     config = run_demo.configuration(selected, {})
