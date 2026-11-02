@@ -10,11 +10,11 @@ Figma C02~C06의 기본 구조를 기존 FastAPI 서버의 `/prototype/`에서 �
 2. `http://127.0.0.1:8770/prototype/`을 열고 `CR-A-001` → **영향 산정**을 선택한다.
 3. **테스트 실행 설정**에서 `가상 응답`, `Gemini API`, `AWS Bedrock`을 선택한다.
    가상 응답은 JSON을 직접 편집할 수 있다. Bedrock은 서버의 AWS 자격 증명과 모델 ID·리전이 필요하다.
-4. Gemini를 선택하면 서버가 `.env`의 `GEMINI_API_KEY`를 읽는다. 키는 브라우저에 입력하지 않는다.
+4. Gemini는 `.env`의 `GEMINI_API_KEY`, GPT는 `LLM_API_KEY`를 읽는다. 키는 브라우저에 입력하지 않는다.
    기본 모델은 `gemini-2.5-flash-lite`이며 화면에서 모델 ID를 바꿀 수 있다.
 5. 아래 **테스트 입력**에서 샘플 입력을 확인하고 위쪽 **영향 산정 실행**을 누른다.
    공수·가정을 확인하고 필요하면 수정한 뒤 일정 미산정을 체크하여 승인한다.
-   **승인·협의**에서 내부 초안을 볼 수 있으며 **결과 JSON · 버전**을 펼쳐 응답을 확인한다.
+   **승인·협의**에서 LLM 협의안을 생성해 볼 수 있으며 **결과 JSON · 버전**을 펼쳐 응답을 확인한다.
 
 Gemini·Bedrock 실행은 외부 API 호출이며 비용이 발생할 수 있다. 입력은 실제 모델로 전달되므로
 테스트에 사용할 데이터인지 확인한다. 기본 입력·단가는 합성 예시다.
@@ -39,7 +39,7 @@ python prototype/run_demo.py
 - fake: `LLM_PROVIDER=fake`, `LLM_MODEL=fake-ui-demo`, 기존 합성 응답을 임시 파일에 200회 반복한다.
 - gemini (`api` 별칭): 기존 `local` OpenAI 호환 클라이언트, 고정 Google endpoint,
   `gemini-2.5-flash-lite`, JSON schema 모드를 명시적으로 선택한다.
-- 수정·승인·협의안 템플릿은 추가 LLM 호출 없이 기존 코드로 처리한다.
+- 수정·승인은 서버에서 처리한다. 승인 후 협의안 생성 시 선택한 모델을 별도로 호출한다. 금액·공수·일정은 승인된 서버 결과를 표시한다.
 
 ### 무호출 사전 확인
 
@@ -54,9 +54,9 @@ python prototype/run_demo.py --mode gemini --check
 
 ### Gemini 실행 (실제 호출은 별도 실행 시에만)
 
-서버 셸에서 `GEMINI_API_KEY` 또는 `LLM_API_KEY`를 설정한 후 실행한다.
+서버 셸에서 `GEMINI_API_KEY`를 설정한 후 실행한다.
 실제 키를 명령 기록, 문서, 화면 코드에 붙여 넣지 않는다. 비어 있는 설정 예제는
-[.env.gemini.example](../../.env.gemini.example)에 있다. 실행기는 이 예제를 자동 로드하지 않는다.
+[.env.example](../../.env.example)에 있다. 실행기는 이 예제를 자동 로드하지 않는다.
 
 ```bash
 python prototype/run_demo.py --mode gemini --check
@@ -65,7 +65,7 @@ python prototype/run_demo.py --mode gemini --port 8000
 python prototype/run_demo.py --mode gemini --model gemini-2.5-flash-lite --check
 ```
 
-`GEMINI_API_KEY`가 우선하고, 비어 있으면 `LLM_API_KEY`를 사용한다.
+Gemini 키는 서버 셸의 `GEMINI_API_KEY`를 사용한다. `--lab` 화면에서는 환경변수 또는 `.env`의 `GEMINI_API_KEY`를 읽는다. GPT는 별도의 `LLM_API_KEY`를 사용한다.
 모델은 `--model` > 고정 preset 순서다. 이전 제공업체의 `LLM_MODEL`·`LLM_BASE_URL`·
 `LLM_PROVIDER`·`LLM_LOCAL_JSON_MODE`는 실행기가 덮어쓰므로 Gemini 선택을 바꾸지 않는다.
 endpoint는 `https://generativelanguage.googleapis.com/v1beta/openai/`로 고정한다.
@@ -98,11 +98,11 @@ python prototype/run_demo.py --mode gemini --rate-card-file /absolute/path/to/co
 ## 확인할 흐름
 
 1. 목록에서 **CR-A-001 / API 연결 샘플**을 연다. CR-001은 Figma 상세 흐름을 위한 조회용 예시이며, 나머지는 목록·필터 표시용으로 상세 내용은 준비하지 않았다.
-2. **요청 원문 → 범위 검토**에서 합성 상위 입력과 근거를 확인한다. 실제 A1/A2 재분석·PM 범위 확정은 연결하지 않았다.
+2. **범위 검토**에서 Agent 2를 실행하거나 기존 샘플을 확인한다. 실제 PM 범위 확정 API는 아직 연결하지 않았다.
 3. **영향 산정 → 영향 산정 실행**으로 기존 `/agent3/impacts`를 호출한다.
 4. 작업·직군·MD·서버 계산 합계, 일정 **미산정** 사유를 확인한다. 승인 전 협의안은 없다.
 5. MD/가정을 고치고 사유를 입력해 **수정 반영·재계산**한다. MD는 0 이상·0.5 단위다.
-6. 일정 미산정 인지 체크와 검토자 참조를 입력하고 승인한다. **승인·협의** 탭에서 서버가 반환한 내부 초안을 복사하거나 Markdown으로 저장한다.
+6. 일정 미산정 인지 체크와 검토자 참조를 입력하고 승인한다. **승인·협의** 탭에서 협의안 생성 모델을 선택하고 **LLM 협의안 생성**을 누른다. 산정은 가상 응답, 협의안은 Gemini로 각각 선택할 수 있다. 생성 모델과 고객 전달용 메일 제목·본문을 PM이 확인한 후 복사하거나 저장한다. 별도의 메일 초안 승인 기능은 아직 없다. 실패하면 승인은 유지되며 다시 생성할 수 있다. 가상 응답을 선택한 경우 문안도 가상 응답이다.
 7. 승인 후 다시 공수를 수정하면 기존 초안은 이전 이력으로 남고 최신 결과는 재승인이 필요하다.
 
 상단의 **연결**에서 읽기 전용 **상태 미리보기**를 선택하면 저장된 합성 응답으로
@@ -174,3 +174,18 @@ python prototype/run_demo.py --mode gemini --rate-card-file /absolute/path/to/co
 - 미제출 `2027-01-20` 편집 및 없는 단가표 422 실패 후에도 이전 snapshot을 보존하고,
   새로고침 이후 승인을 차단함을 확인했다. 브라우저 error/warn 0건. 테스트 서버는 종료했다.
 - Agent 3 Gemini 계약과 단가표 검증은 HTTP mock 기반 focused Python 검사이며 실제 모델 품질 검증은 아니다.
+
+협의 메일은 PM 검토 전 초안이다. 최종 목표인 PM 검수·승인 후 고객 협의 및 변경합의서 초안 생성은 [Agent 3 MVP 아키텍처](../agent3/architecture-mvp.md)에 기록했으며, 실제 발송·합의서 생성·서명은 아직 구현되지 않았다.
+
+### Agent 2 실행 결과를 Agent 3에 전달
+
+1. **범위 검토**에서 Agent 2의 모델을 선택하고 실행한다. 가상 응답은 합성 결과, Gemini·Bedrock은 선택한 외부 모델 결과다.
+2. **영향 산정 → 영향 산정 입력 선택**에서 `Agent 2 실행 결과`를 선택한다. 각 항목의 AI 제안과 근거를 확인하고 PM 판단을 선택한 뒤, 범위 밖 항목 중 산정할 항목을 체크한다. AI 제안과 다르게 판단하면 사유를 입력한다.
+3. **PM 판단 적용**을 누르면 로컬 테스트용 검토 기록이 현재 Agent 2 결과에 연결된다. 이후 영향 산정을 실행한다. 검토 결과는 실제 PM 인증이나 업무 DB에 저장된 승인이 아니다.
+4. `기존 샘플 입력`으로 전환하면 기존 합성 입력과 시나리오를 사용할 수 있다. 두 입력의 요청·범위 판단·산정 대상·일정 조건은 JSON을 열지 않아도 미리 볼 수 있다.
+
+Agent 2 실행 결과가 없거나 필수 질문이 미해결이면 검토를 적용할 수 없다. Agent 2를 다시 실행하거나 PM 판단을 변경하면 이전 산정 결과는 재확인이 필요하다. 새로고침하면 Agent 2 실행 결과는 보존되지 않으므로 새 산정에 사용하려면 다시 실행하고 검토해야 한다. 테스트 공수 기준은 합성 사례에 한정되어 입력·판단에 따라 산정이 불가능할 수 있다.
+
+### GPT API 테스트
+
+`.env`의 `LLM_API_KEY`에 OpenAI API 키를 설정하고 `python prototype/run_demo.py --lab --port 8774`로 실행한다. Agent 1·2·3 또는 협의안 생성에서 `GPT API`를 선택하면 기본 모델 `gpt-6-luna`를 사용한다. 키는 서버에서만 읽는다. 실제 선택 시 OpenAI Responses API로 요청하며 요청마다 비용이 발생할 수 있다. Agent 2는 도구 탐색을 위해 여러 모델 호출을 할 수 있다.

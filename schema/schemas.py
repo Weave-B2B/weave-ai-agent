@@ -342,6 +342,8 @@ class Draft(_M):
     cost: Optional[str] = Field(None, description="calc_cost 결과 표기만")
     open_questions: list[str] = []
     source_result_ids: list[str] = []
+    email_subject: Optional[str] = None
+    email_body: Optional[str] = None
 
 
 class Agent3Output(_Out):

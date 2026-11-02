@@ -52,7 +52,7 @@ async function boot(options = {}) {
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -207,4 +207,47 @@ test('PM approval and reload retain submitted snapshot and response model label'
   const restored = await boot({ store: app.store, callbacks: { get: () => structuredClone(app.state.view) } }); t.after(restored.cleanup);
   assert.match(restored.submittedConditions(), /2026-12-10/);
   assert.equal(restored.inputChanged(), false);
+});
+
+
+test('Agent2 result requires explicit PM decisions and carries its own context into Agent3', async t => {
+  let sent;
+  const app = await boot({ callbacks: {
+    assess: body => ({ ...structuredClone(input.a2_result), context: structuredClone(body.context), meta: { ...input.a2_result.meta, result_id: 'new-agent2-result' } }),
+    prepare: body => { sent = body; return structuredClone(response); },
+  } });
+  t.after(app.cleanup);
+  await app.runAgent2(); app.switchInputSource('agent2');
+  assert.throws(() => app.liveReviewInput(), /PM 판단/);
+  const id = app.a2.result.assessments[0].item_id;
+  app.a2.choices[id] = { label: 'out_of_scope', estimate: true, reason: '' };
+  app.confirmLiveReview();
+  assert.equal(app.a2.review.pm_review.target_result_id, 'new-agent2-result');
+  assert.equal(app.a2.review.context.scenario_id, null);
+  assert.equal(app.a2.review.received_at, input.received_at);
+  assert.equal(app.a2.review.pm_review.items[0].estimate, true);
+  assert.match(app.inputSummary(app.a2.review).replace(/<[^>]+>/g, ""), /산정 대상: 선택/);
+  await app.prepare();
+  assert.equal(sent.a2_result.meta.result_id, 'new-agent2-result');
+  assert.equal(sent.pm_review.reviewer, '로컬 테스트 PM');
+  assert.equal(sent.context.scenario_id, null);
+  app.invalidateLiveReview();
+  assert.equal(app.state.invalidated, true);
+  app.switchInputSource('sample');
+  assert.equal(JSON.parse(app.state.inputText).pm_review.review_id, input.pm_review.review_id);
+});
+
+test('Agent2 blocks unresolved questions, invalid decisions, and mismatched results', async t => {
+  const app = await boot({ callbacks: { assess: body => ({ ...structuredClone(input.a2_result), context: structuredClone(body.context) }) } });
+  t.after(app.cleanup); await app.runAgent2(); app.switchInputSource('agent2');
+  const id = app.a2.result.assessments[0].item_id;
+  app.a2.choices[id] = { label: 'in_scope', estimate: true };
+  assert.throws(() => app.liveReviewInput(), /범위 밖/);
+  app.a2.choices[id] = { label: 'in_scope', estimate: false };
+  assert.throws(() => app.liveReviewInput(), /사유/);
+  app.a2.choices[id] = { label: 'out_of_scope', estimate: true };
+  app.a2.result.status = 'NEEDS_INPUT';
+  assert.throws(() => app.liveReviewInput(), /필수 확인/);
+  app.a2.result.status = 'READY_FOR_REVIEW'; app.a2.result.context.request_revision++;
+  assert.throws(() => app.liveReviewInput(), /일치/);
 });

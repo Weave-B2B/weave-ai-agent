@@ -47,7 +47,7 @@ API metadata는 `local:gemini-2.5-flash-lite`다. 새 SDK·대형 provider·업�
 [Google OpenAI 호환 API](https://ai.google.dev/gemini-api/docs/openai).
 
 실행은 [실행 안내](../prototype/run.md)의 `--mode gemini` (`api` 별칭)를 사용한다.
-`GEMINI_API_KEY` > `LLM_API_KEY` 순으로 서버 환경 키를 선택한다. 키를 화면·로그·보고서에 쓰지 않는다.
+서버 환경의 `LLM_API_KEY`를 사용한다. 키를 화면·로그·보고서에 쓰지 않는다.
 이전 provider의 환경 설정이 선택을 바꾸지 않도록 endpoint/provider/JSON 모드는 preset으로 덮어쓴다.
 모델 선택은 `--model` > preset이며 기존 `LLM_MODEL` 값은 무시한다. A1/A2는 fixture를 유지한다.
 `--check`는 HTTP client·서버를 만들지 않고 설정·단가표 형식만 검증한다. 인증 성공 검사는 아니다.

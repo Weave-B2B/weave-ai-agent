@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from test_agent3_agent import a3_input, a3_payload  # noqa: F401
 from app.agents.agent3.agent import LlmAgent3
-from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, WorkflowConflict
+from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft, WorkflowConflict
 from app.api import agent3_routes
 from app.core.config import settings
 from app.llm.fake import FakeLlm
@@ -17,7 +17,13 @@ from app.main import app
 
 @pytest.fixture
 def workflow(a3_payload):
-    return Agent3Workflow(LlmAgent3(FakeLlm([copy.deepcopy(a3_payload) for _ in range(5)])))
+    class TestLlm(FakeLlm):
+        def _call(self, **kwargs):
+            if kwargs["tool_name"] == "submit_negotiation_draft":
+                from app.llm.base import RawResponse
+                return RawResponse(payload={"narrative": "안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다."})
+            return super()._call(**kwargs)
+    return Agent3Workflow(LlmAgent3(TestLlm([copy.deepcopy(a3_payload) for _ in range(5)])))
 
 
 def review_request(view, **changes):
@@ -26,6 +32,10 @@ def review_request(view, **changes):
         "approved": True, "acknowledge_unknown_schedule": True}
     body.update(changes)
     return ReviewImpact.model_validate(body)
+
+
+def generate(workflow, view):
+    return workflow.generate_draft(view["session_id"], GenerateDraft(state_revision=view["state_revision"], review_id=view["approval"]["review_id"]))
 
 
 def edit_request(view, md=4.5):
@@ -41,8 +51,15 @@ def test_workflow_never_creates_draft_before_pm_approval(workflow, a3_input):
     assert view["phase"] == "WAITING_IMPACT_APPROVAL"
     assert view["draft"] is None and view["impact"]["draft"] is None
     result = workflow.review(view["session_id"], review_request(view))
+    assert result["phase"] == "APPROVED" and result["draft"] is None
+    result = generate(workflow, result)
     assert result["phase"] == "DRAFT_READY"
     assert result["draft"]["cost"] == "판매 산정가 5,150,000원 / VAT 별도 / 단가표 RC-SYNTH-2026H2-v1"
+    email = result["draft"]["email_body"]
+    assert "5,150,000원" in email and "예상 공수" in email
+    assert "일정 영향은" in email and "[[APPROVED_FACTS]]" not in email
+    assert "RC-SYNTH" not in email and "원가" not in email and "마진" not in email
+    assert "변경 요청" in result["draft"]["email_subject"]
     assert "일정 영향 미산정" in result["draft"]["impact"]
     assert "FSP-A-001-v1.0:F-11" in result["draft"]["scope"]
     assert "가능하면" in result["draft"]["scope"]
@@ -63,6 +80,7 @@ def test_pm_edit_recalculates_and_invalidates_old_approval_and_draft(workflow, a
     with pytest.raises(WorkflowConflict):
         workflow.review(old["session_id"], review_request(old))
     final = workflow.review(old["session_id"], review_request(edited, request_id="request-2"))
+    final = generate(workflow, final)
     assert "5,850,000원" in final["draft"]["cost"]
 
 
@@ -164,7 +182,34 @@ def test_workflow_api_runs_approval_flow_and_rejects_tampering(workflow, a3_inpu
     assert client.post(base + "/review", json={**req, "price": 1}).status_code == 422
     assert client.post(base + "/review", json={**req, "snapshot_hash": "old"}).status_code == 409
     response = client.post(base + "/review", json=req)
+    assert response.status_code == 200 and response.json()["phase"] == "APPROVED"
+    assert client.post(base + "/review", json=req).json()["draft_result_id"] is None
+    approved = response.json()
+    response = client.post(base + "/draft", json={"state_revision": approved["state_revision"], "review_id": approved["approval"]["review_id"]})
     assert response.status_code == 200 and response.json()["phase"] == "DRAFT_READY"
-    assert client.post(base + "/review", json=req).json()["draft_result_id"] == response.json()["draft_result_id"]
     assert client.get("/agent3/impacts/missing").status_code == 404
     assert client.post(base + "/edit", json={**edit_request(response.json()).model_dump(), "totals": {"price": 1}}).status_code == 422
+
+
+def test_draft_failure_preserves_approval_and_retries(workflow, a3_input, monkeypatch):
+    view = workflow.prepare(a3_input)
+    with pytest.raises(WorkflowConflict):
+        workflow.generate_draft(view["session_id"], GenerateDraft(state_revision=view["state_revision"], review_id="none"))
+    approved = workflow.review(view["session_id"], review_request(view))
+    original = workflow.agent.llm.complete_structured
+    def bad(**kwargs):
+        from app.llm.base import LlmResult, Usage
+        from app.agents.agent3.workflow import DraftNarrative
+        return LlmResult(parsed=DraftNarrative(narrative="[[APPROVED_FACTS]]\n비용은 1원으로 확정됩니다."), usage=Usage(), latency_ms=0, provider="fake", model_id="bad", retried=False)
+    monkeypatch.setattr(workflow.agent.llm, "complete_structured", bad)
+    with pytest.raises(ValueError, match="검증"):
+        generate(workflow, approved)
+    assert workflow.get(view["session_id"])["approval"] == approved["approval"]
+    assert workflow.get(view["session_id"])["draft"] is None
+    monkeypatch.setattr(workflow.agent.llm, "complete_structured", original)
+    final = generate(workflow, approved)
+    assert final["draft_model"].startswith("fake:")
+    edited = workflow.edit(view["session_id"], edit_request(final))
+    assert edited["approval"] is None and edited["draft"] is None
+    with pytest.raises(WorkflowConflict):
+        generate(workflow, approved)
