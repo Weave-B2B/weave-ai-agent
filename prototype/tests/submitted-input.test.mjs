@@ -52,7 +52,7 @@ async function boot(options = {}) {
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -270,4 +270,21 @@ test('registered change request creates Agent 1 input and runs Agent 1', async t
   assert.equal(received.body.subject, '신규 기능 요청');
   assert.equal(received.body.message_text, '관리 화면에 신규 기능을 추가해 주세요.');
   assert.equal(app.a1.result.meta.result_id, 'A1-new');
+});
+
+test('Agent1 execution bar matches Agent2 and replaces upper synthetic items with live results', async t => {
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: {} }, callbacks: {
+    agent1: body => ({ context: body.context, items: [{ item_id: 'CR-A-003-1', case_id: 'CR-A-003', display_no: 'R1', item_type: 'function', intent: 'change_request', text: '관리자 주문목록을 엑셀로 내려받는다.', spans: [] }], questions: [], meta: { result_id: 'A1-live', model: 'test-model', agent_version: 'fixture' }, status: 'READY' }),
+  } });
+  t.after(app.cleanup);
+  app.state.id = 'CR-A-003'; app.selectCase('CR-A-003');
+  const barBefore = app.agent1Panel();
+  assert.match(barBefore, /class="baseline"/);
+  assert.match(barBefore, /Agent 1 요청 항목화 실행/);
+  await app.runAgent1();
+  assert.equal(app.agent1Items()[0].display_no, 'R1');
+  assert.equal(app.agent1Items()[0].text, '관리자 주문목록을 엑셀로 내려받는다.');
+  const panel = app.agent1Panel();
+  assert.match(panel, /다시 실행/);
+  assert.match(app.datasetOriginal({ requester: '한유진', requesterRole: '고객사 운영', receivedAt: '2026-10-07T10:22:00+09:00', channel: 'SMS', title: '주문 엑셀 내려받기', messageText: '관리자 주문목록을 엑셀로 내려받아 주세요.' }), /Agent 1 실행 결과/);
 });
