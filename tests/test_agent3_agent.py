@@ -128,3 +128,39 @@ def test_example_rules_do_not_apply_to_changed_request(a3_input, a3_payload):
     out = LlmAgent3(FakeLlm([a3_payload])).run(a3_input)
     assert out.status == "NEEDS_INPUT"
     assert out.estimates[0].totals is None
+
+
+@pytest.mark.parametrize('problem', ['unknown', 'wrong_role', 'duplicate'])
+def test_model_rule_errors_retry_once_without_inventing_md(a3_input, a3_payload, problem):
+    invalid = copy.deepcopy(a3_payload)
+    if problem == 'unknown':
+        invalid['estimates'][0]['lines'][0]['rule_id'] = 'not-a-real-rule'
+    elif problem == 'wrong_role':
+        invalid['estimates'][0]['lines'][0]['role'] = 'FE'
+    else:
+        invalid['estimates'][0]['lines'].append(copy.deepcopy(invalid['estimates'][0]['lines'][0]))
+    model = FakeLlm([invalid, a3_payload])
+    out = LlmAgent3(model).run(a3_input)
+    assert len(model.calls) == 2
+    assert out.status == 'IMPACT_DRAFT_READY'
+    assert out.estimates[0].totals.md == 8
+    assert out.meta.debug['effort_rule_retry'] is True
+    assert '기준 ID' in model.calls[1]['user']
+
+
+def test_rule_retry_does_not_guess_when_retry_remains_invalid(a3_input, a3_payload):
+    invalid = copy.deepcopy(a3_payload)
+    invalid['estimates'][0]['lines'][0]['rule_id'] = 'not-a-real-rule'
+    model = FakeLlm([invalid, invalid])
+    out = LlmAgent3(model).run(a3_input)
+    assert len(model.calls) == 2 and out.status == 'NEEDS_INPUT'
+    assert out.estimates[0].totals is None and not out.estimates[0].lines
+    assert any(q.field == 'effort_rule' and q.blocking for q in out.questions)
+
+
+def test_changed_target_never_retries_to_force_a_sample_rule(a3_input, a3_payload):
+    a3_input.items[0].text = '완전히 다른 작업'
+    model = FakeLlm([a3_payload])
+    out = LlmAgent3(model).run(a3_input)
+    assert len(model.calls) == 1
+    assert out.status == 'NEEDS_INPUT' and out.estimates[0].totals is None

@@ -14,6 +14,30 @@ from app.tools.get_schedule import get_schedule
 from schema.schemas import Agent3Input, Agent3Output, AgentError, Estimate, Line, Meta, Question, Schedule
 
 
+def _matches_rule(rule: dict, inp: Agent3Input, matched_targets: dict[str, str]) -> bool:
+    matches = inp.context.case_id == rule.get("case_id") and (
+        matched_targets == rule.get("targets") if "targets" in rule
+        else bool(matched_targets) and all(text == rule.get("target_text") for text in matched_targets.values()))
+    return matches and ("constraints" not in rule or [item.text for item in inp.constraints] == rule["constraints"])
+
+
+def _retryable_rule_error(proposal, inp: Agent3Input, rules: dict) -> bool:
+    """Retry invalid IDs/roles only where the exact target has a known sample rule."""
+    targets = inp.targets()
+    for estimate in proposal.estimates:
+        used = set()
+        for line in estimate.lines:
+            if not line.item_numbers or any(n < 1 or n > len(targets) for n in line.item_numbers):
+                continue
+            matched = {targets[n - 1].item_id: targets[n - 1].text for n in line.item_numbers}
+            known = [r for r in rules.values() if _matches_rule(r, inp, matched)]
+            rule = rules.get(line.rule_id)
+            if known and (not rule or not _matches_rule(rule, inp, matched) or rule['role'] != line.role or line.rule_id in used):
+                return True
+            used.add(line.rule_id)
+    return False
+
+
 class LlmAgent3:
     """Return impact only. Negotiation generation requires a separate PM decision."""
 
@@ -32,11 +56,29 @@ class LlmAgent3:
         targets = inp.targets()
         if not targets:
             return Agent3Output(context=inp.context, status="NOT_REQUIRED", estimates=[])
+        prompt = build_user_prompt(inp)
         result = self.llm.complete_structured(
-            system=PLAN_SYSTEM, user=build_user_prompt(inp),
+            system=PLAN_SYSTEM, user=prompt,
             schema=Agent3ImpactDraft, tool_name="submit_impact",
         )
         proposal = result.parsed
+        effort_rules = load_effort_rules()
+        rule_retry = False
+        if _retryable_rule_error(proposal, inp, effort_rules["rules"]):
+            rule_retry = True
+            try:
+                corrected = self.llm.complete_structured(
+                    system=PLAN_SYSTEM,
+                    user=prompt + "\n이전 응답의 공수 기준 ID가 없거나, 직군이 다르거나, 같은 기준이 중복되었습니다. 제공된 rules 키와 role을 그대로 사용하고 같은 기준은 하나의 작업 행으로 합쳐 다시 응답하세요.",
+                    schema=Agent3ImpactDraft, tool_name="submit_impact",
+                )
+                corrected.usage.input_tokens += result.usage.input_tokens
+                corrected.usage.output_tokens += result.usage.output_tokens
+                corrected.latency_ms += result.latency_ms
+                result, proposal = corrected, corrected.parsed
+            except AgentFailure:
+                # Keep the first response and report the missing rule instead of inventing MD.
+                pass
 
         def ids(numbers):
             if len(numbers) != len(set(numbers)) or any(n < 1 or n > len(targets) for n in numbers):
@@ -56,7 +98,6 @@ class LlmAgent3:
             pass
 
         estimates = []
-        effort_rules = load_effort_rules()
         missing_rules = []
         for estimate in proposal.estimates:
             item_ids = ids(estimate.item_numbers)
@@ -69,11 +110,7 @@ class LlmAgent3:
                     self._invalid("task references a different estimate")
                 rule = effort_rules["rules"].get(line.rule_id)
                 matched_targets = {t.item_id: t.text for t in targets if t.item_id in line_ids}
-                sample_matches = bool(rule) and inp.context.case_id == rule.get("case_id") and (
-                    matched_targets == rule.get("targets") if "targets" in rule
-                    else bool(matched_targets) and all(text == rule.get("target_text") for text in matched_targets.values()))
-                if rule and "constraints" in rule:
-                    sample_matches = sample_matches and [item.text for item in inp.constraints] == rule["constraints"]
+                sample_matches = bool(rule) and _matches_rule(rule, inp, matched_targets)
                 if not sample_matches or not rule or rule["role"] != line.role or line.rule_id in used_rules:
                     invalid_rule = True
                     continue
@@ -100,7 +137,7 @@ class LlmAgent3:
             questions.append(Question(question_id=f"{inp.context.case_id}-A3QRULE", case_id=inp.context.case_id,
                 stage="agent3", item_ids=sorted(set(missing_rules)), field="effort_rule",
                 text="해당 작업에 적용할 공수 기준을 확인해주세요.",
-                reason="적합한 테스트 공수 기준이 없거나 중복됨", target="pm", blocking=True))
+                reason="모델이 공수 기준을 찾지 못했거나 기준 ID·직군이 잘못됐거나 중복되었습니다. 입력과 기준을 확인한 뒤 다시 실행해주세요.", target="pm", blocking=True))
         if not questions and any(e.status == "not_estimable" for e in estimates):
             unresolved = [i for e in estimates if e.status == "not_estimable" for i in e.item_ids]
             questions.append(Question(question_id=f"{inp.context.case_id}-A3Q1", case_id=inp.context.case_id,
@@ -112,6 +149,7 @@ class LlmAgent3:
             meta=Meta(model=result.label, latency_ms=result.latency_ms, agent_version="agent3-0.1.0",
                 debug={"prompt_version": PROMPT_VERSION, "retried": result.retried,
                        "effort_rule_version": effort_rules["version"],
+                       "effort_rule_retry": rule_retry,
                        "input_tokens": result.usage.input_tokens, "output_tokens": result.usage.output_tokens}),
             status="NEEDS_INPUT" if any(q.blocking for q in questions) or any(e.status == "not_estimable" for e in estimates) else "IMPACT_DRAFT_READY",
             estimates=estimates, questions=questions, draft=None,
