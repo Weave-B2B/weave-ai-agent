@@ -52,7 +52,7 @@ async function boot(options = {}) {
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -250,4 +250,24 @@ test('Agent2 blocks unresolved questions, invalid decisions, and mismatched resu
   assert.throws(() => app.liveReviewInput(), /필수 확인/);
   app.a2.result.status = 'READY_FOR_REVIEW'; app.a2.result.context.request_revision++;
   assert.throws(() => app.liveReviewInput(), /일치/);
+});
+
+test('registered change request creates Agent 1 input and runs Agent 1', async t => {
+  let received;
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: {} }, callbacks: {
+    agent1: (body, config) => { received = { body, config }; return { context: body.context, items: [], meta: { result_id: 'A1-new' }, status: 'READY' }; },
+  } });
+  t.after(app.cleanup);
+  Object.assign(app.state.registration, {
+    project_id: 'P-NEW-001', project_name: '신규 프로젝트', case_id: 'CR-D-001',
+    channel: 'email', channel_src: 'GMAIL', received_at: '2026-11-02T10:00',
+    sender_role: '고객사 PM', sender_name: '신규 요청자', subject: '신규 기능 요청', message_text: '관리 화면에 신규 기능을 추가해 주세요.',
+  });
+  app.registerChangeRequest();
+  assert.equal(app.state.id, 'CR-D-001');
+  await app.runAgent1();
+  assert.equal(received.body.context.case_id, 'CR-D-001');
+  assert.equal(received.body.subject, '신규 기능 요청');
+  assert.equal(received.body.message_text, '관리 화면에 신규 기능을 추가해 주세요.');
+  assert.equal(app.a1.result.meta.result_id, 'A1-new');
 });

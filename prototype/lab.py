@@ -16,7 +16,7 @@ from app.api.agent3_routes import _guard
 from app.core.config import ROOT, Settings
 from app.llm.factory import build_llm
 from app.llm.fake import FakeLlm
-from schema.schemas import Agent1Input, Agent2Input, Agent3Input
+from schema.schemas import Agent1Input, Agent1Output, Agent2Input, Agent3Input, Item
 from app.agents.agent1.agent import LlmAgent1
 from app.agents.registry import build_agent2
 from app.agents.fixture import FixtureAgent1, FixtureAgent2, load_chain
@@ -76,7 +76,16 @@ def run_local_agent(request, body, stage):
     local_only(request)
     try:
         if body.provider == 'fake':
-            agent = (FixtureAgent1 if stage == 'agent1' else FixtureAgent2)(load_chain())
+            chain = load_chain()
+            if stage == 'agent1' and body.input.context.case_id not in chain:
+                sentences = [line.strip() for line in body.input.message_text.replace('\n', ' ').split('。') if line.strip()]
+                if not sentences:
+                    sentences = [body.input.message_text.strip()] if body.input.message_text.strip() else []
+                items = [Item(item_id=f"{body.input.context.case_id}-{index}", case_id=body.input.context.case_id,
+                              display_no=f"R{index}", item_type='function', intent='change_request', text=sentence, spans=[])
+                         for index, sentence in enumerate(sentences, 1)]
+                return Agent1Output(context=body.input.context, status='READY', items=items)
+            agent = (FixtureAgent1 if stage == 'agent1' else FixtureAgent2)(chain)
         elif stage == 'agent1':
             agent = LlmAgent1(provider_client(body))
         else:
