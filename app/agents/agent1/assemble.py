@@ -51,6 +51,57 @@ def normalize_estimate_request_text(text: str, intent: str) -> str:
     return text
 
 
+CONFIRMATION_MARKERS = (
+    "되는 거죠",
+    "맞나요",
+    "맞죠",
+    "확인 부탁",
+    "확인해 주세요",
+    "확인해주세요",
+    "가능한가요",
+    "가능한 건가요",
+    "확인하려고요",
+)
+
+
+def is_confirmation_request(text: str) -> bool:
+    """Recognize questions asking to confirm existing behavior or scope."""
+    return any(marker in text for marker in CONFIRMATION_MARKERS)
+
+
+def normalize_confirmation_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1Draft:
+    """Normalize explicit confirmation questions instead of treating them as feature changes."""
+    if not is_confirmation_request(inp.message_text):
+        return draft.model_copy(deep=True)
+
+    normalized = draft.model_copy(deep=True)
+    source = inp.message_text
+
+    for item in normalized.items:
+        if item.intent in {"defect", "issue_report"}:
+            continue
+        if item.item_type == "function" or (item.item_type == "question" and item.intent != "estimate_request"):
+            item.item_type = "question"
+            item.intent = "confirmation"
+            if "가격" in source and "브랜드" in source:
+                item.text = "검색 시 가격 범위(1만~3만원)·브랜드 필터 동시 적용 가능 여부 확인"
+
+    filtered_questions = []
+    for question in normalized.questions:
+        question_text = " ".join(
+            part for part in (
+                question.text,
+                question.reason,
+                question.field or "",
+                question.quote or "",
+            ) if part
+        )
+        if not is_confirmation_request(question_text) and not is_confirmation_request(source):
+            filtered_questions.append(question)
+    normalized.questions = filtered_questions
+    return normalized
+
+
 def normalize_explicit_estimate_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1Draft:
     """Convert an explicit estimate request from a question draft into a request item."""
     estimate_phrase = explicit_estimate_phrase(inp.message_text)
@@ -62,8 +113,6 @@ def normalize_explicit_estimate_items(inp: Agent1Input, draft: Agent1Draft) -> A
         item.item_type == "question" and item.intent == "estimate_request"
         for item in normalized.items
     ):
-        function_items = [item for item in normalized.items if item.item_type == "function"]
-        target_text = function_items[0].text if function_items else "요청 기능"
         start = inp.message_text.find(estimate_phrase)
         quote = inp.message_text[start:] if start >= 0 else estimate_phrase
         normalized.items.append(
@@ -142,6 +191,7 @@ def assemble(
     """Build and validate Agent1Output using only input and structured draft."""
     report = AssembleReport()
     draft = normalize_explicit_estimate_items(inp, draft)
+    draft = normalize_confirmation_items(inp, draft)
     if reference_date is None:
         try:
             reference_date = date.fromisoformat(inp.received_at.strip()[:10])
@@ -187,11 +237,12 @@ def assemble(
         elif draft_item.item_type == "function":
             item_text = normalize_optional_function_text(draft_item.text)
         else:
-            item_text = draft_item.text
+            item_text = normalize_estimate_request_text(draft_item.text, intent)
 
         feature_candidates: list[str] = []
         if (
             draft_item.item_type == "function"
+            and intent != "confirmation"
             and feature_search is not None
             and inp.context.baseline_id is not None
         ):

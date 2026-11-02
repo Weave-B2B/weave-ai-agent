@@ -134,7 +134,12 @@ def main(argv=None) -> None:
         print("Offline synthetic AI responses." if config.mode == "fake" else "API mode: prototype Agent 1-3 execution uses configured provider credentials; no fake fallback.")
         print("Code calculation, PM review, and model-generated internal draft; Agent 1-3 are real in API mode." if config.mode != "fake" else "Code calculation, PM review, and Agent responses use dataset fixtures in fake mode.")
         print("Agent 1-3: real API agents." if config.mode != "fake" else "Agent 1-3: dataset fixtures.")
-        uvicorn.run("app.main:app", host=args.host, port=args.port, workers=1)
+        uvicorn.run(
+            "app.main:app",
+            host=args.host,
+            port=args.port,
+            reload=args.lab,
+        )
 
 
 if __name__ == "__main__":

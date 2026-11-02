@@ -120,7 +120,7 @@ def test_agent1_loads_versioned_prompt_files() -> None:
     assert "월말" not in v0
     assert "deadline 추론" in v1
     assert "원문 문장을 그대로 옮기지 말고" in v1
-    assert "대상 항목 번호" in v1
+    assert "짧게 \"견적 요청\"" in v1
     assert "선택 요청은 우선순위가 낮은 부가 요청" in v1
     assert "사진 최대 3장(선택 사항)" in v1
     assert "(가능)" in v1
