@@ -4,7 +4,13 @@ from datetime import date
 import pytest
 
 from conftest import EVAL, jl, split_rows
-from app.agents.agent1.assemble import assemble, infer_month_end_deadline, locate_quote
+from app.agents.agent1.assemble import (
+    assemble,
+    infer_month_end_deadline,
+    locate_quote,
+    normalize_explicit_estimate_items,
+    normalize_optional_function_text,
+)
 from app.agents.agent1.draft import Agent1Draft, DraftItem, DraftQuestion
 from app.tools.errors import ToolInputError
 from schema.schemas import Agent1Input, Agent1Output
@@ -69,6 +75,39 @@ def test_month_end_deadline_uses_received_date_without_changing_source_span() ->
 
     assert output.items[0].text == "월말 정산 일정상 2026-11-30까지 약 28일 이내 수정 요청으로 추정됩니다."
     assert output.items[0].spans[0].text == "월말 정산 때문에 급합니다"
+
+
+def test_explicit_estimate_request_is_item_not_confirmation_question() -> None:
+    inp = _input("상세페이지에 구매자 별점과 후기 기능을 추가해주세요. 견적도 부탁드립니다.")
+    draft = Agent1Draft(
+        items=[_item("상품 리뷰 기능 추가", "상세페이지에 구매자 별점과 후기 기능을 추가해주세요", item_type="function")],
+        questions=[
+            DraftQuestion(
+                item_numbers=[1],
+                field="estimate_scope",
+                text="상품 리뷰 기능에 대한 구체적 견적 범위 확인",
+                reason="원문에 견적 요청이 있으나 세부 항목 확인이 필요합니다.",
+                target="pm",
+                blocking=True,
+                quote="견적도 부탁드립니다",
+            )
+        ],
+    )
+
+    normalized = normalize_explicit_estimate_items(inp, draft)
+    output, _ = assemble(inp, normalized, feature_search=None)
+
+    assert any(item.item_type == "question" and item.intent == "estimate_request" for item in output.items)
+    assert output.questions == []
+
+
+def test_optional_function_marker_is_rendered_as_explicit_selection() -> None:
+    assert normalize_optional_function_text(
+        "상품 리뷰 기능 추가 — 별점, 후기 텍스트, 사진 최대 3장(가능)"
+    ) == "상품 리뷰 기능 추가 — 별점, 후기 텍스트, 사진 최대 3장(선택 사항)"
+    assert normalize_optional_function_text(
+        "상품 리뷰 기능 추가 — 사진 최대 3장(선택)"
+    ) == "상품 리뷰 기능 추가 — 사진 최대 3장(선택 사항)"
 
 
 def test_locate_quote_exact_whitespace_missing_and_empty() -> None:
