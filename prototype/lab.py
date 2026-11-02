@@ -63,7 +63,8 @@ def provider_client(body):
     key = os.environ.get(key_name) or values.get(key_name) or ''
     if body.provider in ('gemini', 'openai') and not key:
         raise HTTPException(422, f'서버 .env에 {key_name}를 설정해 주세요.')
-    model = body.model.strip() or {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna'}.get(body.provider, '')
+    openai_model = (os.environ.get('LLM_MODEL') or values.get('LLM_MODEL') or 'gpt-4.1-mini').strip()
+    model = body.model.strip() or {'gemini': 'gemini-2.5-flash-lite', 'openai': openai_model}.get(body.provider, '')
     if not model:
         raise HTTPException(422, '모델 이름을 입력해 주세요.')
     config = Settings(_env_file=None, llm_provider={'bedrock': 'bedrock', 'gemini': 'local', 'openai': 'openai'}[body.provider],
@@ -135,7 +136,10 @@ def workflow_for(sid):
 def defaults(request: Request):
     local_only(request)
     fake = json.loads((ROOT / 'examples/agent3/fake_responses.json').read_text(encoding='utf-8'))[0]
-    return {'fake_response': fake, 'model': 'gemini-2.5-flash-lite'}
+    values = dotenv_values(ROOT / '.env') if (ROOT / '.env').is_file() else {}
+    openai_model = (os.environ.get('LLM_MODEL') or values.get('LLM_MODEL') or 'gpt-4.1-mini').strip()
+    return {'fake_response': fake, 'model': 'gemini-2.5-flash-lite',
+            'default_models': {'gemini': 'gemini-2.5-flash-lite', 'openai': openai_model}}
 
 
 @router.post('/impacts')

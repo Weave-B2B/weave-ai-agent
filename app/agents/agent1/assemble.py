@@ -1,6 +1,8 @@
 """Deterministically assemble an Agent1 draft into its shared output schema."""
 
+import calendar
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Callable
 
 from pydantic import ValidationError
@@ -23,6 +25,20 @@ class AssembleReport:
 
 
 FeatureSearch = Callable[[str, str], list[str]]
+
+
+def infer_month_end_deadline(text: str, reference_date: date | None = None) -> str:
+    """Add a safe, deterministic month-end deadline to recognized urgency text."""
+    if not any(marker in text for marker in ("월말", "말일", "당월", "월말 정산")):
+        return text
+
+    current_date = reference_date or date.today()
+    month_end = current_date.replace(day=calendar.monthrange(current_date.year, current_date.month)[1])
+    days_until_month_end = max(0, (month_end - current_date).days)
+    return (
+        f"월말 정산 일정상 {month_end.isoformat()}까지 약 {days_until_month_end}일 이내 "
+        "수정 요청으로 추정됩니다."
+    )
 
 
 def locate_quote(
@@ -56,9 +72,15 @@ def assemble(
     draft: Agent1Draft,
     *,
     feature_search: FeatureSearch | None,
+    reference_date: date | None = None,
 ) -> tuple[Agent1Output, AssembleReport]:
     """Build and validate Agent1Output using only input and structured draft."""
     report = AssembleReport()
+    if reference_date is None:
+        try:
+            reference_date = date.fromisoformat(inp.received_at.strip()[:10])
+        except (TypeError, ValueError):
+            reference_date = date.today()
     items: list[Item] = []
     taken: list[tuple[int, int]] = []
     case_id = inp.context.case_id
@@ -94,6 +116,8 @@ def assemble(
         elif draft_item.item_type == "function" and intent in {"constraint", "estimate_request"}:
             report.warnings.append(f"{item_id}: function intent requires review")
 
+        item_text = infer_month_end_deadline(draft_item.text, reference_date) if draft_item.item_type == "deadline" else draft_item.text
+
         feature_candidates: list[str] = []
         if (
             draft_item.item_type == "function"
@@ -112,7 +136,7 @@ def assemble(
                 display_no=f"R{number}",
                 item_type=draft_item.item_type,
                 intent=intent,
-                text=draft_item.text,
+                text=item_text,
                 spans=spans,
                 source="ai",
                 feature_candidates=feature_candidates,

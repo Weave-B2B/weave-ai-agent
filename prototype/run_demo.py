@@ -34,7 +34,7 @@ def configuration(args, environ) -> RunConfig:
     file_values = dotenv_values(ROOT / ".env") if (ROOT / ".env").is_file() else {}
     gemini_key = (environ.get("GEMINI_API_KEY") or file_values.get("GEMINI_API_KEY") or "").strip()
     llm_key = (environ.get("LLM_API_KEY") or file_values.get("LLM_API_KEY") or "").strip()
-    openai_model = "gpt-4.1-mini"
+    openai_model = (environ.get("LLM_MODEL") or file_values.get("LLM_MODEL") or "gpt-4.1-mini").strip()
     path = Path(args.rate_card_file or environ.get("RATE_CARD_FILE") or ROOT / "data/kb/rate_cards.json").expanduser().resolve()
     provider = mode
     key = ""

@@ -21,7 +21,6 @@ class OpenAIResponsesLlm(StructuredLlm):
             "model": self.model_id,
             "instructions": system,
             "input": user,
-            "reasoning": {"effort": "none"},
             "max_output_tokens": max_tokens,
             "store": False,
             "text": {"format": {"type": "json_schema", "name": tool_name, "strict": True,

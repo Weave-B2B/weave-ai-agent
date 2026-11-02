@@ -1,10 +1,18 @@
+from datetime import date
+
 import pytest
 
 from conftest import split_rows
 from app.agents.base import AgentFailure, AgentSet
 from app.agents.fixture import FixtureAgent1, FixtureAgent2, FixtureAgent3, load_chain
 from app.agents.agent1.agent import LlmAgent1
-from app.agents.agent1.prompts import PROMPT_VERSION, SYSTEM, build_user_prompt
+from app.agents.agent1.prompts import (
+    PROMPT_VERSION,
+    SYSTEM,
+    available_prompt_versions,
+    build_user_prompt,
+    load_prompt,
+)
 from app.core.config import Settings
 from app.llm.fake import FakeLlm
 from app.orchestration.engine import Engine
@@ -101,6 +109,54 @@ def test_agent1_calls_fake_once_with_internal_schema_and_safe_prompt() -> None:
     assert "OTHER-CASE" not in prompt
     assert llm.calls[0]["system"] == SYSTEM
     assert "<message_text>" in build_user_prompt(inp)
+
+
+def test_agent1_loads_versioned_prompt_files() -> None:
+    assert available_prompt_versions() == ("a1-draft-v0", "a1-draft-v1")
+
+    v0 = load_prompt("a1-draft-v0")
+    v1 = load_prompt("a1-draft-v1")
+
+    assert "월말" not in v0
+    assert "deadline 추론" in v1
+    assert load_prompt(PROMPT_VERSION) == SYSTEM
+
+    with pytest.raises(ValueError, match="Unknown Agent 1 prompt version"):
+        load_prompt("a1-draft-v999")
+
+
+def test_agent1_prompt_version_can_be_selected_by_environment(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT1_PROMPT_VERSION", "a1-draft-v0")
+
+    assert load_prompt() == load_prompt("a1-draft-v0")
+
+    with pytest.raises(ValueError, match="Unknown Agent 1 prompt version"):
+        monkeypatch.setenv("AGENT1_PROMPT_VERSION", "a1-draft-v999")
+        load_prompt()
+
+
+def test_agent1_v0_user_prompt_has_no_v1_deadline_context() -> None:
+    inp = _input("월말 정산 때문에 급합니다.")
+
+    prompt = build_user_prompt(inp, prompt_version="a1-draft-v0")
+
+    assert "<deadline_context>" not in prompt
+
+
+def test_agent1_prompt_provides_month_end_deadline_context() -> None:
+    inp = _input("월말 정산 때문에 급합니다. 주문 목록을 엑셀로 내려받게 해주세요.")
+
+    prompt = build_user_prompt(inp, reference_date=date(2026, 11, 2))
+
+    assert "deadline_reference_date: 2026-11-02" in prompt
+    assert "month_end_date: 2026-11-30" in prompt
+    assert "days_until_month_end: 28" in prompt
+    assert "calendar days from deadline_reference_date to month_end_date" in prompt
+    assert "월말 정산 때문에 급합니다." in prompt
+
+    prompt_from_received_at = build_user_prompt(inp.model_copy(update={"received_at": "2026-11-02T09:00:00+09:00"}))
+    assert "deadline_reference_date: 2026-11-02" in prompt_from_received_at
+    assert "days_until_month_end: 28" in prompt_from_received_at
 
 
 def test_agent_failure_from_client_is_propagated_unchanged() -> None:
