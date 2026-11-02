@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     retrieval_mode: str = "hybrid"   # 임베딩이 켜졌을 때: hybrid(어휘+벡터 RRF) · vector · lexical
     vector_store: str = "local"      # local: embed_index_path JSON · pgvector: vector-db(weave_vector)
     vector_db_url: str = ""          # 예: postgresql://weave:weave@localhost:5433/weave_vector (weave-infra 기본값)
+    # 문서 색인 (app.indexing). 로컬은 weave-infra LocalStack (S3_ENDPOINT=http://localhost:4566)
+    s3_endpoint: str = ""
+    s3_region: str = "ap-northeast-2"
+    s3_source_bucket: str = "weave-dev-files"
+    s3_result_bucket: str = "weave-dev-files"
 
     data_dir: Path = ROOT / "data"
     rate_card_file: Path | None = None  # Defaults to data/kb/rate_cards.json; replace with a supplied file later.
