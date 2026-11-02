@@ -119,6 +119,13 @@ def test_agent1_loads_versioned_prompt_files() -> None:
 
     assert "월말" not in v0
     assert "deadline 추론" in v1
+    assert "원문 문장을 그대로 옮기지 말고" in v1
+    assert "대상 항목 번호" in v1
+    assert "선택 요청은 우선순위가 낮은 부가 요청" in v1
+    assert "사진 최대 3장(선택 사항)" in v1
+    assert "(가능)" in v1
+    assert "견적 항목은 Agent 3이 산출할 요청" in v1
+    assert "question 항목(intent=estimate_request)" in v1
     assert load_prompt(PROMPT_VERSION) == SYSTEM
 
     with pytest.raises(ValueError, match="Unknown Agent 1 prompt version"):

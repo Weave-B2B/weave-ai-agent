@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from pydantic import ValidationError
 
-from app.agents.agent1.draft import Agent1Draft
+from app.agents.agent1.draft import Agent1Draft, DraftItem
 from app.agents.base import AgentFailure
 from app.tools.doc_tools import search_docs
 from schema.schemas import Agent1Input, Agent1Output, AgentError, Item, Question, Span
@@ -25,6 +25,71 @@ class AssembleReport:
 
 
 FeatureSearch = Callable[[str, str], list[str]]
+
+
+def normalize_optional_function_text(text: str) -> str:
+    """Render optional request wording consistently without turning it into a requirement."""
+    normalized = text.replace("(가능)", "(선택 사항)")
+    normalized = normalized.replace("(선택)", "(선택 사항)")
+    normalized = normalized.replace(" 가능하게", " 선택 사항으로")
+    normalized = normalized.replace(" 가능하면", " 선택 사항으로")
+    return normalized
+
+
+def explicit_estimate_phrase(text: str) -> str | None:
+    """Return the explicit estimate phrase found in source text, if any."""
+    for phrase in ("견적 요청", "견적 부탁", "견적도 부탁", "견적", "비용 산출"):
+        if phrase in text:
+            return phrase
+    return None
+
+
+def normalize_estimate_request_text(text: str, intent: str) -> str:
+    """Keep explicit estimate requests short regardless of LLM draft wording."""
+    if intent == "estimate_request":
+        return "견적 요청"
+    return text
+
+
+def normalize_explicit_estimate_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1Draft:
+    """Convert an explicit estimate request from a question draft into a request item."""
+    estimate_phrase = explicit_estimate_phrase(inp.message_text)
+    normalized = draft.model_copy(deep=True)
+    if estimate_phrase is None:
+        return normalized
+
+    if not any(
+        item.item_type == "question" and item.intent == "estimate_request"
+        for item in normalized.items
+    ):
+        function_items = [item for item in normalized.items if item.item_type == "function"]
+        target_text = function_items[0].text if function_items else "요청 기능"
+        start = inp.message_text.find(estimate_phrase)
+        quote = inp.message_text[start:] if start >= 0 else estimate_phrase
+        normalized.items.append(
+            DraftItem(
+                item_type="question",
+                intent="estimate_request",
+                text="견적 요청",
+                quotes=[quote],
+                inferred=False,
+            )
+        )
+
+    filtered_questions = []
+    for question in normalized.questions:
+        question_text = " ".join(
+            part for part in (
+                question.text,
+                question.reason,
+                question.field or "",
+                question.quote or "",
+            ) if part
+        )
+        if explicit_estimate_phrase(question_text) is None:
+            filtered_questions.append(question)
+    normalized.questions = filtered_questions
+    return normalized
 
 
 def infer_month_end_deadline(text: str, reference_date: date | None = None) -> str:
@@ -76,6 +141,7 @@ def assemble(
 ) -> tuple[Agent1Output, AssembleReport]:
     """Build and validate Agent1Output using only input and structured draft."""
     report = AssembleReport()
+    draft = normalize_explicit_estimate_items(inp, draft)
     if reference_date is None:
         try:
             reference_date = date.fromisoformat(inp.received_at.strip()[:10])
@@ -116,7 +182,12 @@ def assemble(
         elif draft_item.item_type == "function" and intent in {"constraint", "estimate_request"}:
             report.warnings.append(f"{item_id}: function intent requires review")
 
-        item_text = infer_month_end_deadline(draft_item.text, reference_date) if draft_item.item_type == "deadline" else draft_item.text
+        if draft_item.item_type == "deadline":
+            item_text = infer_month_end_deadline(draft_item.text, reference_date)
+        elif draft_item.item_type == "function":
+            item_text = normalize_optional_function_text(draft_item.text)
+        else:
+            item_text = draft_item.text
 
         feature_candidates: list[str] = []
         if (
