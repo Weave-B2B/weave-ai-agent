@@ -10,6 +10,8 @@ from app.agents.agent1.assemble import (
     locate_quote,
     normalize_explicit_estimate_items,
     normalize_optional_function_text,
+    normalize_estimate_request_text,
+    normalize_confirmation_items,
 )
 from app.agents.agent1.draft import Agent1Draft, DraftItem, DraftQuestion
 from app.tools.errors import ToolInputError
@@ -99,6 +101,52 @@ def test_explicit_estimate_request_is_item_not_confirmation_question() -> None:
 
     assert any(item.item_type == "question" and item.intent == "estimate_request" for item in output.items)
     assert output.questions == []
+
+
+def test_confirmation_request_is_not_normalized_as_change_request() -> None:
+    inp = _input(
+        "상품 검색할 때 가격을 1만원~3만원으로 좁히고 브랜드도 동시에 고를 수 있게 되는 거죠? "
+        "QA에서 같이 확인하려고요."
+    )
+    draft = Agent1Draft(
+        items=[_item("가격 범위 및 브랜드 동시 선택 필터 기능", "상품 검색할 때 가격을 1만원~3만원으로")],
+    )
+
+    normalized = normalize_confirmation_items(inp, draft)
+    output, _ = assemble(inp, normalized, feature_search=None)
+
+    assert len(output.items) == 1
+    assert output.items[0].item_type == "question"
+    assert output.items[0].intent == "confirmation"
+    assert output.items[0].text == "검색 시 가격 범위(1만~3만원)·브랜드 필터 동시 적용 가능 여부 확인"
+    assert output.questions == []
+
+
+def test_confirmation_from_question_draft_is_function_confirmation() -> None:
+    inp = _input("이 기능이 현재 검색 화면에서도 적용 가능한지 확인 부탁드립니다.")
+    draft = Agent1Draft(
+        items=[
+            DraftItem(
+                item_type="question",
+                intent="change_request",
+                text="검색 화면 적용 가능 여부",
+                quotes=["이 기능이 현재 검색 화면에서도 적용 가능한지"],
+            )
+        ]
+    )
+
+    output, _ = assemble(inp, draft, feature_search=None)
+
+    assert output.items[0].item_type == "question"
+    assert output.items[0].intent == "confirmation"
+
+
+def test_estimate_request_text_is_kept_short() -> None:
+    assert normalize_estimate_request_text(
+        "상품 리뷰 기능 추가에 대한 구체적 견적 요청",
+        "estimate_request",
+    ) == "견적 요청"
+    assert normalize_estimate_request_text("일반 요청", "change_request") == "일반 요청"
 
 
 def test_optional_function_marker_is_rendered_as_explicit_selection() -> None:
