@@ -5,7 +5,7 @@ from functools import lru_cache
 from fastapi import APIRouter, HTTPException
 
 from app.agents.agent3.agent import LlmAgent3
-from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, WorkflowConflict
+from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft, WorkflowConflict
 from app.agents.base import AgentFailure
 from app.core.config import settings
 from app.llm.client import build_llm
@@ -17,7 +17,12 @@ router = APIRouter(prefix="/agent3", tags=["Agent3 MVP"])
 
 @lru_cache
 def get_workflow() -> Agent3Workflow:
-    return Agent3Workflow(LlmAgent3(build_llm(settings)))
+    llm = build_llm(settings)
+    if settings.llm_provider == "fake":
+        from app.llm.fake import FakeLlm
+        draft_llm = FakeLlm([{"narrative": "안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다."}] * 200)
+        return Agent3Workflow(LlmAgent3(llm), draft_llm=draft_llm)
+    return Agent3Workflow(LlmAgent3(llm))
 
 
 def _guard(call):
@@ -53,3 +58,8 @@ def edit_impact(session_id: str, req: EditImpact):
 @router.post("/impacts/{session_id}/review")
 def review_impact(session_id: str, req: ReviewImpact):
     return _guard(lambda: get_workflow().review(session_id, req))
+
+
+@router.post("/impacts/{session_id}/draft")
+def generate_draft(session_id: str, req: GenerateDraft):
+    return _guard(lambda: get_workflow().generate_draft(session_id, req))

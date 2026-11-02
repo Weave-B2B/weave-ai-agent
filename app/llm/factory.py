@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import urlsplit
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from app.llm.base import LlmClient
 from app.llm.bedrock import BedrockLlm
 from app.llm.fake import FakeLlm
 from app.llm.local import LocalLlm
+from app.llm.openai_responses import OpenAIResponsesLlm
 
 
 class LlmConfigError(ValueError):
@@ -30,6 +32,12 @@ def build_llm(settings: Settings) -> LlmClient:
             max_tokens=settings.llm_max_tokens,
             temperature=settings.llm_temperature,
         )
+    if provider == "openai":
+        if not settings.llm_model or not settings.llm_api_key:
+            raise LlmConfigError("OpenAI requires LLM_MODEL and LLM_API_KEY")
+        return OpenAIResponsesLlm(model_id=settings.llm_model, api_key=settings.llm_api_key,
+            read_timeout_sec=settings.llm_read_timeout_sec, connect_timeout_sec=settings.llm_connect_timeout_sec,
+            max_tokens=settings.llm_max_tokens, temperature=settings.llm_temperature)
     if provider == "local":
         if settings.llm_local_json_mode not in {"prompt", "schema"}:
             raise LlmConfigError("Invalid setting: LLM_LOCAL_JSON_MODE")
@@ -46,7 +54,7 @@ def build_llm(settings: Settings) -> LlmClient:
         return LocalLlm(
             base_url=settings.llm_base_url,
             model_id=settings.llm_model,
-            api_key=settings.llm_api_key,
+            api_key=settings.gemini_api_key if urlsplit(settings.llm_base_url).hostname == "generativelanguage.googleapis.com" else settings.llm_api_key,
             json_mode=settings.llm_local_json_mode,
             read_timeout_sec=settings.llm_read_timeout_sec,
             connect_timeout_sec=settings.llm_connect_timeout_sec,
