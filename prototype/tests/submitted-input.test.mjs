@@ -57,7 +57,7 @@ async function boot(options = {}) {
   });
   await module.link(specifier => {
     if (specifier === './api.js') return transport;
-    if (specifier === './fixtures.js') return fixtures;
+    if (specifier.split('?')[0] === './fixtures.js') return fixtures;
     if (specifier === './data/request-samples.js') return requestSamples;
     throw new Error(`Unexpected module: ${specifier}`);
   });

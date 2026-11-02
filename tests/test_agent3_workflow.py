@@ -213,3 +213,45 @@ def test_draft_failure_preserves_approval_and_retries(workflow, a3_input, monkey
     assert edited["approval"] is None and edited["draft"] is None
     with pytest.raises(WorkflowConflict):
         generate(workflow, approved)
+
+
+def test_work_scope_edit_recalculates_and_clears_approval(workflow, a3_input):
+    old = workflow.prepare(a3_input)
+    approved = workflow.review(old['session_id'], review_request(old))
+    edit = edit_request(approved)
+    edit.estimates[0].lines[0].task = '변경된 작업 범위'
+    edit.estimates[0].lines[0].role = 'FE'
+    edited = workflow.edit(old['session_id'], edit)
+    assert edited['impact']['estimates'][0]['lines'][0]['task'] == '변경된 작업 범위'
+    assert edited['impact']['estimates'][0]['lines'][0]['role'] == 'FE'
+    assert edited['impact']['estimates'][0]['totals']['price'] != approved['impact']['estimates'][0]['totals']['price']
+    assert edited['approval'] is None and edited['draft'] is None
+    empty = edit_request(edited)
+    empty.estimates[0].lines[0].task = ' '
+    with pytest.raises(ValueError, match='task description'):
+        workflow.edit(old['session_id'], empty)
+
+
+def test_new_rate_card_reprices_preserving_edited_lines(workflow, a3_input, tmp_path, monkeypatch):
+    data = json.loads((settings.data_dir / 'kb' / 'rate_cards.json').read_text())
+    source = a3_input.rate_card_id
+    data['rate_cards']['TEST-UPDATED'] = copy.deepcopy(data['rate_cards'][source])
+    for rate in data['rate_cards']['TEST-UPDATED']['rates'].values():
+        if rate.get('price') is not None:
+            rate['price'] += 100000
+    path = tmp_path / 'rates.json'
+    path.write_text(json.dumps(data))
+    monkeypatch.setattr(settings, 'rate_card_file', path)
+    view = workflow.prepare(a3_input)
+    request = edit_request(view)
+    request.estimates[0].lines[0].task = 'PM이 수정한 작업'
+    view = workflow.edit(view['session_id'], request)
+    approved = workflow.review(view['session_id'], review_request(view))
+    lines = copy.deepcopy(approved['impact']['estimates'][0]['lines'])
+    request = edit_request(approved, md=lines[0]['md'])
+    request.rate_card_id = 'TEST-UPDATED'
+    updated = workflow.edit(view['session_id'], request)
+    estimate = updated['impact']['estimates'][0]
+    assert estimate['lines'] == lines and estimate['rate_card_id'] == 'TEST-UPDATED'
+    assert estimate['totals']['price'] > approved['impact']['estimates'][0]['totals']['price']
+    assert updated['approval'] is None and updated['history'][-1]['approval']['approved']

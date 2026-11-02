@@ -10,7 +10,7 @@
         "analysis_id": "AN-CR-A-001-r1",
         "scenario_id": "S3-CR-A-001"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-06T09:12:00+09:00",
       "items": [
         {
@@ -165,7 +165,7 @@
         "analysis_id": "AN-CR-A-002-r1",
         "scenario_id": "S3-CR-A-002"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-06T13:05:00+09:00",
       "items": [
         {
@@ -280,7 +280,7 @@
         "analysis_id": "AN-CR-A-003-r1",
         "scenario_id": "S3-CR-A-003"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-07T10:22:00+09:00",
       "items": [
         {
@@ -415,7 +415,7 @@
         "analysis_id": "AN-CR-A-004-r1",
         "scenario_id": "S3-CR-A-004"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-07T15:00:00+09:00",
       "items": [
         {
@@ -627,7 +627,7 @@
         "analysis_id": "AN-CR-A-005-r1",
         "scenario_id": "S3-CR-A-005"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-08T11:37:00+09:00",
       "items": [
         {
@@ -786,7 +786,7 @@
         "analysis_id": "AN-CR-A-006-r1",
         "scenario_id": "S3-CR-A-006"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-08T16:15:00+09:00",
       "items": [
         {
@@ -931,7 +931,7 @@
         "analysis_id": "AN-CR-A-007-r1",
         "scenario_id": "S3-CR-A-007"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-09T09:40:00+09:00",
       "items": [
         {
@@ -1077,7 +1077,7 @@
         "analysis_id": "AN-CR-A-008-r1",
         "scenario_id": "S3-CR-A-008"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-09T14:10:00+09:00",
       "items": [
         {
@@ -1227,7 +1227,7 @@
         "analysis_id": "AN-CR-A-009-r1",
         "scenario_id": "S3-CR-A-009"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-12T08:55:00+09:00",
       "items": [
         {
@@ -1362,7 +1362,7 @@
         "analysis_id": "AN-CR-A-010-r1",
         "scenario_id": "S3-CR-A-010"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-12T17:22:00+09:00",
       "items": [
         {
@@ -1512,7 +1512,7 @@
         "analysis_id": "AN-CR-B-001-r1",
         "scenario_id": "S3-CR-B-001"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-06T09:32:00+09:00",
       "items": [
         {
@@ -1632,7 +1632,7 @@
         "analysis_id": "AN-CR-B-002-r1",
         "scenario_id": "S3-CR-B-002"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-06T12:48:00+09:00",
       "items": [
         {
@@ -1762,7 +1762,7 @@
         "analysis_id": "AN-CR-B-003-r1",
         "scenario_id": "S3-CR-B-003"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-07T08:50:00+09:00",
       "items": [
         {
@@ -1934,7 +1934,7 @@
         "analysis_id": "AN-CR-B-004-r1",
         "scenario_id": "S3-CR-B-004"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-07T14:30:00+09:00",
       "items": [
         {
@@ -2093,7 +2093,7 @@
         "analysis_id": "AN-CR-B-005-r1",
         "scenario_id": "S3-CR-B-005"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-08T10:12:00+09:00",
       "items": [
         {
@@ -2208,7 +2208,7 @@
         "analysis_id": "AN-CR-B-006-r1",
         "scenario_id": "S3-CR-B-006"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-08T13:29:00+09:00",
       "items": [
         {
@@ -2343,7 +2343,7 @@
         "analysis_id": "AN-CR-B-007-r1",
         "scenario_id": "S3-CR-B-007"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-09T10:20:00+09:00",
       "items": [
         {
@@ -2493,7 +2493,7 @@
         "analysis_id": "AN-CR-B-008-r1",
         "scenario_id": "S3-CR-B-008"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-09T15:30:00+09:00",
       "items": [
         {
@@ -2658,7 +2658,7 @@
         "analysis_id": "AN-CR-B-009-r1",
         "scenario_id": "S3-CR-B-009"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-12T11:00:00+09:00",
       "items": [
         {
@@ -2793,7 +2793,7 @@
         "analysis_id": "AN-CR-B-010-r1",
         "scenario_id": "S3-CR-B-010"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-12T16:42:00+09:00",
       "items": [
         {
@@ -2928,7 +2928,7 @@
         "analysis_id": "AN-CR-C-001-r1",
         "scenario_id": "S3-CR-C-001"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-06T10:05:00+09:00",
       "items": [
         {
@@ -3048,7 +3048,7 @@
         "analysis_id": "AN-CR-C-002-r1",
         "scenario_id": "S3-CR-C-002"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-06T15:45:00+09:00",
       "items": [
         {
@@ -3163,7 +3163,7 @@
         "analysis_id": "AN-CR-C-003-r1",
         "scenario_id": "S3-CR-C-003"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-07T09:16:00+09:00",
       "items": [
         {
@@ -3293,7 +3293,7 @@
         "analysis_id": "AN-CR-C-004-r1",
         "scenario_id": "S3-CR-C-004"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-07T13:40:00+09:00",
       "items": [
         {
@@ -3465,7 +3465,7 @@
         "analysis_id": "AN-CR-C-005-r1",
         "scenario_id": "S3-CR-C-005"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-08T08:30:00+09:00",
       "items": [
         {
@@ -3580,7 +3580,7 @@
         "analysis_id": "AN-CR-C-006-r1",
         "scenario_id": "S3-CR-C-006"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-08T17:14:00+09:00",
       "items": [
         {
@@ -3752,7 +3752,7 @@
         "analysis_id": "AN-CR-C-007-r1",
         "scenario_id": "S3-CR-C-007"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-09T11:07:00+09:00",
       "items": [
         {
@@ -3887,7 +3887,7 @@
         "analysis_id": "AN-CR-C-008-r1",
         "scenario_id": "S3-CR-C-008"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-09T16:10:00+09:00",
       "items": [
         {
@@ -4017,7 +4017,7 @@
         "analysis_id": "AN-CR-C-009-r1",
         "scenario_id": "S3-CR-C-009"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-12T10:27:00+09:00",
       "items": [
         {
@@ -4167,7 +4167,7 @@
         "analysis_id": "AN-CR-C-010-r1",
         "scenario_id": "S3-CR-C-010"
       },
-      "rate_card_id": "RC-SYNTH-2026H2-v1",
+      "rate_card_id": "RC-SYNTH-2026H2-v2",
       "received_at": "2026-10-12T18:06:00+09:00",
       "items": [
         {
