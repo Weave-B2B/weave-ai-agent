@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     embed_dim: int = Field(default=1024, ge=8)   # Titan v2와 같은 1024로 맞춰 두면 전환 시 차원 변경 없음
     embed_index_path: Path = ROOT / "data" / "index" / "chunk_embeddings.json"
     retrieval_mode: str = "hybrid"   # 임베딩이 켜졌을 때: hybrid(어휘+벡터 RRF) · vector · lexical
+    vector_store: str = "local"      # local: embed_index_path JSON · pgvector: vector-db(weave_vector)
+    vector_db_url: str = ""          # 예: postgresql://weave:weave@localhost:5433/weave_vector (weave-infra 기본값)
 
     data_dir: Path = ROOT / "data"
     rate_card_file: Path | None = None  # Defaults to data/kb/rate_cards.json; replace with a supplied file later.

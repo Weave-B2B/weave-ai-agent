@@ -30,6 +30,14 @@ CHUNK_NS = uuid.UUID("6f1d3c52-7a0e-4b8e-9d2a-2a7f0c0e5a11")
 
 
 def chunk_uuid(doc_id: str, section_id: str, extraction_version: str) -> str:
+    """CN과 같은 규칙 (VDB 설계 v0.3 §3): uuid5(CHUNK_NS, "{documentVersionId}:{sectionId}:{extractionVersion}").
+    실제 문서 버전 UUID는 소문자·하이픈 표준형으로 맞춘다. 샘플 문서 이름(UUID 아님)은 그대로 쓴다."""
+    if ":" in section_id:
+        raise ValueError(f"section_id에 ':'를 쓸 수 없음: {section_id}")
+    try:
+        doc_id = str(uuid.UUID(doc_id))
+    except ValueError:
+        pass
     return str(uuid.uuid5(CHUNK_NS, f"{doc_id}:{section_id}:{extraction_version}"))
 
 
