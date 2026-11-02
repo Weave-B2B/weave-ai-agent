@@ -7,7 +7,7 @@ const agent2 = new Agent2Api();
 const agent1 = new Agent1Api();
 const STORAGE = "weave-prototype-agent3-session-v1";
 const PHASE = { APPROVED: "PM 승인 완료 · 협의안 생성 대기", WAITING_IMPACT_APPROVAL: "PM 산정 검토 대기", WAITING_INPUT: "추가 정보 필요", WAITING_UPSTREAM_REVIEW: "상위 PM 검토 필요", DRAFT_READY: "내부 협의안 초안 준비", NOT_REQUIRED: "산정 대상 없음", FAILED: "산정 실패" };
-const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "" };
+const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "", registration: { project_id: "P-COM-101", project_name: "신규 변경 요청 프로젝트", case_id: "", channel: "email", channel_src: "GMAIL", received_at: "", sender_role: "고객사 PM", sender_name: "", subject: "", message_text: "" }, registrationError: "" };
 let baseInput, agent1Inputs, agent2Input, agent2Inputs, previewClient, toastTimer, composingSearch = false, samples, activeCase;
 const defaultModel = provider => ({ gemini: "gemini-2.5-flash-lite", openai: "gpt-6-luna" })[provider] || "";
 const draftLab = { provider: "gemini", model: "gemini-2.5-flash-lite", region: "ap-northeast-2" };
@@ -48,6 +48,7 @@ function acceptView(view, submittedInput = null) {
 }
 function navigate(id, tab = "original") { location.hash = id ? `#/request/${encodeURIComponent(id)}/${tab}` : "#/requests"; }
 function route() {
+  if (location.hash === "#/register") { state.page = "register"; render(); return; }
   const match = location.hash.match(/^#\/request\/([^/]+)\/(original|scope|impact|draft)$/);
   if (match && records.some(item => (item.api || item.datasetSample || item.id === "CR-001") && item.id === decodeURIComponent(match[1]))) {
     state.id = decodeURIComponent(match[1]); state.tab = match[2]; state.page = "detail";
@@ -63,7 +64,7 @@ function selectCase(id) {
   a2.generation++; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
   a1.generation++; a1.result = null; a1.pending = false; a1.error = null;
   state.selectedItem = 0;
-  baseInput = structuredClone(samples.inputs[id]);
+  baseInput = structuredClone(samples.inputs[id] || { context: agent1Inputs?.[id]?.context || {}, items: [], constraints: [], pm_review: { items: [] }, a2_result: { assessments: [] } });
   state.scenario = "normal"; state.inputSource = "sample"; state.inputText = JSON.stringify(baseInput, null, 2); state.sampleInputText = state.inputText;
   state.view = null; state.edits = null; state.submittedInput = null; state.signature = null;
   state.error = null; state.conflicted = false; state.invalidated = false; state.originalLines = [];
@@ -76,7 +77,7 @@ function sidebar() {
   return `<aside class="sidebar" aria-label="주 메뉴"><div class="brand"><span class="brand-mark">S</span><span class="brand-name">Scopeline</span><span class="mini-tag">MVP</span></div><div class="workspace"><span class="workspace-mark">한</span><div class="workspace-copy">한빛디지털<small>수행사 워크스페이스</small></div>${icon("b05aa")}</div><div class="nav-section">업무</div>${nav.map(([label, file, count]) => `<button class="nav ${label === "변경 요청" ? "active" : ""}" ${label === "변경 요청" ? 'data-action="list" aria-current="page"' : 'disabled title="이번 구현 범위에 포함되지 않습니다"'}>${icon(file)}<span class="nav-label">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</button>`).join("")}<div class="nav-section">관리</div><button class="nav" disabled title="이번 구현 범위 밖">${icon("ed47e")}<span class="nav-label">설정</span></button><div class="sidebar-bottom"><div class="disclaimer"><strong>${icon("6bb27")}AI는 제안까지만</strong>범위 확정·가격·승인·고객 발송은 담당자가 결정합니다.</div><div class="profile"><span class="avatar large">김</span><div class="profile-copy">김서윤<small>로컬 확인 · 테스트 PM</small></div></div></div></aside>`;
 }
 function topbar() {
-  const path = state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
+  const path = state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
   return `<header class="topbar"><span class="breadcrumb">${e(path)}</span><label class="top-search">${icon("776e1")}<input id="global-search" placeholder="CR ID, 프로젝트, 문서 검색" aria-label="전체 요청 검색"></label><button class="icon-button" data-action="help" aria-label="로컬 확인 안내">${icon("c360b")}</button><button class="icon-button" data-action="help" aria-label="도움말">${icon("a340e")}</button><span class="top-separator"></span><span class="avatar large">김</span></header>`;
 }
 function localBar() {
@@ -92,12 +93,31 @@ function filteredRecords() {
   if (state.order === "최근 접수순") result.sort((a, b) => Number(!a.api) - Number(!b.api) || b.date.localeCompare(a.date));
   return result;
 }
+function registrationPage() {
+  const d = state.registration;
+  const channelOptions = [["email", "GMAIL"], ["manual", "MEETING"]];
+  return `<div class="page-heading"><div><h1>변경 요청 등록</h1><p class="subtitle">Agent 1이 직접 구조화할 신규 요청 원문을 등록합니다.</p></div><div class="button-group">${button("목록으로", "list", { class: "plain" })}</div></div>${state.registrationError ? `<div class="notice error">${e(state.registrationError)}</div>` : ""}<section class="card"><h2>요청 정보</h2><div class="settings-grid"><label class="field">프로젝트 ID<input id="registration-project" value="${e(d.project_id)}"></label><label class="field">요청 ID<input id="registration-case" placeholder="예: CR-D-001" value="${e(d.case_id)}"></label><label class="field">프로젝트명<input id="registration-project-name" value="${e(d.project_name)}"></label><label class="field">채널<select id="registration-channel">${channelOptions.map(([value,label]) => `<option value="${value}" ${d.channel === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">채널 원본 값<input id="registration-channel-src" value="${e(d.channel_src)}"></label><label class="field">수신 일시<input id="registration-received" type="datetime-local" value="${e(d.received_at)}"></label><label class="field">요청자 역할<input id="registration-sender-role" value="${e(d.sender_role)}"></label><label class="field">요청자 이름<input id="registration-sender-name" value="${e(d.sender_name)}"></label></div><label class="field">제목<input id="registration-subject" value="${e(d.subject)}"></label><label class="field">요청 원문<textarea id="registration-message" rows="8" placeholder="고객이 전달한 요청 내용을 그대로 입력하세요.">${e(d.message_text)}</textarea></label><div class="form-actions">${button("등록하고 Agent 1 실행 화면 열기", "submit-registration", { class: "primary" })}</div></section>`;
+}
+function registerChangeRequest() {
+  const d = state.registration;
+  const required = [["project_id", "프로젝트 ID"], ["case_id", "요청 ID"], ["sender_name", "요청자 이름"], ["subject", "제목"], ["message_text", "요청 원문"]];
+  const missing = required.find(([key]) => !String(d[key] || "").trim());
+  if (missing) { state.registrationError = `${missing[1]}을(를) 입력해 주세요.`; render(); return; }
+  const caseId = d.case_id.trim().toUpperCase();
+  if (!/^CR-[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(caseId)) { state.registrationError = "요청 ID는 CR-D-001 형식으로 입력해 주세요."; render(); return; }
+  if (records.some(item => item.id === caseId)) { state.registrationError = "이미 존재하는 요청 ID입니다."; render(); return; }
+  const receivedAt = d.received_at ? new Date(d.received_at).toISOString() : new Date().toISOString();
+  const input = { context: { project_id: d.project_id.trim(), case_id: caseId, request_revision: 1, baseline_id: `${d.project_id.trim()}:BL-1`, baseline_as_of: new Date(receivedAt).toISOString().slice(0, 10), analysis_id: `AN-${caseId}-r1`, scenario_id: null }, channel: d.channel, channel_src: d.channel_src.trim() || null, received_at: receivedAt, sender_role: d.sender_role.trim(), sender_name: d.sender_name.trim(), subject: d.subject.trim(), message_text: d.message_text.trim(), pm_notes: [], answers: [] };
+  agent1Inputs = agent1Inputs || {}; agent1Inputs[caseId] = input;
+  records.unshift({ id: caseId, title: input.subject, project: d.project_name.trim() || "신규 변경 요청 프로젝트", requester: input.sender_name, requesterRole: input.sender_role, channel: input.channel_src || input.channel, date: receivedAt.slice(5, 10), receivedAt, messageText: input.message_text, datasetSample: true, scope: "미분석", process: "접수", approval: "미요청", customer: "미요청", md: "미산정", price: "—", owner: "—", elapsed: "—", api: true });
+  state.registrationError = ""; state.id = caseId; state.tab = "original"; selectCase(caseId); navigate(caseId, "original");
+}
 function inbox() {
   const result = filteredRecords(), pages = Math.max(1, Math.ceil(result.length / 10));
   state.pageNo = Math.min(state.pageNo, pages);
   const shown = result.slice((state.pageNo - 1) * 10, state.pageNo * 10);
   const groups = ["열린 요청", "PM 검토 필요", "내부 승인 대기", "고객 협의 중", "실행 중", "완료·종료"];
-  return `<div class="page-heading"><div><h1>변경 요청</h1><p class="subtitle">전체 프로젝트 · 합성 요청 ${records.length}건 · Agent 1 테스트 30건 포함</p></div><div class="button-group">${button("내보내기", "unused", { disabled: true, icon: "e95f2", title: "업무 내보내기는 이번 범위 밖" })}${button("변경 요청 등록", "unused", { class: "primary", disabled: true, icon: "416f8", title: "이번에는 기존 합성 요청을 조회합니다" })}</div></div>${localBar()}<div class="tabs" role="tablist" aria-label="요청 처리 상태">${groups.map(group => `<button class="tab" role="tab" aria-selected="${state.group === group}" data-group="${group}">${group}<small>${group === "열린 요청" ? records.length : records.filter(item => item.process === group).length}</small></button>`).join("")}</div><div class="filters"><label class="search-field">${icon("776e1")}<input id="request-search" placeholder="CR ID, 제목, 요청자 검색" aria-label="요청 검색" value="${e(state.query)}"></label><label class="filter">프로젝트<select id="project-filter" aria-label="프로젝트 필터">${["전체", ...new Set(records.map(item => item.project))].map(value => `<option ${state.project === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select></label><label class="filter">범위 판단<select id="scope-filter" aria-label="범위 판단 필터">${["전체", "범위 밖", "판단 보류", "미분석"].map(value => `<option ${state.filter === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><span class="filter">상업적 결정 · 예시</span><label class="filter last">정렬<select id="sort" aria-label="요청 정렬"><option ${state.order === "기본" ? "selected" : ""}>기본</option><option ${state.order === "최근 접수순" ? "selected" : ""}>최근 접수순</option></select></label></div><div class="table-wrap"><table class="inbox-table"><thead><tr>${["CR ID", "요청 · 프로젝트", "요청자 · 채널", "접수일", "범위 판단", "요청 처리", "내부 승인", "고객 협의", "영향 (MD · 금액)", "담당", "경과"].map(title => `<th>${title}</th>`).join("")}</tr></thead><tbody>${shown.length ? shown.map(item => `<tr><td class="id-cell"><button class="row-open" data-open="${item.id}">${item.id}${item.api ? '<span class="api-marker">API 연결 샘플</span>' : ""}</button></td><td class="title-cell"><button class="row-open" data-open="${item.id}"><strong>${e(item.title)}</strong><small>${e(item.project)}</small></button></td><td>${e(item.requester)}<small>${item.channel}</small></td><td>${item.date}</td><td>${chip(item.scope, item.scope.includes("가능성") ? "ai" : "neutral")}</td><td>${chip(item.process, "info")}</td><td>${chip(item.approval)}</td><td>${chip(item.customer)}</td><td class="numeric">${e(item.md)}<small>${e(item.price)}</small></td><td><span class="avatar">${item.owner}</span></td><td class="numeric">${item.elapsed}</td></tr>`).join("") : '<tr><td colspan="11"><div class="empty-state"><h3>검색 결과가 없습니다</h3><p>검색어나 필터를 바꿔 주세요.</p></div></td></tr>'}</tbody></table></div><div class="pagination"><span>${shown.length} / ${result.length}건 표시 · 범위 밖은 유상 확정을 의미하지 않습니다.</span><div class="button-group">${button("이전", "previous", { disabled: state.pageNo <= 1 })}<span>${state.pageNo} / ${pages}</span>${button("다음", "next", { disabled: state.pageNo >= pages })}</div></div>`;
+  return `<div class="page-heading"><div><h1>변경 요청</h1><p class="subtitle">전체 프로젝트 · 합성 요청 ${records.length}건 · Agent 1 테스트 30건 포함</p></div><div class="button-group">${button("내보내기", "unused", { disabled: true, icon: "e95f2", title: "업무 내보내기는 이번 범위 밖" })}${button("변경 요청 등록", "register", { class: "primary", icon: "416f8" })}</div></div>${localBar()}<div class="tabs" role="tablist" aria-label="요청 처리 상태">${groups.map(group => `<button class="tab" role="tab" aria-selected="${state.group === group}" data-group="${group}">${group}<small>${group === "열린 요청" ? records.length : records.filter(item => item.process === group).length}</small></button>`).join("")}</div><div class="filters"><label class="search-field">${icon("776e1")}<input id="request-search" placeholder="CR ID, 제목, 요청자 검색" aria-label="요청 검색" value="${e(state.query)}"></label><label class="filter">프로젝트<select id="project-filter" aria-label="프로젝트 필터">${["전체", ...new Set(records.map(item => item.project))].map(value => `<option ${state.project === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select></label><label class="filter">범위 판단<select id="scope-filter" aria-label="범위 판단 필터">${["전체", "범위 밖", "판단 보류", "미분석"].map(value => `<option ${state.filter === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><span class="filter">상업적 결정 · 예시</span><label class="filter last">정렬<select id="sort" aria-label="요청 정렬"><option ${state.order === "기본" ? "selected" : ""}>기본</option><option ${state.order === "최근 접수순" ? "selected" : ""}>최근 접수순</option></select></label></div><div class="table-wrap"><table class="inbox-table"><thead><tr>${["CR ID", "요청 · 프로젝트", "요청자 · 채널", "접수일", "범위 판단", "요청 처리", "내부 승인", "고객 협의", "영향 (MD · 금액)", "담당", "경과"].map(title => `<th>${title}</th>`).join("")}</tr></thead><tbody>${shown.length ? shown.map(item => `<tr><td class="id-cell"><button class="row-open" data-open="${item.id}">${item.id}${item.api ? '<span class="api-marker">API 연결 샘플</span>' : ""}</button></td><td class="title-cell"><button class="row-open" data-open="${item.id}"><strong>${e(item.title)}</strong><small>${e(item.project)}</small></button></td><td>${e(item.requester)}<small>${item.channel}</small></td><td>${item.date}</td><td>${chip(item.scope, item.scope.includes("가능성") ? "ai" : "neutral")}</td><td>${chip(item.process, "info")}</td><td>${chip(item.approval)}</td><td>${chip(item.customer)}</td><td class="numeric">${e(item.md)}<small>${e(item.price)}</small></td><td><span class="avatar">${item.owner}</span></td><td class="numeric">${item.elapsed}</td></tr>`).join("") : '<tr><td colspan="11"><div class="empty-state"><h3>검색 결과가 없습니다</h3><p>검색어나 필터를 바꿔 주세요.</p></div></td></tr>'}</tbody></table></div><div class="pagination"><span>${shown.length} / ${result.length}건 표시 · 범위 밖은 유상 확정을 의미하지 않습니다.</span><div class="button-group">${button("이전", "previous", { disabled: state.pageNo <= 1 })}<span>${state.pageNo} / ${pages}</span>${button("다음", "next", { disabled: state.pageNo >= pages })}</div></div>`;
 }
 function statusStrip() {
   const actual = record().api && state.view;
@@ -321,7 +341,7 @@ function draft() {
 function render() {
   const active = document.activeElement;
   const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
-  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. AI 서버는 메모리 세션을 사용하며 CN 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
+  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "register" ? registrationPage() : state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. AI 서버는 메모리 세션을 사용하며 CN 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
   if (focus) { const target = document.getElementById(focus.id); if (target && !target.disabled) { target.focus({ preventScroll: true }); if (typeof focus.start === "number" && target.setSelectionRange && !["number", "checkbox"].includes(target.type)) target.setSelectionRange(focus.start, focus.end); } }
 }
 function updateSearchResults() {
@@ -426,6 +446,8 @@ root.addEventListener("click", event => {
   const control = event.target.closest("[data-action]"); if (!control || control.disabled) return;
   const action = control.dataset.action;
   if (action === "list") navigate(null);
+  if (action === "register") { location.hash = "#/register"; }
+  if (action === "submit-registration") registerChangeRequest();
   if (action === "open-api") navigate("CR-A-001", "impact");
   if (action === "go-scope") navigate(state.id, "scope");
   if (action === "go-impact") navigate(state.id, "impact");
@@ -458,6 +480,10 @@ root.addEventListener("input", event => {
   if (target.id === "lab-model") lab.model = target.value;
   if (target.id === "lab-url") lab.base_url = target.value;
   if (target.id === "lab-region") lab.region = target.value;
+  if (target.id?.startsWith("registration-")) {
+    const key = { "registration-project": "project_id", "registration-project-name": "project_name", "registration-case": "case_id", "registration-channel": "channel", "registration-channel-src": "channel_src", "registration-received": "received_at", "registration-sender-role": "sender_role", "registration-sender-name": "sender_name", "registration-subject": "subject", "registration-message": "message_text" }[target.id];
+    if (key) state.registration[key] = target.value;
+  }
   if (target.id === "a1-model") { a1.model = target.value; a1.result = null; }
   if (target.id === "a1-region") { a1.region = target.value; a1.result = null; }
   if (target.id === "a2-model") { a2.model = target.value; a2.result = null; invalidateLiveReview(); }
@@ -474,6 +500,7 @@ root.addEventListener("compositionstart", event => { if (event.target.id === "re
 root.addEventListener("compositionend", event => { if (event.target.id === "request-search") { composingSearch = false; state.query = event.target.value; state.pageNo = 1; updateSearchResults(); } });
 root.addEventListener("change", async event => {
   const target = event.target;
+  if (target.id === "registration-channel") state.registration.channel = target.value;
   if (target.name === "input-source") switchInputSource(target.value);
   if (target.id === "input-json" && state.inputSource === "sample") render();
   if (target.dataset.pmLabel) { const c = a2.choices[target.dataset.pmLabel] || (a2.choices[target.dataset.pmLabel] = {}); c.label = target.value; if (c.label !== "out_of_scope") c.estimate = false; invalidateLiveReview(); render(); }
