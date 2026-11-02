@@ -93,6 +93,11 @@ def vector_backend():
     emb = build_embedder(settings)
     if emb is None:
         return None
+    if settings.vector_store == "pgvector":
+        from app.kb.vector_store import open_pg_store
+        store = open_pg_store(settings, emb)
+        store.check(emb)
+        return emb, store
     if not settings.embed_index_path.exists():
         log.warning("임베딩 색인 없음 (%s) — 어휘 검색만 사용. python -m app.kb.build_index", settings.embed_index_path)
         return None

@@ -31,6 +31,7 @@ def _no_embedding_api(monkeypatch):
     하이브리드 경로는 tests/test_retrieval_hybrid.py가 fake 임베딩으로 따로 켠다."""
     from app.tools import doc_tools
     monkeypatch.setattr(settings, "embed_provider", "none")
+    monkeypatch.setattr(settings, "vector_store", "local")     # .env의 VECTOR_STORE=pgvector가 테스트에 섞이지 않게
     monkeypatch.setattr(settings, "agent_mode", "fixture")     # .env의 AGENT_MODE·AGENT2_MODE=llm이 실제 LLM을 부르지 않게
     monkeypatch.setattr(settings, "agent2_mode", "fixture")
     doc_tools.vector_backend.cache_clear()
