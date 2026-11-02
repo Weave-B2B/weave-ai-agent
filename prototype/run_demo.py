@@ -11,6 +11,8 @@ from pathlib import Path
 import sys
 import tempfile
 
+from dotenv import dotenv_values
+
 ROOT = Path(__file__).resolve().parents[1]
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -21,18 +23,30 @@ class RunConfig:
     mode: str
     model: str
     rate_file: Path
+    provider: str = "fake"
     api_key: str = field(default="", repr=False)
     tuning: dict[str, str] = field(default_factory=dict)
 
 
 def configuration(args, environ) -> RunConfig:
-    """Select explicit presets. Never load .env or construct an HTTP client here."""
-    mode = "gemini" if args.mode == "api" else args.mode
+    """Load provider credentials without exposing or constructing an HTTP client."""
+    mode = "gemini" if args.mode == "gemini" else ("openai" if args.mode in ("api", "openai") else "fake")
+    file_values = dotenv_values(ROOT / ".env") if (ROOT / ".env").is_file() else {}
+    gemini_key = (environ.get("GEMINI_API_KEY") or file_values.get("GEMINI_API_KEY") or "").strip()
+    llm_key = (environ.get("LLM_API_KEY") or file_values.get("LLM_API_KEY") or "").strip()
+    openai_model = "gpt-4.1-mini"
     path = Path(args.rate_card_file or environ.get("RATE_CARD_FILE") or ROOT / "data/kb/rate_cards.json").expanduser().resolve()
-    key = (environ.get("GEMINI_API_KEY") or "").strip() if mode == "gemini" else ""
-    if mode == "gemini" and not key:
-        raise ValueError("Gemini mode requires server GEMINI_API_KEY")
-    model = (args.model or GEMINI_MODEL) if mode == "gemini" else "fake-ui-demo"
+    provider = mode
+    key = ""
+    if mode == "gemini":
+        key = gemini_key
+        if not key:
+            raise ValueError("Gemini mode requires GEMINI_API_KEY")
+    elif mode == "openai":
+        key = llm_key
+        if not key:
+            raise ValueError("OpenAI/API mode requires LLM_API_KEY")
+    model = args.model or ({"gemini": GEMINI_MODEL, "openai": openai_model}.get(provider, "fake-ui-demo"))
     if not model.strip() or any(char.isspace() for char in model):
         raise ValueError("model must be a nonempty model ID without whitespace")
     tuning = {}
@@ -52,19 +66,19 @@ def configuration(args, environ) -> RunConfig:
         if not valid:
             raise ValueError(f"Invalid setting: {name}")
         tuning[name] = str(value)
-    return RunConfig(mode, model, path, key, tuning)
+    return RunConfig(mode=mode, model=model, rate_file=path, provider=provider, api_key=key, tuning=tuning)
 
 
 def apply_environment(config: RunConfig, responses: Path | None = None) -> None:
-    """Set the existing factory's inputs. A1 stays a fixture; A2 runs the real agent only in Gemini mode
-    (fake mode has no scripted Agent 2 responses, so /agent2 returns the dataset fixture offline)."""
+    """Configure the shared factory for the selected provider and enable real Agent execution."""
     os.environ.update({
-        "AGENT_MODE": "fixture",
-        "AGENT2_MODE": "llm" if config.mode == "gemini" else "fixture",
-        "LLM_PROVIDER": "local" if config.mode == "gemini" else "fake",
+        "AGENT_MODE": "llm" if config.mode in ("gemini", "openai") else "fixture",
+        "AGENT2_MODE": "llm" if config.mode in ("gemini", "openai") else "fixture",
+        "LLM_PROVIDER": "local" if config.provider == "gemini" else ("openai" if config.provider == "openai" else "fake"),
         "LLM_MODEL": config.model,
-        "LLM_BASE_URL": GEMINI_BASE_URL if config.mode == "gemini" else "",
-        "GEMINI_API_KEY": config.api_key if config.mode == "gemini" else os.environ.get("GEMINI_API_KEY", ""),
+        "LLM_BASE_URL": GEMINI_BASE_URL if config.provider == "gemini" else "",
+        "GEMINI_API_KEY": config.api_key if config.provider == "gemini" else os.environ.get("GEMINI_API_KEY", ""),
+        "LLM_API_KEY": config.api_key if config.provider == "openai" else os.environ.get("LLM_API_KEY", ""),
         "LLM_LOCAL_JSON_MODE": "schema",
         "LLM_FAKE_RESPONSES": str(responses) if responses else "",
         "RATE_CARD_FILE": str(config.rate_file),
@@ -77,7 +91,7 @@ def main(argv=None) -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--lab", action="store_true", help="Enable local developer controls using server-side .env credentials")
-    parser.add_argument("--mode", choices=("fake", "gemini", "api"), default="fake")
+    parser.add_argument("--mode", choices=("fake", "gemini", "openai", "api"), default="fake")
     parser.add_argument("--model", help="Explicit Gemini model override; default is the pinned stable preset")
     parser.add_argument("--rate-card-file", help="Reviewed rate_cards JSON; otherwise RATE_CARD_FILE or bundled synthetic table")
     parser.add_argument("--check", action="store_true", help="Validate configuration and rate data with zero network calls; do not start a server")
@@ -117,9 +131,9 @@ def main(argv=None) -> None:
         import uvicorn
 
         print(f"Local prototype: http://{args.host}:{args.port}/prototype/")
-        print("Offline synthetic AI responses." if config.mode == "fake" else "Gemini API mode: impact estimation sends selected requirements to Google; no fake fallback.")
-        print("Code calculation, PM review, and model-generated internal draft; A1 fixture.")
-        print("Agent 2 scope review (C04): real agent via Gemini." if config.mode == "gemini" else "Agent 2 scope review (C04): dataset fixture.")
+        print("Offline synthetic AI responses." if config.mode == "fake" else "API mode: prototype Agent 1-3 execution uses configured provider credentials; no fake fallback.")
+        print("Code calculation, PM review, and model-generated internal draft; Agent 1-3 are real in API mode." if config.mode != "fake" else "Code calculation, PM review, and Agent responses use dataset fixtures in fake mode.")
+        print("Agent 1-3: real API agents." if config.mode != "fake" else "Agent 1-3: dataset fixtures.")
         uvicorn.run("app.main:app", host=args.host, port=args.port, workers=1)
 
 

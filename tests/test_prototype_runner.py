@@ -29,8 +29,8 @@ def test_fake_default_and_explicit_gemini_presets_ignore_stale_provider_environm
     run_demo.apply_environment(gemini)
     import os
     assert os.environ["LLM_PROVIDER"] == "local"
-    assert os.environ["AGENT_MODE"] == "fixture"
-    assert os.environ["AGENT2_MODE"] == "llm"                  # Gemini 모드에서는 C04가 실제 Agent 2를 부른다
+    assert os.environ["AGENT_MODE"] == "llm"
+    assert os.environ["AGENT2_MODE"] == "llm"
     assert os.environ["LLM_BASE_URL"] == run_demo.GEMINI_BASE_URL
     assert os.environ["LLM_FAKE_RESPONSES"] == ""
     assert os.environ["GEMINI_API_KEY"] == "mock-secret"
@@ -40,13 +40,27 @@ def test_fake_default_and_explicit_gemini_presets_ignore_stale_provider_environm
 
 def test_model_and_rate_override_precedence(tmp_path):
     selected = args()
-    selected.mode, selected.model, selected.rate_card_file = "api", "gemini-explicit", str(tmp_path / "explicit.json")
-    config = run_demo.configuration(selected, {"GEMINI_API_KEY": "mock-fallback", "RATE_CARD_FILE": "other.json"})
-    assert config.mode == "gemini" and config.model == "gemini-explicit"
+    selected.mode, selected.model, selected.rate_card_file = "api", "openai-explicit", str(tmp_path / "explicit.json")
+    config = run_demo.configuration(selected, {"LLM_API_KEY": "team-fallback", "RATE_CARD_FILE": "other.json"})
+    assert config.mode == "openai" and config.model == "openai-explicit"
     assert config.rate_file == tmp_path / "explicit.json"
-    assert config.api_key == "mock-fallback"
+    assert config.api_key == "team-fallback"
     selected.rate_card_file = None
-    assert run_demo.configuration(selected, {"GEMINI_API_KEY": "mock", "RATE_CARD_FILE": str(tmp_path / "env.json")}).rate_file == tmp_path / "env.json"
+    assert run_demo.configuration(selected, {"LLM_API_KEY": "team", "RATE_CARD_FILE": str(tmp_path / "env.json")}).rate_file == tmp_path / "env.json"
+
+
+def test_openai_team_key_is_default_api_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_demo, "ROOT", tmp_path)
+    (tmp_path / ".env").write_text("GEMINI_API_KEY=gemini-key\nLLM_API_KEY=team-openai-key\nLLM_MODEL=gpt-team-model\n")
+    selected = args()
+    selected.mode = "api"
+    config = run_demo.configuration(selected, {})
+    assert config.provider == "openai" and config.api_key == "team-openai-key"
+    assert config.model == "gpt-4.1-mini"
+
+    selected.mode = "gemini"
+    config = run_demo.configuration(selected, {})
+    assert config.provider == "gemini" and config.api_key == "gemini-key"
 
 
 def test_check_never_constructs_http_client_starts_server_reads_dotenv_or_reveals_key(monkeypatch, capsys):
@@ -67,7 +81,8 @@ def test_check_never_constructs_http_client_starts_server_reads_dotenv_or_reveal
     assert json.loads(output)["check_only"] is True
 
 
-def test_missing_key_and_invalid_settings_fail_without_values(monkeypatch, capsys):
+def test_missing_key_and_invalid_settings_fail_without_values(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(run_demo, "ROOT", tmp_path)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     with pytest.raises(SystemExit) as error:
