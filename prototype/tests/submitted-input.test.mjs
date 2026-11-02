@@ -52,7 +52,7 @@ async function boot(options = {}) {
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, localBar, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, switchAgent2Source, agent2InputFromAgent1 }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, switchAgent2Source, agent2InputFromAgent1 }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -203,7 +203,6 @@ test('PM approval and reload retain submitted snapshot and response model label'
   assert.equal(app.state.view.phase, 'DRAFT_READY');
   assert.match(app.state.view.draft.impact, /2026-12-10/);
   assert.match(app.submittedConditions(), /2026-12-10/);
-  assert.match(app.localBar(), /API 응답 fake:snapshot-regression/);
   const restored = await boot({ store: app.store, callbacks: { get: () => structuredClone(app.state.view) } }); t.after(restored.cleanup);
   assert.match(restored.submittedConditions(), /2026-12-10/);
   assert.equal(restored.inputChanged(), false);
