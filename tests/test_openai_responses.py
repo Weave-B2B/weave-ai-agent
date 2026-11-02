@@ -24,7 +24,7 @@ def test_responses_request_and_structured_output():
         assert str(request.url) == 'https://api.openai.com/v1/responses'
         assert request.headers['authorization'] == 'Bearer test-openai-key'
         assert body['model'] == 'gpt-6-luna' and body['store'] is False
-        assert body['reasoning'] == {'effort': 'none'}
+        assert 'reasoning' not in body
         assert body['text']['format']['strict'] is True
         assert body['text']['format']['schema']['required'] == ['text']
         return httpx.Response(200, json={'status': 'completed', 'output': [{'type': 'message',

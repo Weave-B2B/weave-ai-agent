@@ -43,7 +43,7 @@ class LlmAgent1:
         """Create a validated Agent1 result with application-owned IDs and spans."""
         result = self.llm.complete_structured(
             system=SYSTEM,
-            user=build_user_prompt(inp),
+            user=build_user_prompt(inp, prompt_version=PROMPT_VERSION),
             schema=Agent1Draft,
             tool_name="submit_items",
         )
