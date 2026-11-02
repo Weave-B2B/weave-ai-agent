@@ -65,7 +65,7 @@ function selectCase(id) {
   if (activeCase && activeCase !== id) rememberA1Case(activeCase);
   activeCase = id;
   agent2Input = agent2Inputs?.[id] ? structuredClone(agent2Inputs[id]) : null;
-  a2.generation++; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
+  a2.generation++; a2.source = 'sample'; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
   a1.generation++; a1.result = null; a1.pending = false; a1.error = null;
   state.selectedItem = 0;
   baseInput = structuredClone(samples.inputs[id] || { context: agent1Inputs?.[id]?.context || {}, items: [], constraints: [], pm_review: { items: [] }, a2_result: { assessments: [] } });
@@ -127,7 +127,7 @@ function statusStrip() {
 function tabTestGuide() {
   const guides = {
     original: ["Agent 1", "요청 원문 탭에서 Agent 1 공급자와 모델을 선택하고 바로 실행할 수 있습니다."],
-    scope: ["Agent 2", "범위 검토 탭에서 Agent 2 공급자와 모델을 선택하고 범위 검토를 실행할 수 있습니다."],
+    scope: ["Agent 2", "범위 검토 탭에서 Agent 2 공급자와 모델, 입력 출처(저장된 입력 또는 Agent 1 실행 결과)를 선택하고 범위 검토를 실행할 수 있습니다."],
     impact: ["Agent 3", "영향 산정 탭에서 Agent 3 공급자와 모델을 선택하고 영향 산정을 실행할 수 있습니다."],
     draft: ["Agent 3", "승인·협의 탭에서 협의안을 생성할 Agent 3 공급자와 모델을 선택하고 실행할 수 있습니다."],
   };
@@ -184,7 +184,7 @@ function original() {
 // ---- C04 범위 검토: Agent 2 실제 결과 (POST /agent2/assessments). 실행 전·조회 예시는 기존 합성 화면(scopeSample) ----
 const A1_MEMORY_STORAGE = "weave-prototype-agent1-memory-v1";
 const a1 = { result: null, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
-const a2 = { result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
+const a2 = { source: 'sample', result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
 let a1Memory = {};
 try { a1Memory = JSON.parse(sessionStorage.getItem(A1_MEMORY_STORAGE) || "{}") || {}; } catch { a1Memory = {}; }
 function rememberA1Case(caseId = activeCase) {
@@ -217,7 +217,9 @@ async function runAgent1() {
   const caseId = activeCase, generation = ++a1.generation;
   const input = structuredClone(agent1Inputs[caseId]);
   const config = { provider: a1.provider, model: a1.model, region: a1.region };
-  a1.pending = true; a1.error = null; a1.result = null; render();
+  a1.pending = true; a1.error = null; a1.result = null;
+  if (a2.source === 'agent1') { a2.generation++; a2.result = null; a2.sourceInput = null; a2.choices = {}; a2.pending = false; invalidateLiveReview(); }
+  render();
   try {
     const result = await agent1.run(input, config);
     if (a1.generation !== generation || activeCase !== caseId) return;
@@ -239,10 +241,30 @@ const A2_LEVEL = { strong: "강", medium: "중", none: "근거 없음", interpre
 const A2_ROLE = { basis: "직접 근거", policy: "절차·원칙", superseding: "우선 문서", context: "참고" };
 const DOC_NAME = { CTR: "계약서", SOW: "과업지시서", FSP: "기능명세서", QUO: "견적서", CO: "변경합의서" };
 const docName = id => DOC_NAME[String(id).split("-")[0]] || "문서";
+// 서버 오케스트레이션(engine.py)과 같은 규칙: 기능 항목 → items, 제약·기한·의존 → constraints, 견적 질문은 넘기지 않는다.
+// PM 항목 확인(pm_items) 단계는 아직 화면에 없어 Agent 1 결과를 그대로 쓴다.
+function agent2InputFromAgent1() {
+  const out = a1.result, source = agent1Inputs?.[activeCase];
+  if (!out || a1.pending || !source) throw new Error("요청 원문 탭에서 Agent 1을 먼저 실행해 주세요.");
+  if (out.context?.case_id !== activeCase) throw new Error("현재 요청과 일치하는 Agent 1 결과가 필요합니다.");
+  if (out.status === "NEEDS_INPUT") throw new Error("Agent 1이 추가 정보를 요청했습니다. 질문을 해결한 뒤 실행해 주세요.");
+  const items = out.items.filter(item => item.item_type === "function");
+  if (!items.length) throw new Error("Agent 1 결과에 기능 항목이 없어 범위 판단할 것이 없습니다.");
+  return { context: structuredClone(out.context), message_text: source.message_text, a1_result_id: out.meta?.result_id || null,
+    items: structuredClone(items), constraints: structuredClone(out.items.filter(item => ["constraint", "deadline", "dependency"].includes(item.item_type))), answers: [] };
+}
+function switchAgent2Source(source) {
+  if (!["sample", "agent1"].includes(source) || a2.pending || a2.source === source) return;
+  a2.source = source; a2.generation++; a2.result = null; a2.sourceInput = null; a2.choices = {}; a2.error = null;
+  invalidateLiveReview(); render();
+}
 async function runAgent2() {
-  if (a2.pending || !agent2Input) return;
+  if (a2.pending) return;
+  let input;
+  try { input = a2.source === "agent1" ? agent2InputFromAgent1() : structuredClone(agent2Input); }
+  catch (error) { a2.error = { status: 0, message: error.message }; render(); return; }
+  if (!input) return;
   const caseId = activeCase, generation = ++a2.generation;
-  const input = structuredClone(agent2Input);
   a2.pending = true; a2.error = null; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; if (state.inputSource === "agent2") { state.inputText = ""; if (state.view) state.invalidated = true; persist(); } render();
   try {
     const config = lab.enabled ? { provider: a2.provider, model: a2.model, region: a2.region } : null;
@@ -258,13 +280,17 @@ function agent2Bar() {
   const label = a2.pending ? "범위 판단 중… (최대 1~2분)" : a2.result ? "다시 실행" : "AI 범위 판단 실행";
   const status = a2.result ? `${chip(a2.result.status === "NEEDS_INPUT" ? "추가 정보 필요" : "PM 검토 대기", a2.result.status === "NEEDS_INPUT" ? "warning" : "info")}<span class="tiny">결과 ${e(a2.result.meta.result_id)} · ${e(a2.result.meta.model || a2.result.meta.agent_version || "서버 설정 확인")}</span>` : '<span class="muted">아래는 실행 전 합성 결과입니다. 실행 방식은 서버의 Agent 2 설정에 따릅니다.</span>';
   const failure = a2.error ? `<div class="notice inline"><strong>Agent 2 실행 실패${a2.error.status ? ` (HTTP ${a2.error.status})` : ""}</strong>${e(a2.error.message)}</div>` : "";
-  return `${agentSettings('a2', a2)}<div class="baseline">${icon("2b0e7")}<strong>Agent 2 범위 판단</strong>${status}${button(label, "run-a2", { class: "primary small", icon: "a1cb9", disabled: a2.pending || !agent2Input })}</div>${failure}`;
+  const sources = [["sample", "저장된 입력"], ["agent1", "Agent 1 실행 결과"]].map(([v, l]) => `<label class="check"><input type="radio" name="a2-source" value="${v}" ${a2.source === v ? "checked" : ""} ${a2.pending ? "disabled" : ""}>${l}</label>`).join("");
+  const sourceNote = a2.source === "agent1" ? `<p class="caption">${a1.result ? `Agent 1 결과 ${e(a1.result.meta?.result_id || "")}의 기능 항목을 PM 항목 확인 없이 그대로 사용합니다 (테스트용).` : "요청 원문 탭에서 Agent 1을 먼저 실행해 주세요."}</p>` : "";
+  const ready = a2.source === "agent1" ? !!a1.result && !a1.pending : !!agent2Input;
+  return `${agentSettings('a2', a2)}<section class="card"><h2>Agent 2 입력 출처</h2><div class="button-group">${sources}</div>${sourceNote}</section><div class="baseline">${icon("2b0e7")}<strong>Agent 2 범위 판단</strong>${status}${button(label, "run-a2", { class: "primary small", icon: "a1cb9", disabled: a2.pending || !ready })}</div>${failure}`;
 }
 function scope() {
   if (!record().api) return scopeSample();
   if (!a2.result) return agent2Bar() + (record().datasetSample ? datasetScope() : scopeSample());
   const out = a2.result, rows = out.assessments;
-  const meta = Object.fromEntries([...(agent2Input.items || []), ...(agent2Input.constraints || [])].map(item => [item.item_id, item]));
+  const used = a2.sourceInput || agent2Input;
+  const meta = Object.fromEntries([...(used.items || []), ...(used.constraints || [])].map(item => [item.item_id, item]));
   state.selectedItem = Math.min(state.selectedItem, Math.max(rows.length - 1, 0));
   const sel = rows[state.selectedItem];
   if (!sel) return agent2Bar() + '<section class="card"><div class="empty-state"><h3>판단할 기능 항목이 없습니다.</h3></div></section>';
@@ -664,6 +690,7 @@ root.addEventListener("change", async event => {
   if (target.dataset.pmEstimate) { const c = a2.choices[target.dataset.pmEstimate] || (a2.choices[target.dataset.pmEstimate] = {}); c.estimate = target.checked; invalidateLiveReview(); render(); }
   if (target.id === "draft-provider") { draftLab.provider = target.value; draftLab.model = defaultModel(target.value); render(); }
   if (target.name === "lab-provider") { if (state.view && state.mode === "api") { state.invalidated = true; persist(); } lab.provider = target.value; lab.model = defaultModel(target.value); render(); }
+  if (target.name === "a2-source") switchAgent2Source(target.value);
   if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.result = null; agent.error = null; if (agent === a1) rememberA1Case(activeCase); if (agent === a2) invalidateLiveReview(); render(); }
   if (target.id === "scope-filter") { state.filter = target.value; state.pageNo = 1; render(); }
   if (target.id === "project-filter") { state.project = target.value; state.pageNo = 1; render(); }
