@@ -3,7 +3,7 @@
 from collections.abc import Callable
 
 from app.agents.agent3.draft import Agent3ImpactDraft
-from app.agents.agent3.effort import load_effort_rules
+from app.agents.agent3.effort import load_effort_rules, matches_rule as _matches_rule
 from app.agents.agent3.guards import finalize_estimates
 from app.agents.agent3.prompts import PLAN_SYSTEM, PROMPT_VERSION, build_user_prompt
 from app.agents.base import AgentFailure
@@ -14,15 +14,8 @@ from app.tools.get_schedule import get_schedule
 from schema.schemas import Agent3Input, Agent3Output, AgentError, Estimate, Line, Meta, Question, Schedule
 
 
-def _matches_rule(rule: dict, inp: Agent3Input, matched_targets: dict[str, str]) -> bool:
-    matches = inp.context.case_id == rule.get("case_id") and (
-        matched_targets == rule.get("targets") if "targets" in rule
-        else bool(matched_targets) and all(text == rule.get("target_text") for text in matched_targets.values()))
-    return matches and ("constraints" not in rule or [item.text for item in inp.constraints] == rule["constraints"])
-
-
 def _retryable_rule_error(proposal, inp: Agent3Input, rules: dict) -> bool:
-    """Retry invalid IDs/roles only where the exact target has a known sample rule."""
+    """Retry an invalid rule selection without relaxing server validation."""
     targets = inp.targets()
     for estimate in proposal.estimates:
         used = set()
@@ -30,9 +23,8 @@ def _retryable_rule_error(proposal, inp: Agent3Input, rules: dict) -> bool:
             if not line.item_numbers or any(n < 1 or n > len(targets) for n in line.item_numbers):
                 continue
             matched = {targets[n - 1].item_id: targets[n - 1].text for n in line.item_numbers}
-            known = [r for r in rules.values() if _matches_rule(r, inp, matched)]
             rule = rules.get(line.rule_id)
-            if known and (not rule or not _matches_rule(rule, inp, matched) or rule['role'] != line.role or line.rule_id in used):
+            if not rule or not _matches_rule(rule, inp, matched) or rule['role'] != line.role or line.rule_id in used:
                 return True
             used.add(line.rule_id)
     return False
@@ -64,12 +56,14 @@ class LlmAgent3:
         proposal = result.parsed
         effort_rules = load_effort_rules()
         rule_retry = False
-        if _retryable_rule_error(proposal, inp, effort_rules["rules"]):
-            rule_retry = True
+        assumption_retry = False
+        rule_retry = _retryable_rule_error(proposal, inp, effort_rules["rules"])
+        assumption_retry = any(e.status == "not_estimable" for e in proposal.estimates)
+        if rule_retry or assumption_retry:
             try:
                 corrected = self.llm.complete_structured(
                     system=PLAN_SYSTEM,
-                    user=prompt + "\n이전 응답의 공수 기준 ID가 없거나, 직군이 다르거나, 같은 기준이 중복되었습니다. 제공된 rules 키와 role을 그대로 사용하고 같은 기준은 하나의 작업 행으로 합쳐 다시 응답하세요.",
+                    user=prompt + "\n이전 응답에 미산정 항목 또는 잘못된 공수 기준 ID가 있습니다. 제공된 rules의 키와 직군만 사용하고, 세부 조건을 합리적으로 가정해 작업 유형별 임시 기준으로 산정할 수 있는지 다시 확인하세요. 확인되지 않은 내용은 각 작업의 assumption에 명시하고 PM 확인 질문으로 남기세요. 가정으로도 규모를 판단할 수 없거나 기준이 없으면 미산정을 유지하세요. 같은 기준은 하나의 작업 행으로 합치세요.",
                     schema=Agent3ImpactDraft, tool_name="submit_impact",
                 )
                 corrected.usage.input_tokens += result.usage.input_tokens
@@ -115,8 +109,9 @@ class LlmAgent3:
                     invalid_rule = True
                     continue
                 used_rules.add(line.rule_id)
+                marker = "작업 유형별 임시 기준 · 적용 적합성 PM 확인 필요" if rule.get("kind") == "general_test" else "테스트 공수 기준"
                 lines.append(Line(task=line.task, item_ids=line_ids, role=line.role,
-                                  md=rule["md"], assumption=f"{line.assumption} [테스트 공수 기준 {effort_rules['version']}:{line.rule_id}]"))
+                                  md=rule["md"], assumption=f"{line.assumption} [{marker} {effort_rules['version']}:{line.rule_id}]"))
             if invalid_rule:
                 missing_rules.extend(item_ids)
                 lines = []
@@ -138,9 +133,10 @@ class LlmAgent3:
                 stage="agent3", item_ids=sorted(set(missing_rules)), field="effort_rule",
                 text="해당 작업에 적용할 공수 기준을 확인해주세요.",
                 reason="모델이 공수 기준을 찾지 못했거나 기준 ID·직군이 잘못됐거나 중복되었습니다. 입력과 기준을 확인한 뒤 다시 실행해주세요.", target="pm", blocking=True))
-        if not questions and any(e.status == "not_estimable" for e in estimates):
-            unresolved = [i for e in estimates if e.status == "not_estimable" for i in e.item_ids]
-            questions.append(Question(question_id=f"{inp.context.case_id}-A3Q1", case_id=inp.context.case_id,
+        blocked_items = {i for q in questions if q.blocking and q.status == "open" for i in q.item_ids}
+        unresolved = [i for e in estimates if e.status == "not_estimable" for i in e.item_ids if i not in blocked_items]
+        if unresolved:
+            questions.append(Question(question_id=f"{inp.context.case_id}-A3QDETAIL", case_id=inp.context.case_id,
                 stage="agent3", item_ids=unresolved, field="estimation_details",
                 text="공수 산정을 위해 대상·규모·구현 조건을 구체화해주세요.",
                 reason="요구사항 또는 작업 규모 부족으로 산정할 수 없음", target="pm", blocking=True))
@@ -150,6 +146,7 @@ class LlmAgent3:
                 debug={"prompt_version": PROMPT_VERSION, "retried": result.retried,
                        "effort_rule_version": effort_rules["version"],
                        "effort_rule_retry": rule_retry,
+                       "assumption_retry": assumption_retry,
                        "input_tokens": result.usage.input_tokens, "output_tokens": result.usage.output_tokens}),
             status="NEEDS_INPUT" if any(q.blocking for q in questions) or any(e.status == "not_estimable" for e in estimates) else "IMPACT_DRAFT_READY",
             estimates=estimates, questions=questions, draft=None,

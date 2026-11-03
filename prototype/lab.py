@@ -10,7 +10,8 @@ from dotenv import dotenv_values
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from app.agents.agent3.agent import LlmAgent3
+from app.agents.agent3.agent import LlmAgent3, _matches_rule
+from app.agents.agent3.effort import load_effort_rules
 from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft
 from app.api.agent3_routes import _guard
 from app.core.config import ROOT, Settings
@@ -22,6 +23,7 @@ from app.agents.registry import build_agent2
 from app.agents.fixture import FixtureAgent1, FixtureAgent2, load_chain
 from app.agents.base import AgentFailure
 from app.orchestration.ids import new_result_id, now_iso
+from app.kb.loader import baselines
 
 router = APIRouter(prefix='/prototype-lab', tags=['local prototype'])
 lock = RLock()
@@ -37,6 +39,7 @@ class LabInput(BaseModel):
     base_url: str = ''
     region: str = 'ap-northeast-2'
     fake_response: dict | None = None
+    fake_auto_multi: bool = False
 
 class Agent1LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -63,8 +66,7 @@ def provider_client(body):
     key = os.environ.get(key_name) or values.get(key_name) or ''
     if body.provider in ('gemini', 'openai') and not key:
         raise HTTPException(422, f'서버 .env에 {key_name}를 설정해 주세요.')
-    openai_model = (os.environ.get('LLM_MODEL') or values.get('LLM_MODEL') or 'gpt-4.1-mini').strip()
-    model = body.model.strip() or {'gemini': 'gemini-2.5-flash-lite', 'openai': openai_model}.get(body.provider, '')
+    model = body.model.strip() or {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna'}.get(body.provider, '')
     if not model:
         raise HTTPException(422, '모델 이름을 입력해 주세요.')
     config = Settings(_env_file=None, llm_provider={'bedrock': 'bedrock', 'gemini': 'local', 'openai': 'openai'}[body.provider],
@@ -85,7 +87,10 @@ def run_local_agent(request, body, stage):
                 items = [Item(item_id=f"{body.input.context.case_id}-{index}", case_id=body.input.context.case_id,
                               display_no=f"R{index}", item_type='function', intent='change_request', text=sentence, spans=[])
                          for index, sentence in enumerate(sentences, 1)]
-                return Agent1Output(context=body.input.context, status='READY', items=items)
+                out = Agent1Output(context=body.input.context, status='READY', items=items)
+                out.meta.result_id = new_result_id(stage, body.input.context.case_id)
+                out.meta.created_at = now_iso()
+                return out
             agent = (FixtureAgent1 if stage == 'agent1' else FixtureAgent2)(chain)
         elif stage == 'agent1':
             agent = LlmAgent1(provider_client(body))
@@ -136,17 +141,22 @@ def workflow_for(sid):
 def defaults(request: Request):
     local_only(request)
     fake = json.loads((ROOT / 'examples/agent3/fake_responses.json').read_text(encoding='utf-8'))[0]
-    values = dotenv_values(ROOT / '.env') if (ROOT / '.env').is_file() else {}
-    openai_model = (os.environ.get('LLM_MODEL') or values.get('LLM_MODEL') or 'gpt-4.1-mini').strip()
     return {'fake_response': fake, 'model': 'gemini-2.5-flash-lite',
-            'default_models': {'gemini': 'gemini-2.5-flash-lite', 'openai': openai_model}}
+            'default_models': {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna'}}
+
+
+@router.get('/baselines')
+def list_prototype_baselines(request: Request):
+    local_only(request)
+    return [{'id': key, 'project_id': value['project_id'], 'as_of': value['as_of']}
+            for key, value in baselines().items()]
 
 
 @router.post('/impacts')
 def prepare(request: Request, body: LabInput):
     local_only(request)
     if body.provider == 'fake':
-        fake = body.fake_response
+        fake = _multi_fake_response(body.input) if body.fake_auto_multi and len(body.input.targets()) > 1 else body.fake_response
         if fake is None:
             fake = json.loads((ROOT / 'examples/agent3/fake_responses.json').read_text(encoding='utf-8'))[0]
         narrative = {'narrative': '안녕하세요. 변경 요청의 검토 내용을 전달드립니다.\n\n[[APPROVED_FACTS]]\n\n내용을 검토하신 뒤 함께 협의 부탁드립니다. 감사합니다.'}
@@ -160,6 +170,29 @@ def prepare(request: Request, body: LabInput):
         sessions[view['session_id']] = (workflow, case)
         current[case] = view['session_id']
     return view
+
+
+def _multi_fake_response(inp: Agent3Input) -> dict:
+    """Create only a test proposal from existing, exactly matching sample rules."""
+    rules = load_effort_rules()['rules']
+    estimates, missing = [], []
+    for number, item in enumerate(inp.targets(), 1):
+        matched = {item.item_id: item.text}
+        applicable = [(key, rule) for key, rule in rules.items() if rule.get('kind') != 'general_test' and _matches_rule(rule, inp, matched)]
+        if applicable:
+            lines = [{'task': rule['description'], 'item_numbers': [number], 'role': rule['role'],
+                      'rule_id': key, 'assumption': rule.get('assumption') or '테스트용 기준'}
+                     for key, rule in applicable]
+            estimates.append({'item_numbers': [number], 'status': 'draft', 'lines': lines})
+        else:
+            missing.append(number)
+            estimates.append({'item_numbers': [number], 'status': 'not_estimable', 'lines': [],
+                              'reason': '일치하는 테스트 공수 기준이 없습니다.'})
+    questions = ([{'item_numbers': missing, 'field': 'effort_rule',
+                   'text': '공수 기준이 없는 항목의 작업과 기준을 확인해 주세요.',
+                   'reason': '일치하는 테스트 공수 기준 없음', 'target': 'pm', 'blocking': True}]
+                 if missing else [])
+    return {'estimates': estimates, 'questions': questions}
 
 
 @router.get('/impacts/{sid}')
