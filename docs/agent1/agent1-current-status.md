@@ -191,6 +191,29 @@ python prototype/run_demo.py --mode api --lab
 
 `--lab` 모드에서는 프로토타입 서버가 코드 변경을 감지하도록 reload가 활성화된다.
 
+## 단독 REST API
+
+Agent 1은 공통 오케스트레이션 API와 별도로 단독 HTTP 엔드포인트를 제공한다.
+
+```text
+POST /agent1/items
+```
+
+- 입력: `Agent1Input`
+- 출력: `Agent1Output`
+- 기본 fixture 모드: 데이터셋의 Agent 1 gold 결과 반환
+- LLM 모드: 설정된 공급자와 모델로 `LlmAgent1.run()` 실행
+- 결과 ID: API 계층에서 `A1-{case_id}-{uuid}` 형식으로 발급
+- 생성 시각: API 계층에서 한국시간 ISO 8601 형식으로 발급
+- 실행 결과 저장: 별도 저장소가 아니라 응답으로만 반환
+
+실행 모드는 다음 우선순위로 결정한다.
+
+1. `agent_mode=llm` 또는 `agent1_mode=llm`이면 실제 LLM Agent 1 실행
+2. 그 외에는 fixture Agent 1 실행
+
+`/prototype-lab/agent1`은 로컬 프로토타입 전용 공급자 선택 API이며, `/agent1/items`는 일반 백엔드 연동용 공개 라우터이다.
+
 ## 기존 Lab API와 이번 UI 연동의 차이
 
 기존 코드에는 이미 `/prototype-lab/agent1` 엔드포인트와 `LlmAgent1` 실행 경로가 일부 존재했다.
