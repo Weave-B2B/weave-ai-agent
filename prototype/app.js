@@ -1,10 +1,11 @@
-import { Agent1Api, Agent2Api, Agent3Api, ApiError, MockPreview } from "./api.js";
+import { Agent1Api, Agent2Api, Agent3Api, ApiError, KbApi, MockPreview } from "./api.js";
 import { records, sampleItems, scenarioInput } from "./fixtures.js?v=common-rate-2";
 
 const root = document.querySelector("#app");
 const api = new Agent3Api();
 const agent2 = new Agent2Api();
 const agent1 = new Agent1Api();
+const kbApi = new KbApi();
 const STORAGE = "weave-prototype-agent3-session-v1";
 const PHASE = { APPROVED: "PM 승인 완료 · 협의안 생성 대기", WAITING_IMPACT_APPROVAL: "PM 산정 검토 대기", WAITING_INPUT: "추가 정보 필요", WAITING_UPSTREAM_REVIEW: "상위 PM 검토 필요", DRAFT_READY: "내부 협의안 초안 준비", NOT_REQUIRED: "산정 대상 없음", FAILED: "산정 실패" };
 const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "", registration: { project_id: "P-COM-101", project_name: "신규 변경 요청 프로젝트", case_id: "", channel: "email", channel_src: "GMAIL", received_at: "", sender_role: "고객사 PM", sender_name: "", subject: "", message_text: "" }, registrationError: "" };
@@ -52,6 +53,8 @@ function acceptView(view, submittedInput = null) {
 function navigate(id, tab = "original") { location.hash = id ? `#/request/${encodeURIComponent(id)}/${tab}` : "#/requests"; }
 function route() {
   if (location.hash === "#/register") { state.page = "register"; render(); return; }
+  const project = location.hash.match(/^#\/projects(?:\/([^/]+))?$/);
+  if (project) { state.page = "projects"; if (project[1]) kb.projectId = decodeURIComponent(project[1]); render(); loadKb(); return; }
   const match = location.hash.match(/^#\/request\/([^/]+)\/(original|scope|impact|draft)$/);
   if (match && records.some(item => (item.api || item.datasetSample || item.id === "CR-001") && item.id === decodeURIComponent(match[1]))) {
     state.id = decodeURIComponent(match[1]); state.tab = match[2]; state.page = "detail";
@@ -65,7 +68,7 @@ function selectCase(id) {
   if (activeCase && activeCase !== id) rememberA1Case(activeCase);
   activeCase = id;
   agent2Input = agent2Inputs?.[id] ? structuredClone(agent2Inputs[id]) : null;
-  a2.generation++; a2.source = 'sample'; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
+  a2.generation++; a2.source = 'sample'; a2.useActive = false; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
   a1.generation++; a1.result = null; a1.pending = false; a1.error = null;
   state.selectedItem = 0;
   baseInput = structuredClone(samples.inputs[id] || { context: agent1Inputs?.[id]?.context || {}, items: [], constraints: [], pm_review: { items: [] }, a2_result: { assessments: [] } });
@@ -79,10 +82,10 @@ function selectCase(id) {
 
 function sidebar() {
   const nav = [["대시보드", "1d0b4"], ["프로젝트", "7626c"], ["변경 요청", "f8eec", records.length], ["승인 대기", "bfedc", 3], ["청구", "e6313", 2]];
-  return `<aside class="sidebar" aria-label="주 메뉴"><div class="brand"><span class="brand-mark">S</span><span class="brand-name">Scopeline</span><span class="mini-tag">MVP</span></div><div class="workspace"><span class="workspace-mark">한</span><div class="workspace-copy">한빛디지털<small>수행사 워크스페이스</small></div>${icon("b05aa")}</div><div class="nav-section">업무</div>${nav.map(([label, file, count]) => `<button class="nav ${label === "변경 요청" ? "active" : ""}" ${label === "변경 요청" ? 'data-action="list" aria-current="page"' : 'disabled title="이번 구현 범위에 포함되지 않습니다"'}>${icon(file)}<span class="nav-label">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</button>`).join("")}<div class="nav-section">관리</div><button class="nav" disabled title="이번 구현 범위 밖">${icon("ed47e")}<span class="nav-label">설정</span></button><div class="sidebar-bottom"><div class="disclaimer"><strong>${icon("6bb27")}AI는 제안까지만</strong>범위 확정·가격·승인·고객 발송은 담당자가 결정합니다.</div><div class="profile"><span class="avatar large">김</span><div class="profile-copy">김서윤<small>로컬 확인 · 테스트 PM</small></div></div></div></aside>`;
+  return `<aside class="sidebar" aria-label="주 메뉴"><div class="brand"><span class="brand-mark">S</span><span class="brand-name">Scopeline</span><span class="mini-tag">MVP</span></div><div class="workspace"><span class="workspace-mark">한</span><div class="workspace-copy">한빛디지털<small>수행사 워크스페이스</small></div>${icon("b05aa")}</div><div class="nav-section">업무</div>${nav.map(([label, file, count]) => { const action = label === "변경 요청" ? "list" : label === "프로젝트" && lab.enabled ? "projects" : null; const current = action && (action === "projects" ? state.page === "projects" : state.page !== "projects"); return `<button class="nav ${current ? "active" : ""}" ${action ? `data-action="${action}" ${current ? 'aria-current="page"' : ""}` : 'disabled title="이번 구현 범위에 포함되지 않습니다"'}>${icon(file)}<span class="nav-label">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</button>`; }).join("")}<div class="nav-section">관리</div><button class="nav" disabled title="이번 구현 범위 밖">${icon("ed47e")}<span class="nav-label">설정</span></button><div class="sidebar-bottom"><div class="disclaimer"><strong>${icon("6bb27")}AI는 제안까지만</strong>범위 확정·가격·승인·고객 발송은 담당자가 결정합니다.</div><div class="profile"><span class="avatar large">김</span><div class="profile-copy">김서윤<small>로컬 확인 · 테스트 PM</small></div></div></div></aside>`;
 }
 function topbar() {
-  const path = state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
+  const path = state.page === "projects" ? `프로젝트 / ${kb.projectId || "목록"} / 기준 문서` : state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
   return `<header class="topbar"><span class="breadcrumb">${e(path)}</span><label class="top-search">${icon("776e1")}<input id="global-search" placeholder="CR ID, 프로젝트, 문서 검색" aria-label="전체 요청 검색"></label><button class="icon-button" data-action="help" aria-label="로컬 확인 안내">${icon("c360b")}</button><button class="icon-button" data-action="help" aria-label="도움말">${icon("a340e")}</button><span class="top-separator"></span><span class="avatar large">김</span></header>`;
 }
 function filteredRecords() {
@@ -184,7 +187,7 @@ function original() {
 // ---- C04 범위 검토: Agent 2 실제 결과 (POST /agent2/assessments). 실행 전·조회 예시는 기존 합성 화면(scopeSample) ----
 const A1_MEMORY_STORAGE = "weave-prototype-agent1-memory-v1";
 const a1 = { result: null, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
-const a2 = { source: 'sample', result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
+const a2 = { source: 'sample', useActive: false, result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
 let a1Memory = {};
 try { a1Memory = JSON.parse(sessionStorage.getItem(A1_MEMORY_STORAGE) || "{}") || {}; } catch { a1Memory = {}; }
 function rememberA1Case(caseId = activeCase) {
@@ -240,7 +243,7 @@ const A2_LABEL = { in_scope: ["기존 범위 내", "success"], out_of_scope: ["�
 const A2_LEVEL = { strong: "강", medium: "중", none: "근거 없음", interpretation_needed: "해석 필요" };
 const A2_ROLE = { basis: "직접 근거", policy: "절차·원칙", superseding: "우선 문서", context: "참고" };
 const DOC_NAME = { CTR: "계약서", SOW: "과업지시서", FSP: "기능명세서", QUO: "견적서", CO: "변경합의서" };
-const docName = id => DOC_NAME[String(id).split("-")[0]] || "문서";
+const docName = id => kbDoc(id)?.title || DOC_NAME[String(id).split("-")[0]] || "문서";
 // 서버 오케스트레이션(engine.py)과 같은 규칙: 기능 항목 → items, 제약·기한·의존 → constraints, 견적 질문은 넘기지 않는다.
 // PM 항목 확인(pm_items) 단계는 아직 화면에 없어 Agent 1 결과를 그대로 쓴다.
 function agent2InputFromAgent1() {
@@ -264,6 +267,8 @@ async function runAgent2() {
   try { input = a2.source === "agent1" ? agent2InputFromAgent1() : structuredClone(agent2Input); }
   catch (error) { a2.error = { status: 0, message: error.message }; render(); return; }
   if (!input) return;
+  const active = a2.useActive ? kbBaselineState(input.context)?.active : null;
+  if (active && active.baseline_id !== input.context.baseline_id) input.context = { ...input.context, baseline_id: active.baseline_id, baseline_as_of: active.as_of };
   const caseId = activeCase, generation = ++a2.generation;
   a2.pending = true; a2.error = null; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; if (state.inputSource === "agent2") { state.inputText = ""; if (state.view) state.invalidated = true; persist(); } render();
   try {
@@ -283,7 +288,7 @@ function agent2Bar() {
   const sources = [["sample", "저장된 입력"], ["agent1", "Agent 1 실행 결과"]].map(([v, l]) => `<label class="check"><input type="radio" name="a2-source" value="${v}" ${a2.source === v ? "checked" : ""} ${a2.pending ? "disabled" : ""}>${l}</label>`).join("");
   const sourceNote = a2.source === "agent1" ? `<p class="caption">${a1.result ? `Agent 1 결과 ${e(a1.result.meta?.result_id || "")}의 기능 항목을 PM 항목 확인 없이 그대로 사용합니다 (테스트용).` : "요청 원문 탭에서 Agent 1을 먼저 실행해 주세요."}</p>` : "";
   const ready = a2.source === "agent1" ? !!a1.result && !a1.pending : !!agent2Input;
-  return `${agentSettings('a2', a2)}<section class="card"><h2>Agent 2 입력 출처</h2><div class="button-group">${sources}</div>${sourceNote}</section><div class="baseline">${icon("2b0e7")}<strong>Agent 2 범위 판단</strong>${status}${button(label, "run-a2", { class: "primary small", icon: "a1cb9", disabled: a2.pending || !ready })}</div>${failure}`;
+  return `${agentSettings('a2', a2)}${baselineBanner()}<section class="card"><h2>Agent 2 입력 출처</h2><div class="button-group">${sources}</div>${sourceNote}</section><div class="baseline">${icon("2b0e7")}<strong>Agent 2 범위 판단</strong>${status}${button(label, "run-a2", { class: "primary small", icon: "a1cb9", disabled: a2.pending || !ready })}</div>${failure}`;
 }
 function scope() {
   if (!record().api) return scopeSample();
@@ -515,10 +520,91 @@ function draft() {
   const d = valid ? view.draft : null;
   return `${stateNotice()}<div class="draft-versions"><div class="draft-version"><span>산정 결과</span><strong>${view ? `v${view.state_revision} · ${PHASE[view.phase] || view.phase}` : "아직 없음"}</strong><span class="tiny">현재 API 세션 기준</span></div><div class="draft-version ${valid ? "current" : ""}"><span>고객 전달용 메일 초안</span><strong>${valid ? "승인 결과로 작성됨" : "PM 산정 승인 후 생성"}</strong><span class="tiny">사용자 개발 착수 승인과 별개</span></div><div class="draft-version"><span>고객 협의·상업 승인</span><strong>이번 구현 범위 밖</strong><span class="tiny">고객 전달·합의·청구 미수행</span></div></div><div class="columns impact"><div class="stack"><section class="card"><div class="card-heading"><div><h2>고객 전달용 협의 메일 초안</h2><p class="caption">고객에게 보낼 메일 초안입니다. PM이 내용을 확인한 후 직접 전달해 주세요. 공수와 금액은 승인된 서버 결과입니다.</p></div><div class="button-group">${valid ? button("협의안 다시 생성", "generate-draft", { disabled: !safeCurrent(), class: "small" }) : ""}${button("복사", "copy-draft", { disabled: !valid, icon: "4ea67" })}${button("메일 초안 저장", "download-draft", { disabled: !valid, icon: "986b4" })}</div></div>${lab.enabled ? `<div class="settings-grid"><label class="field">협의안 생성 모델<select id="draft-provider" ${state.pending ? "disabled" : ""}><option value="gemini" ${draftLab.provider === "gemini" ? "selected" : ""}>Gemini API</option><option value="openai" ${draftLab.provider === "openai" ? "selected" : ""}>GPT API</option><option value="fake" ${draftLab.provider === "fake" ? "selected" : ""}>가상 응답</option><option value="bedrock" ${draftLab.provider === "bedrock" ? "selected" : ""}>AWS Bedrock</option></select></label>${draftLab.provider !== "fake" ? `<label class="field">모델 ID<input id="draft-model" value="${e(draftLab.model)}" ${state.pending ? "disabled" : ""}></label>` : ""}${draftLab.provider === "bedrock" ? `<label class="field">AWS 리전<input id="draft-region" value="${e(draftLab.region)}"></label>` : ""}</div><p class="tiny">영향 산정 모델과 별도로 선택합니다. Gemini와 GPT는 각각 서버에 저장된 키를 사용합니다.</p>` : ""}${d ? `<div class="draft-shell"><article class="draft-paper"><h2>제목: ${e(d.email_subject || "변경 요청 협의 안내")}</h2><p class="tiny">작성 모델: ${e(view.draft_model || "확인 불가")} · PM 검토 후 고객 전달</p><section class="draft-section"><p style="white-space: pre-wrap">${e(d.email_body || "메일 초안을 다시 생성해 주세요.")}</p></section></article></div>` : `<div class="empty-state"><h3>아직 유효한 협의안 초안이 없습니다.</h3><p>${view?.phase === "APPROVED" ? "PM 승인 완료. 선택한 모델로 협의안을 생성하세요." : "영향 산정에서 최신 결과를 확인·승인해 주세요."}</p><div style="margin-top:16px">${view?.phase === "APPROVED" ? button(state.pending ? "LLM 협의안 생성 중…" : "LLM 협의안 생성", "generate-draft", { class: "primary", disabled: !safeCurrent() || editsChanged() }) : button("영향 산정으로", "go-impact", { icon: "ec151" })}</div></div>`}<div class="notice inline">${icon("d5e00")}시스템은 고객에게 자동 발송하지 않습니다. 계약 체결·고객 합의·청구는 수행하지 않습니다.</div></section></div><div class="stack"><section class="card"><div class="card-heading"><h2>PM 산정 승인</h2>${chip(view?.approval?.approved ? "승인" : "미승인")}</div><div class="metadata-box"><dl><dt>검토자</dt><dd>${e(view?.approval?.reviewer_ref || "—")}</dd><dt>검토 시각</dt><dd>${e(view?.approval?.reviewed_at || "—")}</dd><dt>대상 결과</dt><dd>${e(view?.approval?.target_result_id || "—")}</dd><dt>검토 사유</dt><dd>${e(view?.approval?.reason || "—")}</dd></dl></div><p class="caption">검토자 참조는 로컬 테스트 값이며 실제 PM 인증을 의미하지 않습니다.</p></section><section class="card"><h2>고객 전달 기록</h2><p class="caption">이번 범위에서는 전송·협의 기록을 생성하지 않습니다.</p><div class="form-actions">${button("고객 응답 기록", "unused", { disabled: true, icon: "6ce49" })}</div></section><section class="card"><h2>변경 이력</h2>${history()}</section></div></div>`;
 }
+// ---- 로컬 테스트 전용: 프로젝트 기준 문서 (문서 추가 → 색인 → 새 기준선). 실제 업로드·승인·기준선 관리는 백엔드 담당 ----
+const kb = { data: null, pending: false, error: null, projectId: null, docType: "sow", file: null, last: null, selection: {} };
+const KB_TYPE = { contract: "계약서", sow: "과업지시서", functional_spec: "기능명세서", quote: "견적서", change_order: "변경합의서" };
+const kbProjectData = id => kb.data?.projects.find(p => p.project_id === id);
+const kbDoc = id => kb.data?.projects.flatMap(p => p.documents).find(d => d.doc_id === id && d.source === "lab");
+function kbBaselineState(ctx) {
+  const project = ctx && kbProjectData(ctx.project_id);
+  if (!project) return null;
+  return { project, current: project.baselines.find(b => b.baseline_id === ctx.baseline_id), active: project.baselines.find(b => b.baseline_id === project.active_baseline_id) };
+}
+function kbSelection(projectId = kb.projectId) {
+  if (!kb.selection[projectId]) {
+    const p = kbProjectData(projectId), active = p?.baselines.find(b => b.baseline_id === p.active_baseline_id);
+    kb.selection[projectId] = new Set([...(active?.document_ids || []), ...(p?.documents || []).filter(d => d.source === "lab" && !d.in_baseline).map(d => d.doc_id)]);
+  }
+  return kb.selection[projectId];
+}
+async function loadKb() {
+  if (!lab.enabled || kb.pending) return;
+  try { kb.data = await kbApi.projects(); kb.error = null; if (!kb.projectId || !kbProjectData(kb.projectId)) kb.projectId = kb.data.projects[0]?.project_id || null; }
+  catch (error) { kb.error = error.message; }
+  render();
+}
+async function kbOperation(action, message) {
+  if (kb.pending) return;
+  kb.pending = true; kb.error = null; render();
+  try { await action(); kb.selection = {}; kb.data = await kbApi.projects(); if (message) toast(message); }
+  catch (error) { kb.error = error.message; }
+  finally { kb.pending = false; render(); }
+}
+function kbUpload() {
+  const file = kb.file, projectId = kb.projectId;
+  if (!file) { kb.error = "PDF 파일을 선택해 주세요."; render(); return; }
+  if (file.type && file.type !== "application/pdf") { kb.error = "PDF 파일만 올릴 수 있습니다."; render(); return; }
+  return kbOperation(async () => {
+    const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1] || ""); reader.onerror = () => reject(new Error("파일을 읽지 못했습니다.")); reader.readAsDataURL(file); });
+    kb.last = await kbApi.upload(projectId, { filename: file.name, doc_type: kb.docType, content_base64: content });
+    kb.file = null;
+  }, "문서 색인을 마쳤습니다. 결과를 확인해 주세요.");
+}
+function kbRemoveDoc(docId) { return kbOperation(() => kbApi.remove(docId), "테스트 문서를 목록에서 뺐습니다."); }
+function kbCreateBaseline() {
+  const ids = [...kbSelection()], projectId = kb.projectId;
+  if (!ids.length) { kb.error = "새 기준선에 넣을 문서를 하나 이상 선택해 주세요."; render(); return; }
+  return kbOperation(async () => { const bl = await kbApi.createBaseline(projectId, ids); kb.last = null; a2.result = null; invalidateLiveReview(); toast(`${bl.baseline_id}를 만들었습니다. ${bl.supersedes || "이전 기준선"}은 폐기됨으로 바뀝니다.`); });
+}
+function kbReset() {
+  if (!confirm("테스트로 추가한 문서와 기준선을 모두 지웁니다. 원본 데이터와 vector-db 벡터는 남습니다. 계속할까요?")) return;
+  return kbOperation(async () => { await kbApi.reset(); kb.last = null; a2.useActive = false; a2.result = null; invalidateLiveReview(); }, "테스트 문서·기준선을 초기화했습니다.");
+}
+function baselineBanner() {
+  if (!lab.enabled) return "";
+  const ctx = a2.source === "agent1" ? a1.result?.context : agent2Input?.context;
+  const info = kbBaselineState(ctx);
+  if (!info?.current) return "";
+  const { current, active } = info, link = button("기준 문서 보기", "projects", { class: "small", icon: "ec151" });
+  if (current.status === "ACTIVE") return `<div class="baseline">${icon("73e25")}<strong>판단 기준선 ${e(current.baseline_id)}</strong>${chip("현재", "success")}<span class="muted">기준일 ${e(current.as_of)} · 문서 ${current.document_ids.length}개</span>${link}</div>`;
+  return `<div class="notice"><strong>이 요청의 기준선 ${e(current.baseline_id)}는 ${e(current.superseded_by)}로 대체되었습니다.</strong>Agent 2는 폐기된 기준선으로 새 판단을 하지 않습니다 (BASELINE_SUPERSEDED). 테스트로 현재 기준선을 적용해 실행할 수 있습니다.<label class="check"><input id="a2-use-active" type="checkbox" ${a2.useActive ? "checked" : ""} ${a2.pending ? "disabled" : ""}><span>현재 기준선 ${e(active?.baseline_id || "")} (기준일 ${e(active?.as_of || "")})으로 실행 · 테스트용</span></label>${link}</div>`;
+}
+function projectsPage() {
+  const heading = `<div class="page-heading"><div><h1>프로젝트 · 기준 문서</h1><p class="subtitle">로컬 테스트 전용 · 실제 문서 업로드·승인·기준선 관리는 백엔드 담당입니다.</p></div><div class="button-group">${button("새로고침", "kb-refresh", { disabled: kb.pending, icon: "e4529" })}${button("테스트 데이터 초기화", "kb-reset", { disabled: kb.pending || !lab.enabled })}</div></div>`;
+  if (!lab.enabled) return heading + '<div class="notice">문서 추가는 <code>python prototype/run_demo.py --lab</code>로 실행한 서버에서만 사용할 수 있습니다.</div>';
+  if (!kb.data) return heading + (kb.error ? `<div class="notice error">${e(kb.error)}</div>` : '<p class="loading-line" role="status"><span class="inline-spinner"></span>프로젝트를 불러오는 중입니다…</p>');
+  const p = kbProjectData(kb.projectId);
+  if (!p) return heading + '<div class="empty-state"><h3>프로젝트가 없습니다.</h3></div>';
+  const selected = kbSelection(), active = p.baselines.find(b => b.baseline_id === p.active_baseline_id);
+  const tabs = `<div class="tabs" role="tablist" aria-label="프로젝트">${kb.data.projects.map(x => `<button class="tab" role="tab" aria-selected="${x.project_id === p.project_id}" data-kb-project="${e(x.project_id)}">${e(x.project_id)}<small>${x.documents.length}</small></button>`).join("")}</div>`;
+  const error = kb.error ? `<div class="notice error"><strong>처리하지 못했습니다</strong>${e(kb.error)}</div>` : "";
+  const name = id => { const d = p.documents.find(x => x.doc_id === id); return d ? (d.source === "lab" ? d.title : d.doc_id) : id; };
+  const baselineRows = [...p.baselines].reverse().map(b => `<tr><td><strong>${e(b.baseline_id)}</strong>${b.supersedes ? `<small>${e(b.supersedes)} 대체</small>` : ""}</td><td>${e(b.as_of)}</td><td>${b.status === "ACTIVE" ? chip("현재", "success") : chip(`폐기됨 · ${b.superseded_by}로 대체`)}</td><td>${b.document_ids.map(id => `<span class="mini-tag">${e(name(id))}</span>`).join(" ")}</td><td>${b.source === "lab" ? chip("테스트 추가", "ai") : "원본"}</td></tr>`).join("");
+  const docRows = p.documents.map(d => `<tr><td><strong>${e(d.source === "lab" ? d.title : d.doc_id)}</strong>${d.source === "lab" ? `<small>${e(d.doc_id)}</small>` : ""}</td><td>${e(KB_TYPE[d.doc_type] || d.doc_type)}</td><td class="numeric">${d.section_count}</td><td>${active?.document_ids.includes(d.doc_id) ? chip("포함", "info") : d.in_baseline ? "이전 기준선" : chip("미포함")}</td><td>${d.source === "lab" ? chip("테스트 추가", "ai") : "원본"}</td><td><label class="check" style="margin:0"><input type="checkbox" data-kb-include="${e(d.doc_id)}" ${selected.has(d.doc_id) ? "checked" : ""} ${kb.pending ? "disabled" : ""}><span>새 기준선에 포함</span></label></td><td>${d.source === "lab" && !d.in_baseline ? `<button type="button" class="button small" data-kb-remove="${e(d.doc_id)}" ${kb.pending ? "disabled" : ""}>빼기</button>` : ""}</td></tr>`).join("");
+  const last = kb.last?.result, doc = kb.last?.document;
+  const result = !last ? "" : last.status === "READY"
+    ? `<div class="notice inline"><strong>READY · 조항 ${last.sectionCount}개 · ${e(last.extractionVersion)}</strong>문서 버전 ${e(last.documentVersionId)} · 임베딩 ${e(last.embeddingProfileId)}<details style="margin-top:8px"><summary class="caption">조항 미리보기</summary>${(doc?.sections || []).map(s => `<p class="caption">· ${e(s.section_id)} ${e(s.heading)} (p.${s.page})</p>`).join("")}</details><p class="tiny" style="margin-top:6px">아직 기준선에는 들어가지 않았습니다. 아래 ‘새 기준선 만들기’로 추가해 주세요.</p></div>`
+    : `<div class="notice error inline"><strong>FAILED · ${e(last.failedStage)} · ${e(last.errorCode)}</strong>${e(last.errorMessage || "")}${last.retryable ? " (다시 시도 가능)" : ""}</div>`;
+  const cases = Object.entries(agent2Inputs || {}).filter(([, input]) => input.context?.project_id === p.project_id);
+  const usedBy = cases.length ? `<p class="caption" style="margin-top:12px">이 프로젝트의 테스트 요청: ${cases.map(([id, input]) => `<button type="button" class="rate-card-link" data-open="${e(id)}">${e(id)}</button> <span class="tiny">(${e(input.context.baseline_id)})</span>`).join(" · ")}</p>` : "";
+  const upload = `<section class="card"><div class="card-heading"><div><h2>테스트 문서 추가</h2><p class="caption">PDF → 조항 분할 → 청크 ID 계산 → 임베딩 → vector-db 저장. 백엔드 색인 요청(A-MQ-01)과 같은 파이프라인을 씁니다.</p></div></div><div class="settings-grid"><label class="field">PDF 파일<input id="kb-file" type="file" accept="application/pdf" ${kb.pending ? "disabled" : ""}></label><label class="field">문서 종류<select id="kb-doc-type" ${kb.pending ? "disabled" : ""}>${Object.entries(KB_TYPE).map(([v, l]) => `<option value="${v}" ${kb.docType === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div><p class="tiny" style="margin-top:8px">계약 문서 양식(조항 머리줄 끝 C-01·S-02 등, 기능명세 표)만 조항으로 나뉩니다. 스캔본은 지원하지 않습니다.</p><div class="form-actions">${button(kb.pending ? "처리 중…" : "업로드·색인", "kb-upload", { class: "primary", disabled: kb.pending || !kb.file, icon: "416f8" })}</div>${kb.pending ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>색인 중입니다. 임베딩 호출로 수십 초 걸릴 수 있습니다…</p>' : ""}${result}</section>`;
+  const create = `<section class="card"><div class="card-heading"><div><h2>새 기준선 만들기</h2><p class="caption">선택한 문서로 새 버전을 만듭니다. 현재 기준선 ${e(active?.baseline_id || "없음")}은 폐기됨(SUPERSEDED)으로 바뀌고, 그 기준선으로 요청하면 Agent 2가 판단하지 않습니다.</p></div></div><p class="caption">선택 ${selected.size}개: ${[...selected].map(id => `<span class="mini-tag">${e(name(id))}</span>`).join(" ") || "없음"}</p><div class="form-actions">${button("새 기준선 만들기", "kb-create-baseline", { class: "primary", disabled: kb.pending || !selected.size, icon: "6ce49" })}</div>${usedBy}</section>`;
+  return `${heading}${tabs}${error}<section class="card"><div class="card-heading"><div><h2>기준선 버전</h2><p class="caption">현재 기준선만 새 판단에 쓰입니다. 폐기된 기준선은 조회·재현용으로 남습니다.</p></div></div><div class="table-wrap"><table><thead><tr><th>기준선</th><th>기준일</th><th>상태</th><th>문서</th><th>출처</th></tr></thead><tbody>${baselineRows}</tbody></table></div></section><section class="card" style="margin-top:24px"><div class="card-heading"><div><h2>문서</h2><p class="caption">문서를 선택해 새 기준선을 만들 수 있습니다. 테스트로 추가한 문서는 기준선에 넣기 전까지 뺄 수 있습니다.</p></div></div><div class="table-wrap"><table><thead><tr><th>문서</th><th>종류</th><th>조항</th><th>현재 기준선</th><th>출처</th><th>새 기준선</th><th></th></tr></thead><tbody>${docRows}</tbody></table></div></section><div class="columns" style="margin-top:24px">${upload}${create}</div><div class="notice inline">${icon("d5e00")}로컬 테스트 전용입니다. 테스트 문서·기준선은 .prototype-kb/에만 저장되며 원본 data/kb는 바뀌지 않습니다. 초기화해도 vector-db 벡터는 남습니다(같은 문서 ID면 재사용).</div>`;
+}
 function render() {
   const active = document.activeElement;
   const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
-  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "register" ? registrationPage() : state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. AI 서버는 메모리 세션을 사용하며 CN 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
+  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "projects" ? projectsPage() : state.page === "register" ? registrationPage() : state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. AI 서버는 메모리 세션을 사용하며 CN 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
   if (focus) { const target = document.getElementById(focus.id); if (target && !target.disabled) { target.focus({ preventScroll: true }); if (typeof focus.start === "number" && target.setSelectionRange && !["number", "checkbox"].includes(target.type)) target.setSelectionRange(focus.start, focus.end); } }
 }
 function updateSearchResults() {
@@ -623,10 +709,17 @@ root.addEventListener("click", event => {
   const item = event.target.closest("[data-item]"); if (item) { state.selectedItem = Number(item.dataset.item); render(); return; }
   const addLine = event.target.closest("[data-add-line]"); if (addLine && canEdit()) { const i = Number(addLine.dataset.addLine); state.edits[i].lines.push({ task: "", item_ids: [...state.edits[i].item_ids], role: "FE", md: 0.5, assumption: "" }); render(); return; }
   const removeLine = event.target.closest("[data-remove-line]"); if (removeLine && canEdit()) { const [i,j] = removeLine.dataset.removeLine.split(":").map(Number); state.edits[i].lines.splice(j, 1); render(); return; }
+  const kbProject = event.target.closest("[data-kb-project]"); if (kbProject) { location.hash = `#/projects/${encodeURIComponent(kbProject.dataset.kbProject)}`; return; }
+  const kbRemove = event.target.closest("[data-kb-remove]"); if (kbRemove && !kb.pending) { kbRemoveDoc(kbRemove.dataset.kbRemove); return; }
   const cardButton = event.target.closest("[data-rate-card]"); if (cardButton) { showRateCard(cardButton.dataset.rateCard); return; }
   const control = event.target.closest("[data-action]"); if (!control || control.disabled) return;
   const action = control.dataset.action;
   if (action === "list") navigate(null);
+  if (action === "projects") location.hash = `#/projects${kb.projectId ? `/${encodeURIComponent(kb.projectId)}` : ""}`;
+  if (action === "kb-upload") kbUpload();
+  if (action === "kb-create-baseline") kbCreateBaseline();
+  if (action === "kb-reset") kbReset();
+  if (action === "kb-refresh") loadKb();
   if (action === "register") { location.hash = "#/register"; }
   if (action === "submit-registration") registerChangeRequest();
   if (action === "open-api") navigate("CR-A-001", "impact");
@@ -691,6 +784,10 @@ root.addEventListener("change", async event => {
   if (target.id === "draft-provider") { draftLab.provider = target.value; draftLab.model = defaultModel(target.value); render(); }
   if (target.name === "lab-provider") { if (state.view && state.mode === "api") { state.invalidated = true; persist(); } lab.provider = target.value; lab.model = defaultModel(target.value); render(); }
   if (target.name === "a2-source") switchAgent2Source(target.value);
+  if (target.id === "kb-file") { kb.file = target.files?.[0] || null; kb.last = null; render(); }
+  if (target.id === "kb-doc-type") kb.docType = target.value;
+  if (target.dataset.kbInclude) { const set = kbSelection(); target.checked ? set.add(target.dataset.kbInclude) : set.delete(target.dataset.kbInclude); render(); }
+  if (target.id === "a2-use-active") { a2.useActive = target.checked; a2.result = null; a2.error = null; invalidateLiveReview(); render(); }
   if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.result = null; agent.error = null; if (agent === a1) rememberA1Case(activeCase); if (agent === a2) invalidateLiveReview(); render(); }
   if (target.id === "scope-filter") { state.filter = target.value; state.pageNo = 1; render(); }
   if (target.id === "project-filter") { state.project = target.value; state.pageNo = 1; render(); }
@@ -717,6 +814,7 @@ try {
   try { const a1Response = await fetch(new URL("./data/agent1-inputs.json", import.meta.url)); if (a1Response.ok) agent1Inputs = await a1Response.json(); }
   catch { /* Agent 1 입력이 없어도 다른 화면은 동작한다. */ }
   selectCase("CR-A-001"); route(); await restore();
+  if (lab.enabled) loadKb();
 } catch (error) {
   root.innerHTML = `<main class="content"><h1>화면을 준비하지 못했습니다.</h1><p style="margin-top:16px">${e(error.message)}</p><p>로컬 서버와 prototype/data 파일을 확인해 주세요.</p></main>`;
 }
