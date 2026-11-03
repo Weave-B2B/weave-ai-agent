@@ -193,3 +193,7 @@ def draft(request: Request, sid: str, body: LabGenerateDraft):
     result = _guard(lambda: workflow.generate_draft(sid, req, draft_llm=client))
     workflow_for(sid)
     return result
+
+
+from prototype.kb_routes import router as kb_router  # noqa: E402  (local_only above is shared)
+router.include_router(kb_router)

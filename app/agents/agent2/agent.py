@@ -24,7 +24,7 @@ from app.agents.base import AgentFailure
 from app.core.config import settings
 from app.kb.loader import baselines, documents, sections
 from app.llm.client import LlmClient
-from app.tools.doc_tools import get_section, list_baseline_docs, search_docs
+from app.tools.doc_tools import get_section, list_baseline_docs, require_active_baseline, search_docs
 from app.tools.errors import ToolInputError
 
 AGENT_VERSION = "a2-llm-0.1.0"
@@ -158,6 +158,7 @@ class LlmAgent2:
         ctx = inp.context
         if not ctx.baseline_id:
             raise ToolInputError("baseline_id 필수")
+        require_active_baseline(ctx.baseline_id)
         baseline = list_baseline_docs(ctx.baseline_id)
         usage = _Usage()
         shared = self._shared_context(inp, baseline)
