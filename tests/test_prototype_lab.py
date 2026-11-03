@@ -119,13 +119,27 @@ def test_lab_uses_distinct_provider_keys_and_environment_precedence(monkeypatch,
     lab.provider_client(SimpleNamespace(provider='openai', model='', region='ap-northeast-2'))
     assert captured[0].gemini_api_key == 'gemini-file-key' and captured[0].llm_api_key == ''
     assert captured[1].llm_api_key == 'gpt-file-key' and captured[1].gemini_api_key == ''
-    assert captured[1].llm_model == 'gpt-4.1-mini' and captured[1].llm_provider == 'openai'
+    assert captured[1].llm_model == 'gpt-6-luna' and captured[1].llm_provider == 'openai'
     monkeypatch.setenv('GEMINI_API_KEY', 'gemini-env-key')
     monkeypatch.setenv('LLM_API_KEY', 'gpt-env-key')
     lab.provider_client(SimpleNamespace(provider='gemini', model='', region='ap-northeast-2'))
     lab.provider_client(SimpleNamespace(provider='openai', model='', region='ap-northeast-2'))
     assert captured[2].gemini_api_key == 'gemini-env-key'
     assert captured[3].llm_api_key == 'gpt-env-key'
+
+
+def test_lab_gpt_default_ignores_fake_server_model(monkeypatch):
+    import prototype.lab as lab
+    from types import SimpleNamespace
+    monkeypatch.setenv('LLM_MODEL', 'fake-ui-demo')
+    monkeypatch.setenv('LLM_API_KEY', 'test-key')
+    captured = []
+    monkeypatch.setattr(lab, 'build_llm', lambda settings: captured.append(settings) or object())
+    lab.provider_client(SimpleNamespace(provider='openai', model='', region='ap-northeast-2'))
+    assert captured[0].llm_model == 'gpt-6-luna'
+    lab.provider_client(SimpleNamespace(provider='openai', model='custom-model', region='ap-northeast-2'))
+    assert captured[1].llm_model == 'custom-model'
+    assert lab.defaults(SimpleNamespace(client=SimpleNamespace(host='testclient'), headers={}))['default_models']['openai'] == 'gpt-6-luna'
 
 
 def test_agent3_uses_shared_provider_configuration(monkeypatch):
@@ -143,3 +157,17 @@ def test_agent3_uses_shared_provider_configuration(monkeypatch):
         response = client.post('/prototype-lab/impacts', json={'input': sample, 'provider': 'gemini'})
     assert response.status_code == 200
     assert calls == ['gemini']
+
+
+def test_local_baselines_and_new_fake_agent1_result_id():
+    app = FastAPI(); app.include_router(router)
+    sample = json.loads(Path('prototype/data/agent1-inputs.json').read_text())['CR-A-001']
+    sample['context']['case_id'] = 'CR-NEW-001'
+    with TestClient(app) as client:
+        choices = client.get('/prototype-lab/baselines')
+        assert choices.status_code == 200
+        assert any(b['id'] == 'P-COM-101:BL-2' and b['as_of'] == '2026-10-05' for b in choices.json())
+        assert client.get('/prototype-lab/baselines', headers={'Origin': 'https://example.com'}).status_code == 403
+        result = client.post('/prototype-lab/agent1', json={'input': sample, 'provider': 'fake'})
+        assert result.status_code == 200
+        assert result.json()['meta']['result_id'] and result.json()['meta']['created_at']
