@@ -16,6 +16,7 @@ from app.llm.bedrock import BedrockLlm
 from app.llm.fake import FakeLlm
 from app.llm.local import LocalLlm
 from app.llm.openai_responses import OpenAIResponsesLlm
+from app.llm.ollama import OllamaLlm
 
 
 class LlmConfigError(ValueError):
@@ -56,6 +57,27 @@ def build_llm(settings: Settings) -> LlmClient:
             model_id=settings.llm_model,
             api_key=settings.gemini_api_key if urlsplit(settings.llm_base_url).hostname == "generativelanguage.googleapis.com" else settings.llm_api_key,
             json_mode=settings.llm_local_json_mode,
+            read_timeout_sec=settings.llm_read_timeout_sec,
+            connect_timeout_sec=settings.llm_connect_timeout_sec,
+            max_tokens=settings.llm_max_tokens,
+            temperature=settings.llm_temperature,
+        )
+    if provider == "ollama":
+        base_url = settings.ollama_base_url or settings.llm_base_url
+        model_id = settings.ollama_model or settings.llm_model
+        missing = [
+            name
+            for name, value in (
+                ("OLLAMA_BASE_URL or LLM_BASE_URL", base_url),
+                ("OLLAMA_MODEL or LLM_MODEL", model_id),
+            )
+            if not value
+        ]
+        if missing:
+            raise LlmConfigError(f"Missing required setting(s): {', '.join(missing)}")
+        return OllamaLlm(
+            base_url=base_url,
+            model_id=model_id,
             read_timeout_sec=settings.llm_read_timeout_sec,
             connect_timeout_sec=settings.llm_connect_timeout_sec,
             max_tokens=settings.llm_max_tokens,

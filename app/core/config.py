@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     llm_read_timeout_sec: float = Field(default=50, gt=0)
     llm_connect_timeout_sec: float = Field(default=5, gt=0)
     llm_base_url: str = ""
+    ollama_base_url: str = ""
+    ollama_model: str = ""
     llm_local_json_mode: str = "prompt"
     llm_fake_responses: str | None = None
     aws_region: str = "ap-northeast-2"

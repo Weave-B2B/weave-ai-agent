@@ -10,6 +10,7 @@ from app.llm.bedrock import BedrockLlm
 from app.llm.factory import LlmConfigError, build_llm
 from app.llm.fake import FakeLlm
 from app.llm.local import LocalLlm
+from app.llm.ollama import OllamaLlm
 
 
 class ReplyModel(BaseModel):
@@ -34,6 +35,16 @@ def test_factory_selects_each_provider(monkeypatch) -> None:
             )
         ),
         LocalLlm,
+    )
+    assert isinstance(
+        build_llm(
+            _settings(
+                llm_provider="ollama",
+                ollama_base_url="http://localhost:11434",
+                ollama_model="gpt-oss:20b",
+            )
+        ),
+        OllamaLlm,
     )
     assert isinstance(
         build_llm(
@@ -73,6 +84,8 @@ def test_invalid_local_json_mode_names_only_the_setting() -> None:
         ("local", {"llm_base_url": "TOP_SECRET_URL", "llm_model": ""}, "LLM_MODEL", "TOP_SECRET_URL"),
         ("bedrock", {"llm_model": "", "aws_region": "TOP_SECRET_REGION"}, "LLM_MODEL", "TOP_SECRET_REGION"),
         ("bedrock", {"llm_model": "TOP_SECRET_MODEL", "aws_region": ""}, "AWS_REGION", "TOP_SECRET_MODEL"),
+        ("ollama", {"ollama_base_url": "", "ollama_model": "TOP_SECRET_MODEL"}, "OLLAMA_BASE_URL", "TOP_SECRET_MODEL"),
+        ("ollama", {"ollama_base_url": "TOP_SECRET_URL", "ollama_model": ""}, "OLLAMA_MODEL", "TOP_SECRET_URL"),
     ],
 )
 def test_missing_provider_configuration_fails_without_fallback(
