@@ -78,8 +78,10 @@ def build_llm(settings: Settings) -> LlmClient:
         return OllamaLlm(
             base_url=base_url,
             model_id=model_id,
-            read_timeout_sec=settings.llm_read_timeout_sec,
-            connect_timeout_sec=settings.llm_connect_timeout_sec,
+            read_timeout_sec=settings.ollama_read_timeout_sec,
+            connect_timeout_sec=settings.ollama_connect_timeout_sec,
+            num_predict=settings.ollama_num_predict,
+            keep_alive=settings.ollama_keep_alive,
             max_tokens=settings.llm_max_tokens,
             temperature=settings.llm_temperature,
         )

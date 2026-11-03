@@ -30,11 +30,12 @@ class RunConfig:
 
 def configuration(args, environ) -> RunConfig:
     """Load provider credentials without exposing or constructing an HTTP client."""
-    mode = "gemini" if args.mode == "gemini" else ("openai" if args.mode in ("api", "openai") else "fake")
+    mode = "gemini" if args.mode == "gemini" else ("openai" if args.mode in ("api", "openai") else ("ollama" if args.mode == "ollama" else "fake"))
     file_values = dotenv_values(ROOT / ".env") if (ROOT / ".env").is_file() else {}
     gemini_key = (environ.get("GEMINI_API_KEY") or file_values.get("GEMINI_API_KEY") or "").strip()
     llm_key = (environ.get("LLM_API_KEY") or file_values.get("LLM_API_KEY") or "").strip()
     openai_model = (environ.get("LLM_MODEL") or file_values.get("LLM_MODEL") or "gpt-4.1-mini").strip()
+    ollama_model = (environ.get("OLLAMA_MODEL") or file_values.get("OLLAMA_MODEL") or "gpt-oss:20b").strip()
     path = Path(args.rate_card_file or environ.get("RATE_CARD_FILE") or ROOT / "data/kb/rate_cards.json").expanduser().resolve()
     provider = mode
     key = ""
@@ -46,7 +47,7 @@ def configuration(args, environ) -> RunConfig:
         key = llm_key
         if not key:
             raise ValueError("OpenAI/API mode requires LLM_API_KEY")
-    model = args.model or ({"gemini": GEMINI_MODEL, "openai": openai_model}.get(provider, "fake-ui-demo"))
+    model = args.model or ({"gemini": GEMINI_MODEL, "openai": openai_model, "ollama": ollama_model}.get(provider, "fake-ui-demo"))
     if not model.strip() or any(char.isspace() for char in model):
         raise ValueError("model must be a nonempty model ID without whitespace")
     tuning = {}
@@ -55,6 +56,9 @@ def configuration(args, environ) -> RunConfig:
         ("LLM_TEMPERATURE", "0", 0, 2, False),
         ("LLM_READ_TIMEOUT_SEC", "50", 0, None, False),
         ("LLM_CONNECT_TIMEOUT_SEC", "5", 0, None, False),
+        ("OLLAMA_READ_TIMEOUT_SEC", "300", 0, None, False),
+        ("OLLAMA_CONNECT_TIMEOUT_SEC", "10", 0, None, False),
+        ("OLLAMA_NUM_PREDICT", "1024", 1, None, True),
     ):
         try:
             value = int(environ.get(name, default)) if integer else float(environ.get(name, default))
@@ -72,11 +76,14 @@ def configuration(args, environ) -> RunConfig:
 def apply_environment(config: RunConfig, responses: Path | None = None) -> None:
     """Configure the shared factory for the selected provider and enable real Agent execution."""
     os.environ.update({
-        "AGENT_MODE": "llm" if config.mode in ("gemini", "openai") else "fixture",
-        "AGENT2_MODE": "llm" if config.mode in ("gemini", "openai") else "fixture",
-        "LLM_PROVIDER": "local" if config.provider == "gemini" else ("openai" if config.provider == "openai" else "fake"),
+        "AGENT_MODE": "llm" if config.mode in ("gemini", "openai", "ollama") else "fixture",
+        "AGENT2_MODE": "llm" if config.mode in ("gemini", "openai", "ollama") else "fixture",
+        "LLM_PROVIDER": "local" if config.provider == "gemini" else ("openai" if config.provider == "openai" else ("ollama" if config.provider == "ollama" else "fake")),
         "LLM_MODEL": config.model,
         "LLM_BASE_URL": GEMINI_BASE_URL if config.provider == "gemini" else "",
+        "OLLAMA_BASE_URL": (os.environ.get("OLLAMA_BASE_URL") or dotenv_values(ROOT / ".env").get("OLLAMA_BASE_URL") or "http://localhost:11434") if config.provider == "ollama" else os.environ.get("OLLAMA_BASE_URL", ""),
+        "OLLAMA_MODEL": config.model if config.provider == "ollama" else (os.environ.get("OLLAMA_MODEL", "") or dotenv_values(ROOT / ".env").get("OLLAMA_MODEL", "")),
+        "OLLAMA_KEEP_ALIVE": os.environ.get("OLLAMA_KEEP_ALIVE") or dotenv_values(ROOT / ".env").get("OLLAMA_KEEP_ALIVE") or "30m",
         "GEMINI_API_KEY": config.api_key if config.provider == "gemini" else os.environ.get("GEMINI_API_KEY", ""),
         "LLM_API_KEY": config.api_key if config.provider == "openai" else os.environ.get("LLM_API_KEY", ""),
         "LLM_LOCAL_JSON_MODE": "schema",
@@ -91,7 +98,7 @@ def main(argv=None) -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--lab", action="store_true", help="Enable local developer controls using server-side .env credentials")
-    parser.add_argument("--mode", choices=("fake", "gemini", "openai", "api"), default="fake")
+    parser.add_argument("--mode", choices=("fake", "gemini", "openai", "api", "ollama"), default="fake")
     parser.add_argument("--model", help="Explicit Gemini model override; default is the pinned stable preset")
     parser.add_argument("--rate-card-file", help="Reviewed rate_cards JSON; otherwise RATE_CARD_FILE or bundled synthetic table")
     parser.add_argument("--check", action="store_true", help="Validate configuration and rate data with zero network calls; do not start a server")

@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.0, ge=0, le=2)
     llm_read_timeout_sec: float = Field(default=50, gt=0)
     llm_connect_timeout_sec: float = Field(default=5, gt=0)
+    ollama_read_timeout_sec: float = Field(default=300, gt=0)
+    ollama_connect_timeout_sec: float = Field(default=10, gt=0)
+    ollama_num_predict: int = Field(default=2048, ge=1)
+    ollama_keep_alive: str = "30m"
     llm_base_url: str = ""
     ollama_base_url: str = ""
     ollama_model: str = ""

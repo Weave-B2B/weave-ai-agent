@@ -38,6 +38,28 @@ def test_fake_default_and_explicit_gemini_presets_ignore_stale_provider_environm
     assert os.environ["LLM_MAX_TOKENS"] == "4096"
 
 
+def test_ollama_mode_uses_local_defaults(monkeypatch):
+    environment = {"OLLAMA_BASE_URL": "http://localhost:11434", "OLLAMA_MODEL": "gpt-oss:20b"}
+    selected = args()
+    selected.mode = "ollama"
+    config = run_demo.configuration(selected, environment)
+    assert config.mode == "ollama"
+    assert config.provider == "ollama"
+    assert config.model == "gpt-oss:20b"
+    assert config.api_key == ""
+
+    monkeypatch.setenv("LLM_MODEL", "")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "gpt-oss:20b")
+    run_demo.apply_environment(config)
+    import os
+    assert os.environ["LLM_PROVIDER"] == "ollama"
+    assert os.environ["OLLAMA_BASE_URL"] == "http://localhost:11434"
+    assert os.environ["OLLAMA_MODEL"] == "gpt-oss:20b"
+    assert os.environ["AGENT_MODE"] == "llm"
+    assert os.environ["AGENT2_MODE"] == "llm"
+
+
 def test_model_and_rate_override_precedence(tmp_path):
     selected = args()
     selected.mode, selected.model, selected.rate_card_file = "api", "openai-explicit", str(tmp_path / "explicit.json")

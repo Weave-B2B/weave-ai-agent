@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel
@@ -8,6 +9,14 @@ from app.llm.ollama import OllamaLlm
 
 class Reply(BaseModel):
     answer: str
+
+
+class NestedReply(BaseModel):
+    items: list[Reply]
+
+
+class ItemReply(BaseModel):
+    item_type: Literal["function"]
 
 
 def test_ollama_structured_tool_response() -> None:
@@ -55,6 +64,9 @@ def test_ollama_structured_tool_response() -> None:
     assert result.usage.output_tokens == 2
     assert requests[0]["model"] == "gpt-oss:20b"
     assert requests[0]["stream"] is False
+    assert requests[0]["think"] is False
+    assert requests[0]["keep_alive"] == "30m"
+    assert requests[0]["options"]["num_predict"] == 2048
     assert requests[0]["format"] == Reply.model_json_schema()
     assert requests[0]["tools"][0]["function"]["name"] == "submit"
     http_client.close()
@@ -77,4 +89,44 @@ def test_ollama_content_fallback_is_structurally_parsed() -> None:
     llm = OllamaLlm(base_url="http://localhost:11434", model_id="test-model", client=http_client)
     result = llm.complete_structured(system="system", user="user", schema=Reply)
     assert result.parsed.answer == "fallback"
+    http_client.close()
+
+
+def test_ollama_removes_nested_schema_extra_fields() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "message": {"role": "assistant", "content": '{"items":[{"answer":"hello","item_number":1}]}'},
+                "done_reason": "stop",
+                "prompt_eval_count": 3,
+                "eval_count": 2,
+            },
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    llm = OllamaLlm(base_url="http://localhost:11434", model_id="test-model", client=http_client)
+    result = llm.complete_structured(system="system", user="user", schema=NestedReply)
+    assert result.parsed.items[0].answer == "hello"
+    http_client.close()
+
+
+def test_ollama_normalizes_feature_item_type_alias() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "message": {"role": "assistant", "content": '{"item_type":"feature"}'},
+                "done_reason": "stop",
+                "prompt_eval_count": 3,
+                "eval_count": 2,
+            },
+        )
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    llm = OllamaLlm(base_url="http://localhost:11434", model_id="test-model", client=http_client)
+    result = llm.complete_structured(system="system", user="user", schema=ItemReply)
+    assert result.parsed.item_type == "function"
     http_client.close()
