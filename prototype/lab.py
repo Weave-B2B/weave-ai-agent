@@ -141,7 +141,7 @@ def workflow_for(sid):
 def defaults(request: Request):
     local_only(request)
     fake = json.loads((ROOT / 'examples/agent3/fake_responses.json').read_text(encoding='utf-8'))[0]
-    return {'fake_response': fake, 'model': 'gemini-2.5-flash-lite',
+    return {'fake_response': fake, 'model': 'gpt-6-luna',
             'default_models': {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna'}}
 
 

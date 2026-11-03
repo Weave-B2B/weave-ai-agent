@@ -41,6 +41,13 @@ class UploadDocument(BaseModel):
 class CreateBaseline(BaseModel):
     model_config = ConfigDict(extra="forbid")
     document_ids: list[str] = Field(min_length=1)
+    as_of: date | None = None   # 첫 기준선만 기준일을 지정한다. 없으면 오늘
+
+
+class CreateProject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: str = Field(pattern=r"^[A-Z][A-Z0-9]*(-[A-Z0-9]+)+$", max_length=40)
+    name: str = Field(min_length=1, max_length=100)
 
 
 def _root() -> Path:
@@ -50,7 +57,7 @@ def _root() -> Path:
 def _load() -> dict:
     p = loader.lab_kb_path()
     data = json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
-    return {"documents": [], "sections": [], "pages": {}, "baselines": {}, **data}
+    return {"documents": [], "sections": [], "pages": {}, "baselines": {}, "projects": {}, **data}
 
 
 def _save(data: dict) -> None:
@@ -63,7 +70,7 @@ def _save(data: dict) -> None:
 
 
 def _project(project_id: str) -> None:
-    if not any(d["project_id"] == project_id for d in documents().values()):
+    if project_id not in _load()["projects"] and not any(d["project_id"] == project_id for d in documents().values()):
         raise HTTPException(404, f"알 수 없는 프로젝트: {project_id}")
 
 
@@ -83,7 +90,8 @@ def _active(project_id: str) -> str | None:
 def projects(request: Request):
     from prototype.lab import local_only
     local_only(request)
-    lab = {d["doc_id"] for d in _load()["documents"]}
+    data = _load()
+    lab = {d["doc_id"] for d in data["documents"]}
     counts = {}
     for d, _ in sections():
         counts[d] = counts.get(d, 0) + 1
@@ -92,18 +100,42 @@ def projects(request: Request):
         out.setdefault(doc["project_id"], {"project_id": doc["project_id"], "documents": [], "baselines": []})["documents"].append({
             "doc_id": doc["doc_id"], "title": doc.get("title") or doc["doc_id"], "doc_type": doc["doc_type"],
             "version": doc.get("version"), "section_count": counts.get(doc["doc_id"], 0), "source": "lab" if doc["doc_id"] in lab else "dataset"})
+    for pid, meta in data["projects"].items():   # 테스트로 만든 프로젝트는 문서가 없어도 보인다
+        out.setdefault(pid, {"project_id": pid, "documents": [], "baselines": []})
     for k, b in sorted(baselines().items(), key=lambda kv: kv[1]["as_of"]):
         if b["project_id"] in out:
             latest = superseded_by(k)
             out[b["project_id"]]["baselines"].append({"baseline_id": k, "as_of": b["as_of"], "document_ids": b["document_ids"],
                 "supersedes": b.get("supersedes"), "status": "SUPERSEDED" if latest else "ACTIVE", "superseded_by": latest,
-                "source": "lab" if k in _load()["baselines"] else "dataset"})
+                "source": "lab" if k in data["baselines"] else "dataset"})
     for p in out.values():
         used = {d for b in p["baselines"] for d in b["document_ids"]}
         for doc in p["documents"]:
             doc["in_baseline"] = doc["doc_id"] in used
         p["active_baseline_id"] = _active(p["project_id"])
+        p["name"] = data["projects"].get(p["project_id"], {}).get("name")
+        p["source"] = "lab" if p["project_id"] in data["projects"] else "dataset"
+        p["draft"] = not p["baselines"]   # 첫 기준선을 만들기 전에는 작성 중
     return {"projects": sorted(out.values(), key=lambda p: p["project_id"]), "doc_types": list(DOC_TYPES)}
+
+
+@router.post("/projects")
+def create_project(body: CreateProject, request: Request):
+    """작성 중 프로젝트를 만든다. 기준 문서를 올리고 첫 기준선(BL-1)을 만들면 확정된다.
+    같은 ID의 작성 중 프로젝트가 있으면 이어서 쓴다 (실제 프로젝트 생성은 백엔드 담당)."""
+    from prototype.lab import local_only
+    local_only(request)
+    pid = body.project_id
+    with lock:
+        data = _load()
+        if pid not in data["projects"] and any(d["project_id"] == pid for d in documents().values()):
+            raise HTTPException(409, f"이미 있는 프로젝트입니다: {pid}")
+        if pid in data["projects"] and _active(pid):
+            raise HTTPException(409, f"이미 기준선이 있는 프로젝트입니다: {pid}")
+        data["projects"][pid] = {"name": body.name.strip(), "created_at": date.today().isoformat()}
+        _save(data)
+    return {"project_id": pid, **data["projects"][pid],
+            "documents": [d["doc_id"] for d in data["documents"] if d["project_id"] == pid]}
 
 
 @router.post("/projects/{project_id}/documents")
@@ -184,16 +216,46 @@ def create_baseline(project_id: str, body: CreateBaseline, request: Request):
         raise HTTPException(422, f"이 프로젝트의 문서가 아닙니다: {', '.join(bad)}")
     with lock:
         current = _active(project_id)
+        if body.as_of and body.as_of > date.today():
+            raise HTTPException(422, "기준일은 오늘 이후로 지정할 수 없습니다.")
+        if current is None:   # 첫 기준선: 범위 판단의 근거가 될 계약서·과업지시서가 있어야 한다
+            types = {documents()[d]["doc_type"] for d in docs}
+            if not types & {"contract", "sow"}:
+                raise HTTPException(422, "첫 기준선에는 계약서나 과업지시서가 하나 이상 있어야 합니다.")
+            if "change_order" in types:
+                raise HTTPException(422, "변경합의서는 첫 기준선에 넣을 수 없습니다. 프로젝트를 만든 뒤 새 기준선으로 추가해 주세요.")
+        elif body.as_of:
+            raise HTTPException(422, "기준일은 첫 기준선에서만 지정할 수 있습니다.")
         n = max((int(k.rsplit("BL-", 1)[1]) for k, b in baselines().items()
                  if b["project_id"] == project_id and k.rsplit("BL-", 1)[-1].isdigit()), default=0) + 1
         new_id = f"{project_id}:BL-{n}"
         prev = baselines().get(current, {})
-        baseline = {"project_id": project_id, "as_of": date.today().isoformat(), "document_ids": docs,
+        baseline = {"project_id": project_id, "as_of": (body.as_of or date.today()).isoformat(), "document_ids": docs,
                     "priority": prev.get("priority", ["CO", "CTR", "SOW", "FSP", "QUO"]), "supersedes": current}
         data = _load()
         data["baselines"][new_id] = baseline
         _save(data)
     return {"baseline_id": new_id, **baseline}
+
+
+@router.get("/documents/{doc_id}/lines")
+def document_lines(doc_id: str, request: Request, page: int, start: int, end: int, context: int = 3):
+    """근거 카드의 원문 미리보기: 인용 줄(start~end)과 앞뒤 context줄을 줄 번호와 함께 돌려준다."""
+    from prototype.lab import local_only
+    local_only(request)
+    text = loader.doc_text(doc_id)
+    pages = text.split("\f") if text else []
+    if not pages:
+        raise HTTPException(404, "원문 텍스트가 없는 문서입니다.")
+    if not 1 <= page <= len(pages):
+        raise HTTPException(422, f"페이지 범위를 벗어났습니다 (1~{len(pages)}).")
+    lines = pages[page - 1].split("\n")
+    if not 1 <= start <= end <= len(lines):
+        raise HTTPException(422, f"줄 범위를 벗어났습니다 (1~{len(lines)}).")
+    context = max(0, min(context, 10))
+    first, last = max(1, start - context), min(len(lines), end + context)
+    return {"doc_id": doc_id, "page": page, "page_count": len(pages), "line_count": len(lines),
+            "lines": [{"no": n, "text": lines[n - 1], "hit": start <= n <= end} for n in range(first, last + 1)]}
 
 
 @router.post("/reset")

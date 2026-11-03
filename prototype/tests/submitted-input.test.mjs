@@ -48,17 +48,17 @@ async function boot(options = {}) {
       if (callbacks.assess) return callbacks.assess(body, config);
       throw new Error('Agent 2 is not exercised in this test');
     } });
-    this.setExport('KbApi', class { projects() { return callbacks.kb ? callbacks.kb() : Promise.reject(new Error('kb not exercised')); } });
+    this.setExport('KbApi', class { projects() { return callbacks.kb ? callbacks.kb() : Promise.reject(new Error('kb not exercised')); } createProject(...args) { return callbacks.createProject(...args); } createBaseline(...args) { return callbacks.createBaseline(...args); } });
     this.setExport('Agent3Api', FakeApi); this.setExport('ApiError', ApiError);
     this.setExport('MockPreview', class { constructor() {} });
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage, startNewProject, npStart, npCreate }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
-    if (specifier === './api.js') return transport;
+    if (specifier.split('?')[0] === './api.js') return transport;
     if (specifier.split('?')[0] === './fixtures.js') return fixtures;
     if (specifier === './data/request-samples.js') return requestSamples;
     throw new Error(`Unexpected module: ${specifier}`);
@@ -421,4 +421,39 @@ test('Agent1 result without function items or awaiting input does not reach Agen
   assert.throws(() => app.agent1ToAgent2Input(), /필수 확인/);
   status = 'READY'; await app.runAgent1();
   assert.throws(() => app.agent1ToAgent2Input(), /기능 항목이 없습니다/);
+});
+
+test('new project wizard resumes a draft and creates the first baseline from contract or SOW', async t => {
+  let projects = { projects: [
+    { project_id: 'P-COM-101', name: null, draft: false, active_baseline_id: 'P-COM-101:BL-2', documents: [], baselines: [{ baseline_id: 'P-COM-101:BL-2', as_of: '2026-10-05', document_ids: [], status: 'ACTIVE', source: 'dataset' }] },
+    { project_id: 'P-NEW-9', name: '신규', draft: true, active_baseline_id: null, baselines: [], documents: [
+      { doc_id: 'd-quo', title: 'QUO-견적', doc_type: 'quote', section_count: 3, source: 'lab', in_baseline: false },
+      { doc_id: 'd-sow', title: 'SOW-과업', doc_type: 'sow', section_count: 7, source: 'lab', in_baseline: false }] }], doc_types: [] };
+  let baselineCall;
+  const app = await boot({
+    labDefaults: { model: 'test-model', fake_response: { estimates: [] } },
+    callbacks: {
+      kb: async () => structuredClone(projects),
+      createProject: async id => ({ project_id: id, name: '신규', documents: ['d-quo', 'd-sow'] }),
+      createBaseline: async (id, ids, asOf) => { baselineCall = { id, ids, asOf }; return { baseline_id: `${id}:BL-1` }; },
+    },
+  });
+  t.after(app.cleanup);
+  await app.loadKb();
+  assert.equal(app.kb.projectId, 'P-COM-101');                 // 작성 중 프로젝트는 목록에 나오지 않는다
+  assert.doesNotMatch(app.projectsPage(), /P-NEW-9/);
+  app.startNewProject();
+  app.kb.creating.project_id = 'p-new-9'; app.kb.creating.name = '신규'; app.kb.creating.as_of = '2026-09-01';
+  await app.npStart();
+  assert.equal(app.kb.creating.step, 2);
+  assert.equal(app.kb.creating.project_id, 'P-NEW-9');
+  assert.deepEqual([...app.kb.creating.include].sort(), ['d-quo', 'd-sow']);
+  assert.match(app.projectsPage(), /P-NEW-9 만들기 \(BL-1\)/);
+  app.kb.creating.include.delete('d-sow');
+  assert.match(app.projectsPage(), /계약서나 과업지시서를 하나 이상/);
+  app.kb.creating.include.add('d-sow');
+  projects.projects[1].draft = false;
+  await app.npCreate();
+  assert.equal(JSON.stringify(baselineCall), JSON.stringify({ id: 'P-NEW-9', ids: ['d-quo', 'd-sow'], asOf: '2026-09-01' }));
+  assert.equal(app.kb.creating, null);
 });
