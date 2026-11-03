@@ -1,0 +1,14 @@
+{
+  "version": "synthetic-work-types-v1",
+  "note": "프로토타입 테스트용 임의 수치. 실제 공수 기준이나 견적이 아니며 PM 검토 필요.",
+  "rules": {
+    "general_pm_small": {"kind": "general_test", "role": "PM", "md": 0.5, "description": "단일 기능의 요구·범위 정리와 협의"},
+    "general_ux_small": {"kind": "general_test", "role": "UX", "md": 0.5, "description": "기존 화면의 단순 입력·표시 요소 설계"},
+    "general_fe_small": {"kind": "general_test", "role": "FE", "md": 1.0, "description": "기존 화면의 단순 입력·표시 요소 한 가지 구현"},
+    "general_fe_medium": {"kind": "general_test", "role": "FE", "md": 3.0, "description": "기존 서비스의 단일 기능에 대한 폼·상태·오류 처리 구현"},
+    "general_be_small": {"kind": "general_test", "role": "BE", "md": 1.5, "description": "기존 데이터와 내부 API의 단순 조회·수정 한 가지"},
+    "general_be_medium": {"kind": "general_test", "role": "BE", "md": 3.0, "description": "단일 기능의 저장·검증·내부 API 구현, 외부 연동 제외"},
+    "general_qa_small": {"kind": "general_test", "role": "QA", "md": 0.5, "description": "단일 변경의 기본 동작과 오류 시나리오 테스트"},
+    "general_qa_medium": {"kind": "general_test", "role": "QA", "md": 1.5, "description": "단일 기능의 여러 조건과 관련 회귀 시나리오 테스트"}
+  }
+}

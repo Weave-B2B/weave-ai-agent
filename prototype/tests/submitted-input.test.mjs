@@ -36,6 +36,7 @@ async function boot(options = {}) {
     sessionStorage: { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key) },
     fetch: async url => {
       const path = String(url);
+      if (path.includes('/prototype-lab/baselines')) return { ok: true, json: async () => [{ id: 'P-COM-101:BL-2', project_id: 'P-COM-101', as_of: '2026-10-05' }, { id: 'P-NEW-001:BL-1', project_id: 'P-NEW-001', as_of: '2026-10-01' }] };
       if (path.includes('/prototype-lab/defaults')) return { ok: !!options.labDefaults, json: async () => structuredClone(options.labDefaults) };
       const value = path.includes('agent3-input') ? input : path.includes('agent3-samples') ? samples : path.includes('agent2-inputs') ? agent2Inputs : path.includes('agent1-inputs') ? agent1Inputs : response;
       return { ok: true, json: async () => structuredClone(value) };
@@ -52,7 +53,7 @@ async function boot(options = {}) {
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, switchAgent2Source, agent2InputFromAgent1 }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -67,20 +68,32 @@ async function boot(options = {}) {
 
 function saved(store) { return JSON.parse(store.get(storageKey)); }
 
+test('fresh session defaults to GPT and the previous agent results', async t => {
+  const app = await boot({ labDefaults: { model: 'fake-ui-demo', fake_response: {} } });
+  t.after(app.cleanup);
+  assert.equal(app.a1.provider, 'openai');
+  assert.equal(app.a2.provider, 'openai');
+  assert.equal(app.lab.provider, 'openai');
+  assert.equal(app.lab.model, 'gpt-6-luna');
+  assert.equal(app.a2.inputSource, 'agent1');
+  assert.equal(app.state.inputSource, 'agent2');
+});
+
 test('Agent2 scope execution preserves the Agent3 sample and developer lab settings', async t => {
   let received;
   const result = structuredClone(input.a2_result);
   const app = await boot({
     labDefaults: { model: 'test-model', fake_response: { estimates: [] } },
-    callbacks: { assess: body => { received = body; return structuredClone(result); } },
+    callbacks: { assess: body => { received = body; return { ...structuredClone(result), context: body.context }; } },
   });
   t.after(app.cleanup);
+  app.selectAgent2Input('sample');
   const original = app.state.inputText;
   await app.runAgent2();
   assert.equal(received.context.case_id, 'CR-A-001');
   assert.equal(app.a2.result.meta.result_id, result.meta.result_id);
   assert.equal(app.lab.enabled, true);
-  assert.equal(app.lab.model, 'test-model');
+  assert.equal(app.lab.model, 'gpt-6-luna');
   assert.equal(app.state.inputText, original);
   assert.equal(app.state.view, null);
 });
@@ -94,6 +107,7 @@ test('Agent2 sends each selected case and keeps Agent3 input independent', async
   t.after(app.cleanup);
   for (const id of ['CR-A-003', 'CR-B-002', 'CR-C-001']) {
     app.state.id = id; app.selectCase(id);
+    app.selectAgent2Input('sample');
     const before = app.state.inputText;
     await app.runAgent2();
     assert.equal(received.at(-1).context.case_id, id);
@@ -108,6 +122,7 @@ test('late Agent2 response cannot appear on another case', async t => {
   const app = await boot({ callbacks: { assess: () => new Promise(done => { resolve = done; }) } });
   t.after(app.cleanup);
   app.state.id = 'CR-A-003'; app.selectCase('CR-A-003');
+  app.selectAgent2Input('sample');
   const work = app.runAgent2();
   app.state.id = 'CR-B-002'; app.selectCase('CR-B-002');
   resolve(structuredClone(samples.inputs['CR-A-003'].a2_result));
@@ -126,6 +141,7 @@ test('Agent 1 and Agent 2 use their independently selected providers', async t =
   app.state.id = 'CR-A-003'; app.selectCase('CR-A-003');
   app.a1.provider = 'gemini'; app.a1.model = 'gemini-2.5-flash-lite';
   app.a2.provider = 'bedrock'; app.a2.model = 'model-id';
+  app.selectAgent2Input('sample');
   await app.runAgent1(); await app.runAgent2();
   assert.equal(a1Call.body.context.case_id, 'CR-A-003');
   assert.equal(a1Call.config.provider, 'gemini');
@@ -139,6 +155,7 @@ test('successful prepare keeps its submitted conditions when editor changes duri
   const pending = new Promise(done => { resolve = done; });
   const app = await boot({ callbacks: { prepare: body => { received = body; return pending; } } });
   t.after(app.cleanup);
+  app.switchInputSource('sample');
   const sent = changedInput('제출한 오픈일 2026-12-01 유지');
   app.state.inputText = JSON.stringify(sent);
   const work = app.prepare();
@@ -157,6 +174,7 @@ test('successful prepare keeps its submitted conditions when editor changes duri
 test('failed new prepare retains successful snapshot and invalidation after reload', async t => {
   const app = await boot({ callbacks: { prepare: () => { throw new ApiError(502, 'offline failure'); } } });
   t.after(app.cleanup);
+  app.switchInputSource('sample');
   const sent = changedInput('성공 조건 2026-12-03');
   app.acceptView(structuredClone(response), sent);
   app.state.inputText = JSON.stringify(changedInput('실패한 새 조건 2027-02-01'));
@@ -203,6 +221,7 @@ test('PM approval and reload retain submitted snapshot and response model label'
   assert.equal(app.state.view.phase, 'DRAFT_READY');
   assert.match(app.state.view.draft.impact, /2026-12-10/);
   assert.match(app.submittedConditions(), /2026-12-10/);
+  assert.equal(app.state.view.impact.meta.model, 'fake:snapshot-regression');
   const restored = await boot({ store: app.store, callbacks: { get: () => structuredClone(app.state.view) } }); t.after(restored.cleanup);
   assert.match(restored.submittedConditions(), /2026-12-10/);
   assert.equal(restored.inputChanged(), false);
@@ -216,7 +235,7 @@ test('Agent2 result requires explicit PM decisions and carries its own context i
     prepare: body => { sent = body; return structuredClone(response); },
   } });
   t.after(app.cleanup);
-  await app.runAgent2(); app.switchInputSource('agent2');
+  app.selectAgent2Input('sample'); await app.runAgent2(); app.switchInputSource('agent2');
   assert.throws(() => app.liveReviewInput(), /PM 판단/);
   const id = app.a2.result.assessments[0].item_id;
   app.a2.choices[id] = { label: 'out_of_scope', estimate: true, reason: '' };
@@ -238,7 +257,7 @@ test('Agent2 result requires explicit PM decisions and carries its own context i
 
 test('Agent2 blocks unresolved questions, invalid decisions, and mismatched results', async t => {
   const app = await boot({ callbacks: { assess: body => ({ ...structuredClone(input.a2_result), context: structuredClone(body.context) }) } });
-  t.after(app.cleanup); await app.runAgent2(); app.switchInputSource('agent2');
+  t.after(app.cleanup); app.selectAgent2Input('sample'); await app.runAgent2(); app.switchInputSource('agent2');
   const id = app.a2.result.assessments[0].item_id;
   app.a2.choices[id] = { label: 'in_scope', estimate: true };
   assert.throws(() => app.liveReviewInput(), /범위 밖/);
@@ -258,7 +277,7 @@ test('registered change request creates Agent 1 input and runs Agent 1', async t
   } });
   t.after(app.cleanup);
   Object.assign(app.state.registration, {
-    project_id: 'P-NEW-001', project_name: '신규 프로젝트', case_id: 'CR-D-001',
+    project_id: 'P-NEW-001', project_name: '신규 프로젝트', case_id: 'CR-D-001', baseline_id: 'P-NEW-001:BL-1',
     channel: 'email', channel_src: 'GMAIL', received_at: '2026-11-02T10:00',
     sender_role: '고객사 PM', sender_name: '신규 요청자', subject: '신규 기능 요청', message_text: '관리 화면에 신규 기능을 추가해 주세요.',
   });
@@ -288,18 +307,73 @@ test('Agent1 execution bar matches Agent2 and replaces upper synthetic items wit
   assert.match(app.datasetOriginal({ requester: '한유진', requesterRole: '고객사 운영', receivedAt: '2026-10-07T10:22:00+09:00', channel: 'SMS', title: '주문 엑셀 내려받기', messageText: '관리자 주문목록을 엑셀로 내려받아 주세요.' }), /Agent 1 실행 결과/);
 });
 
+function sampleAgent1Result(source) {
+  return { context: structuredClone(source.context), status: 'READY', meta: { result_id: 'A1-live-test', model: 'fake' },
+    items: [
+      { item_id: `${source.context.case_id}-1`, case_id: source.context.case_id, display_no: 'R1', item_type: 'function', intent: 'change_request', text: '사용자가 확인한 새로운 기능', spans: [], source: 'ai', feature_candidates: [], inferred: false },
+      { item_id: `${source.context.case_id}-2`, case_id: source.context.case_id, display_no: 'R2', item_type: 'deadline', intent: 'constraint', text: '출시일 유지', spans: [], source: 'ai', feature_candidates: [], inferred: false },
+      { item_id: `${source.context.case_id}-3`, case_id: source.context.case_id, display_no: 'R3', item_type: 'question', intent: 'confirmation', text: '견적 여부', spans: [], source: 'ai', feature_candidates: [], inferred: false },
+    ], questions: [] };
+}
+
+test('Agent 1 output is mapped to Agent 2 with source, baseline and conditions preserved', async t => {
+  let captured;
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: {} }, callbacks: {
+    agent1: body => sampleAgent1Result(body),
+    assess: body => { captured = structuredClone(body); return { context: body.context, status: 'READY_FOR_REVIEW', assessments: [{ item_id: body.items[0].item_id, label: 'out_of_scope', evidence: [] }], questions: [], meta: { result_id: 'A2-live-test', debug: {} } }; },
+  } });
+  t.after(app.cleanup);
+  await app.runAgent1(); app.selectAgent2Input('agent1'); app.a2.provider = 'gemini';
+  assert.match(app.scope(), /사용자가 확인한 새로운 기능/);
+  await app.runAgent2();
+  assert.equal(captured.a1_result_id, 'A1-live-test');
+  assert.equal(captured.message_text, agent1Inputs['CR-A-001'].message_text);
+  assert.equal(captured.context.baseline_id, 'P-COM-101:BL-2');
+  assert.deepEqual(captured.items.map(x => x.text), ['사용자가 확인한 새로운 기능']);
+  assert.deepEqual(captured.constraints.map(x => x.text), ['출시일 유지']);
+  assert.equal(app.a2.result.meta.result_id, 'A2-live-test');
+  assert.match(app.scope(), /사용자가 확인한 새로운 기능/);
+  app.a2.choices[captured.items[0].item_id] = { label: 'out_of_scope', estimate: true };
+  assert.equal(app.liveReviewInput().a2_result.meta.result_id, 'A2-live-test');
+  assert.equal(app.liveReviewInput().items[0].text, '사용자가 확인한 새로운 기능');
+  app.selectAgent2Input('sample');
+  assert.equal(app.a2.result, null); assert.equal(app.a2.review, null);
+  assert.equal(app.selectedAgent2Input().items[0].text, agent2Inputs['CR-A-001'].items[0].text);
+});
+
+test('Agent 1 blocked questions, foreign context, and fake Agent 2 cannot pass as live analysis', async t => {
+  let count = 0;
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: {} }, callbacks: {
+    agent1: body => sampleAgent1Result(body), assess: () => { count++; throw new Error('unexpected'); },
+  } }); t.after(app.cleanup);
+  await app.runAgent1(); app.selectAgent2Input('agent1'); app.a2.provider = 'fake';
+  await app.runAgent2(); assert.equal(count, 0); assert.match(app.a2.error.message, /가상 응답/);
+  app.a2.provider = 'gemini'; app.a1.result.status = 'NEEDS_INPUT';
+  await app.runAgent2(); assert.equal(count, 0); assert.match(app.a2.error.message, /필수 확인/);
+  app.a1.result.status = 'READY'; app.a1.result.context.baseline_id = 'wrong';
+  await app.runAgent2(); assert.equal(count, 0); assert.match(app.a2.error.message, /다릅니다/);
+});
+
+test('rerunning Agent 1 invalidates Agent 2 result and Agent 3 input from it', async t => {
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: {} }, callbacks: { agent1: body => sampleAgent1Result(body) } }); t.after(app.cleanup);
+  await app.runAgent1(); app.selectAgent2Input('agent1');
+  app.a2.result = { meta: { result_id: 'old' } }; app.a2.review = { old: true }; app.state.inputSource = 'agent2'; app.state.view = structuredClone(response);
+  await app.runAgent1();
+  assert.equal(app.a2.result, null); assert.equal(app.a2.review, null); assert.equal(app.state.inputText, ''); assert.equal(app.state.invalidated, true);
+});
+
 test('Agent2 can run on the Agent1 result: function items to items, constraints kept, quote requests dropped', async t => {
   let received;
   const item = (n, type) => ({ item_id: `CR-A-001-${n}`, case_id: 'CR-A-001', display_no: `R${n}`, item_type: type, intent: 'change_request', text: `항목 ${n}`, spans: [] });
   const a1Out = body => ({ context: structuredClone(body.context), meta: { result_id: 'a1-live' }, status: 'READY', questions: [],
     items: [item(1, 'function'), item(2, 'deadline'), item(3, 'question')] });
-  const app = await boot({ callbacks: { agent1: a1Out, assess: body => { received = body; return { ...structuredClone(input.a2_result), context: structuredClone(body.context) }; } } });
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: {} }, callbacks: { agent1: a1Out, assess: body => { received = body; return { ...structuredClone(input.a2_result), context: structuredClone(body.context) }; } } });
   t.after(app.cleanup);
-  app.switchAgent2Source('agent1');
+  app.selectAgent2Input('agent1');
   await app.runAgent2();
   assert.equal(received, undefined);
-  assert.match(app.a2.error.message, /Agent 1을 먼저/);
-  app.lab.enabled = true; await app.runAgent1();
+  assert.match(app.a2.error.message, /Agent 1을 실행/);
+  app.lab.enabled = true; await app.runAgent1(); app.a2.provider = 'gemini';
   await app.runAgent2();
   assert.equal(received.a1_result_id, 'a1-live');
   assert.equal(received.message_text, agent1Inputs['CR-A-001'].message_text);
@@ -312,10 +386,10 @@ test('Agent2 can run on the Agent1 result: function items to items, constraints 
 
 test('Agent1 result without function items or awaiting input does not reach Agent2', async t => {
   let status = 'NEEDS_INPUT';
-  const app = await boot({ callbacks: { agent1: body => ({ context: structuredClone(body.context), meta: { result_id: 'a1' }, status, questions: [], items: [] }) } });
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: {} }, callbacks: { agent1: body => ({ context: structuredClone(body.context), meta: { result_id: 'a1' }, status, questions: [], items: [] }) } });
   t.after(app.cleanup); app.lab.enabled = true;
-  await app.runAgent1(); app.switchAgent2Source('agent1');
-  assert.throws(() => app.agent2InputFromAgent1(), /추가 정보/);
+  await app.runAgent1(); app.selectAgent2Input('agent1');
+  assert.throws(() => app.agent1ToAgent2Input(), /필수 확인/);
   status = 'READY'; await app.runAgent1();
-  assert.throws(() => app.agent2InputFromAgent1(), /기능 항목이 없어/);
+  assert.throws(() => app.agent1ToAgent2Input(), /기능 항목이 없습니다/);
 });

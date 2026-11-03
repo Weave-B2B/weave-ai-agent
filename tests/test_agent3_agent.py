@@ -162,5 +162,70 @@ def test_changed_target_never_retries_to_force_a_sample_rule(a3_input, a3_payloa
     a3_input.items[0].text = '완전히 다른 작업'
     model = FakeLlm([a3_payload])
     out = LlmAgent3(model).run(a3_input)
-    assert len(model.calls) == 1
+    assert len(model.calls) == 2
     assert out.status == 'NEEDS_INPUT' and out.estimates[0].totals is None
+
+
+def test_changed_review_request_excludes_sample_rule_and_retries_with_general_rule(a3_input, a3_payload):
+    import json
+    a3_input.items[0].text = '상품 리뷰 기능 추가 — 구매자 별점·후기 텍스트, 사진 최대 3장(선택 사항)'
+    revised = {'estimates': [{'item_numbers': [1], 'status': 'draft', 'lines': [
+        {'item_numbers': [1], 'task': '리뷰 작성 화면', 'role': 'FE', 'rule_id': 'general_fe_medium', 'assumption': '기존 화면 변경'}]}], 'questions': []}
+    model = FakeLlm([a3_payload, revised])
+    out = LlmAgent3(model).run(a3_input)
+    available = json.loads(model.calls[0]['user'])['test_effort_rules']['rules']
+    assert 'review_fe' not in available and 'general_fe_medium' in available
+    assert len(model.calls) == 2 and out.estimates[0].totals.md == 3.0
+    assert out.meta.debug['effort_rule_retry'] is True
+
+
+def test_missing_implementation_details_can_be_estimated_as_reviewable_assumptions(a3_input):
+    a3_input.items[0].text = '상품 리뷰 기능: 별점·후기와 선택적 사진 3장'
+    initial = {'estimates': [{'item_numbers': [1], 'status': 'not_estimable', 'reason': '사진 저장 방식 미정', 'lines': []}],
+               'questions': [{'item_numbers': [1], 'text': '사진 저장 방식?', 'reason': '저장 방식 미정', 'blocking': True}]}
+    revised = {'estimates': [{'item_numbers': [1], 'status': 'draft', 'lines': [
+        {'item_numbers': [1], 'task': '리뷰 저장 및 사진 처리', 'role': 'BE', 'rule_id': 'general_be_medium',
+         'assumption': '기존 사진 저장 기능 재사용, 외부 연동 제외; 사진 포함 가정'}]}],
+        'questions': [{'item_numbers': [1], 'text': '기존 사진 저장 기능을 재사용할 수 있나요?', 'reason': '임시 가정 확인', 'blocking': False}]}
+    model = FakeLlm([initial, revised])
+    out = LlmAgent3(model).run(a3_input)
+    assert len(model.calls) == 2 and out.meta.debug['assumption_retry'] is True
+    assert out.status == 'IMPACT_DRAFT_READY' and out.estimates[0].totals.md == 3
+    assert '기존 사진 저장 기능 재사용' in out.estimates[0].lines[0].assumption
+    assert out.questions and not out.questions[0].blocking
+
+
+def test_missing_scope_remains_blocked_when_assumptions_are_insufficient(a3_input):
+    payload = {'estimates': [{'item_numbers': [1], 'status': 'not_estimable', 'reason': '요청 기능 및 규모 불명', 'lines': []}],
+               'questions': [{'item_numbers': [1], 'text': '구현할 기능의 범위는?', 'reason': '규모 불명', 'blocking': True}]}
+    out = LlmAgent3(FakeLlm([payload, payload])).run(a3_input)
+    assert out.status == 'NEEDS_INPUT' and out.estimates[0].totals is None
+    assert out.questions[0].blocking
+
+
+def test_general_test_rule_estimates_multiple_pm_selected_items(a3_input):
+    first = a3_input.items[0]
+    first.text = '기존 화면에 검색 입력 추가'
+    second = first.model_copy(deep=True)
+    second.item_id = f'{a3_input.context.case_id}-new'
+    second.text = '내부 API에서 검색 결과 조회'
+    a3_input.items.append(second)
+    assessment = a3_input.a2_result.assessments[0].model_copy(deep=True)
+    assessment.item_id = second.item_id
+    a3_input.a2_result.assessments.append(assessment)
+    review = a3_input.pm_review.items[0].model_copy(deep=True)
+    review.item_id = second.item_id
+    a3_input.pm_review.items.append(review)
+    payload = {'estimates': [
+        {'item_numbers': [1], 'status': 'draft', 'lines': [
+            {'item_numbers': [1], 'task': '검색 입력 UI', 'role': 'FE', 'rule_id': 'general_fe_small', 'assumption': '기존 화면 변경'}]},
+        {'item_numbers': [2], 'status': 'draft', 'lines': [
+            {'item_numbers': [2], 'task': '검색 조회', 'role': 'BE', 'rule_id': 'general_be_small', 'assumption': '기존 내부 API'}]},
+    ], 'questions': []}
+    model = FakeLlm([payload])
+    out = LlmAgent3(model).run(a3_input)
+    assert out.status == 'IMPACT_DRAFT_READY'
+    assert [e.item_ids for e in out.estimates] == [[first.item_id], [second.item_id]]
+    assert [e.totals.md for e in out.estimates] == [1.0, 1.5]
+    assert all('임시 기준' in e.lines[0].assumption for e in out.estimates)
+    assert 'general_fe_small' in model.calls[0]['user']
