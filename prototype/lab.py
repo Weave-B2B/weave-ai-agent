@@ -1,6 +1,7 @@
 """Local-only Agent 3 developer test endpoints; credentials stay on the server."""
 import json
 import os
+import httpx
 from pathlib import Path
 from threading import RLock
 from typing import Literal
@@ -31,10 +32,25 @@ sessions = {}
 current = {}
 GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/'
 
+
+def list_ollama_models(base_url: str) -> list[str]:
+    """Return locally installed Ollama model names for the prototype dropdown."""
+    try:
+        response = httpx.get(f"{base_url.rstrip('/')}/api/tags", timeout=2.0)
+        response.raise_for_status()
+        data = response.json()
+    except (httpx.HTTPError, ValueError, TypeError):
+        return []
+    models = data.get('models', []) if isinstance(data, dict) else []
+    if not isinstance(models, list):
+        return []
+    names = [model.get('name') for model in models if isinstance(model, dict) and isinstance(model.get('name'), str)]
+    return list(dict.fromkeys(name for name in names if name.strip()))
+
 class LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     input: Agent3Input
-    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock', 'ollama'] = 'fake'
     model: str = ''
     base_url: str = ''
     region: str = 'ap-northeast-2'
@@ -44,19 +60,19 @@ class LabInput(BaseModel):
 class Agent1LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     input: Agent1Input
-    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock', 'ollama'] = 'fake'
     model: str = ''
     region: str = 'ap-northeast-2'
 
 class Agent2LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     input: Agent2Input
-    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock', 'ollama'] = 'fake'
     model: str = ''
     region: str = 'ap-northeast-2'
 
 class LabGenerateDraft(GenerateDraft):
-    provider: Literal['fake', 'gemini', 'openai', 'bedrock'] = 'fake'
+    provider: Literal['fake', 'gemini', 'openai', 'bedrock', 'ollama'] = 'fake'
     model: str = ''
     region: str = 'ap-northeast-2'
 
@@ -66,11 +82,21 @@ def provider_client(body):
     key = os.environ.get(key_name) or values.get(key_name) or ''
     if body.provider in ('gemini', 'openai') and not key:
         raise HTTPException(422, f'서버 .env에 {key_name}를 설정해 주세요.')
-    model = body.model.strip() or {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna'}.get(body.provider, '')
+    ollama_base_url = os.environ.get('OLLAMA_BASE_URL') or values.get('OLLAMA_BASE_URL') or 'http://localhost:11434'
+    llm_fallback_model = os.environ.get('LLM_MODEL') or values.get('LLM_MODEL') or ''
+    ollama_default_model = os.environ.get('OLLAMA_MODEL') or values.get('OLLAMA_MODEL') or llm_fallback_model or 'gpt-oss:20b'
+    ollama_read_timeout = float(os.environ.get('OLLAMA_READ_TIMEOUT_SEC') or values.get('OLLAMA_READ_TIMEOUT_SEC') or 300)
+    ollama_connect_timeout = float(os.environ.get('OLLAMA_CONNECT_TIMEOUT_SEC') or values.get('OLLAMA_CONNECT_TIMEOUT_SEC') or 10)
+    ollama_num_predict = int(os.environ.get('OLLAMA_NUM_PREDICT') or values.get('OLLAMA_NUM_PREDICT') or 2048)
+    ollama_keep_alive = os.environ.get('OLLAMA_KEEP_ALIVE') or values.get('OLLAMA_KEEP_ALIVE') or '30m'
+    model = body.model.strip() or {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna', 'ollama': ollama_default_model}.get(body.provider, '')
     if not model:
         raise HTTPException(422, '모델 이름을 입력해 주세요.')
-    config = Settings(_env_file=None, llm_provider={'bedrock': 'bedrock', 'gemini': 'local', 'openai': 'openai'}[body.provider],
-        llm_model=model, llm_base_url=GEMINI_URL if body.provider == 'gemini' else '',
+    config = Settings(_env_file=None, llm_provider={'bedrock': 'bedrock', 'gemini': 'local', 'openai': 'openai', 'ollama': 'ollama'}[body.provider],
+        llm_model=model, llm_base_url=GEMINI_URL if body.provider == 'gemini' else (ollama_base_url if body.provider == 'ollama' else ''),
+        ollama_base_url=ollama_base_url if body.provider == 'ollama' else '', ollama_model=model if body.provider == 'ollama' else '',
+        ollama_read_timeout_sec=ollama_read_timeout, ollama_connect_timeout_sec=ollama_connect_timeout,
+        ollama_num_predict=ollama_num_predict, ollama_keep_alive=ollama_keep_alive,
         llm_api_key=key if body.provider == 'openai' else '', gemini_api_key=key if body.provider == 'gemini' else '',
         llm_local_json_mode='schema' if body.provider == 'gemini' else 'prompt', aws_region=body.region)
     return build_llm(config)
@@ -141,8 +167,16 @@ def workflow_for(sid):
 def defaults(request: Request):
     local_only(request)
     fake = json.loads((ROOT / 'examples/agent3/fake_responses.json').read_text(encoding='utf-8'))[0]
+    values = dotenv_values(ROOT / '.env') if (ROOT / '.env').is_file() else {}
+    llm_fallback_model = os.environ.get('LLM_MODEL') or values.get('LLM_MODEL') or ''
+    ollama_base_url = os.environ.get('OLLAMA_BASE_URL') or values.get('OLLAMA_BASE_URL') or 'http://localhost:11434'
+    ollama_model = os.environ.get('OLLAMA_MODEL') or values.get('OLLAMA_MODEL') or llm_fallback_model or 'gpt-oss:20b'
+    ollama_models = list_ollama_models(ollama_base_url)
+    if ollama_model not in ollama_models and ollama_model:
+        ollama_models = [ollama_model, *ollama_models]
     return {'fake_response': fake, 'model': 'gemini-2.5-flash-lite',
-            'default_models': {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna'}}
+            'default_models': {'gemini': 'gemini-2.5-flash-lite', 'openai': 'gpt-6-luna', 'ollama': ollama_model},
+            'ollama_models': ollama_models}
 
 
 @router.get('/baselines')

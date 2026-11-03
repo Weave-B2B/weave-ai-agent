@@ -10,7 +10,8 @@ const PHASE = { APPROVED: "PM 승인 완료 · 협의안 생성 대기", WAITING
 const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "", registration: { project_id: "P-COM-101", project_name: "신규 변경 요청 프로젝트", case_id: "", channel: "email", channel_src: "GMAIL", baseline_id: "", received_at: "", sender_role: "고객사 PM", sender_name: "", subject: "", message_text: "" }, registrationError: "" };
 let baseInput, agent1Inputs, agent2Input, agent2Inputs, previewClient, toastTimer, composingSearch = false, samples, activeCase;
 let availableBaselines = [];
-const defaultModels = { gemini: "gemini-2.5-flash-lite", openai: "gpt-6-luna" };
+let ollamaModels = [];
+const defaultModels = { gemini: "gemini-2.5-flash-lite", openai: "gpt-6-luna", ollama: "gpt-oss:20b" };
 const defaultModel = provider => defaultModels[provider] || "";
 const draftLab = { provider: "openai", model: "gpt-6-luna", region: "ap-northeast-2" };
 const lab = { enabled: false, provider: "openai", model: "gpt-6-luna", base_url: "http://127.0.0.1:11434/v1", region: "ap-northeast-2", fakeText: "" };
@@ -213,7 +214,12 @@ function restoreA1Case(caseId) {
 }
 function agentSettings(name, data) {
   if (!lab.enabled) return '<div class="notice">공급자를 선택하려면 서버를 <code>python prototype/run_demo.py --lab</code>로 실행하세요.</div>';
-  return `<section class="card"><h2>${name === 'a1' ? 'Agent 1' : 'Agent 2'} 테스트 실행 설정</h2><p class="caption">가상 응답은 저장된 합성 사례를 반환합니다. Gemini·GPT·Bedrock은 외부 모델을 호출하며 인증 정보는 서버에서 사용합니다.</p><div class="button-group">${[['fake','가상 응답'],['gemini','Gemini API'],['openai','GPT API'],['bedrock','AWS Bedrock']].map(([value,label]) => `<label class="check"><input type="radio" name="${name}-provider" value="${value}" ${data.provider === value ? 'checked' : ''} ${data.pending ? 'disabled' : ''}>${label}</label>`).join('')}</div>${data.provider !== 'fake' ? `<label class="field">모델 ID<input id="${name}-model" value="${e(data.model)}" ${data.pending ? 'disabled' : ''}></label>` : ''}${data.provider === 'bedrock' ? `<label class="field">AWS 리전<input id="${name}-region" value="${e(data.region)}" ${data.pending ? 'disabled' : ''}></label>` : ''}</section>`;
+  const modelControl = data.provider === 'ollama'
+    ? `<label class="field">Ollama 로컬 모델<select id="${name}-model" ${data.pending ? 'disabled' : ''}>${[...new Set([...ollamaModels, data.model].filter(Boolean))].map(model => `<option value="${e(model)}" ${model === data.model ? 'selected' : ''}>${e(model)}</option>`).join('')}</select></label>`
+    : data.provider !== 'fake'
+      ? `<label class="field">모델 ID<input id="${name}-model" value="${e(data.model)}" ${data.pending ? 'disabled' : ''}></label>`
+      : '';
+  return `<section class="card"><h2>${name === 'a1' ? 'Agent 1' : 'Agent 2'} 테스트 실행 설정</h2><p class="caption">가상 응답은 저장된 합성 사례를 반환합니다. Gemini·GPT·Bedrock은 외부 모델을 호출하며, Ollama는 로컬 모델을 호출합니다. 외부 API 인증 정보는 서버에서 사용합니다.</p><div class="button-group">${[['fake','가상 응답'],['gemini','Gemini API'],['openai','GPT API'],['bedrock','AWS Bedrock'],['ollama','Ollama (Local)']].map(([value,label]) => `<label class="check"><input type="radio" name="${name}-provider" value="${value}" ${data.provider === value ? 'checked' : ''} ${data.pending ? 'disabled' : ''}>${label}</label>`).join('')}</div>${modelControl}${data.provider === 'bedrock' ? `<label class="field">AWS 리전<input id="${name}-region" value="${e(data.region)}" ${data.pending ? 'disabled' : ''}></label>` : ''}</section>`;
 }
 async function runAgent1() {
   if (!lab.enabled || a1.pending || !agent1Inputs?.[activeCase]) return;
@@ -276,7 +282,7 @@ async function runAgent2() {
   let input;
   try {
     input = selectedAgent2Input();
-    if (a2.inputSource === 'agent1' && (!lab.enabled || a2.provider === 'fake')) throw new Error('Agent 1 결과를 분석하려면 Gemini·GPT·Bedrock을 선택해 주세요. 가상 응답은 저장된 샘플입니다.');
+    if (a2.inputSource === 'agent1' && (!lab.enabled || a2.provider === 'fake')) throw new Error('Agent 1 결과를 분석하려면 Gemini·GPT·Bedrock·Ollama를 선택해 주세요. 가상 응답은 저장된 샘플입니다.');
   } catch (error) { a2.error = { status: 0, message: error.message }; render(); return; }
   const caseId = activeCase, generation = ++a2.generation;
   a2.pending = true; a2.error = null; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; if (state.inputSource === "agent2") { state.inputText = ""; if (state.view) state.invalidated = true; persist(); } render();
@@ -340,7 +346,7 @@ function labControls() {
   if (state.mode === "mock") return `<div class="notice">읽기 전용 상태 미리보기에서는 모델을 실행하지 않습니다. 실행하려면 상단에서 기존 Agent 3 API를 선택하세요.</div>`;
   if (!lab.enabled) return `<div class="notice">모델 선택과 가상 응답 편집을 사용하려면 서버를 <code>python prototype/run_demo.py --lab</code>로 실행하세요.</div>`;
   const field = (id, label, value) => `<label class="field">${label}<input id="${id}" value="${e(value)}" ${state.pending ? "disabled" : ""}></label>`;
-  return `<section class="card"><h2>1. 테스트 실행 설정</h2><p class="caption">가상 응답은 비용 없이 확인합니다. Gemini·GPT·Bedrock 실행은 외부 모델을 호출합니다. 키는 서버의 .env에서 읽습니다. 응답의 MD 값은 사용하지 않고 테스트 기준표로 계산합니다.</p><div class="settings-grid"><fieldset class="field"><legend>모델 공급자</legend><div class="button-group">${[["fake","가상 응답 (fake)"],["gemini","Gemini API"],["openai","GPT API"],["bedrock","AWS Bedrock"]].map(([v,l]) => `<label class="check"><input type="radio" name="lab-provider" value="${v}" ${lab.provider === v ? "checked" : ""} ${state.pending ? "disabled" : ""}>${l}</label>`).join("")}</div></fieldset>${lab.provider !== "fake" ? field("lab-model", "모델 ID", lab.model) : ""}${lab.provider === "bedrock" ? field("lab-region", "AWS 리전", lab.region) : ""}</div>${lab.provider === "fake" ? `<label class="field">가상 모델 응답 JSON<textarea id="lab-fake" class="json-input" spellcheck="false">${e(lab.fakeText)}</textarea></label>` : ""}<p class="tiny">2. 아래 테스트 입력을 확인한 뒤 오른쪽 위 ‘영향 산정 실행’을 누르세요. 3. 결과를 승인한 뒤 승인·협의 탭에서 협의안 모델을 선택하고 생성하세요.</p></section>`;
+  return `<section class="card"><h2>1. 테스트 실행 설정</h2><p class="caption">가상 응답은 비용 없이 확인합니다. Gemini·GPT·Bedrock 실행은 외부 모델을 호출하고, Ollama는 로컬 모델을 호출합니다. 키는 서버의 .env에서 읽습니다. 응답의 MD 값은 사용하지 않고 테스트 기준표로 계산합니다.</p><div class="settings-grid"><fieldset class="field"><legend>모델 공급자</legend><div class="button-group">${[["fake","가상 응답 (fake)"],["gemini","Gemini API"],["openai","GPT API"],["bedrock","AWS Bedrock"],["ollama","Ollama (Local)"]].map(([v,l]) => `<label class="check"><input type="radio" name="lab-provider" value="${v}" ${lab.provider === v ? "checked" : ""} ${state.pending ? "disabled" : ""}>${l}</label>`).join("")}</div></fieldset>${lab.provider !== "fake" ? field("lab-model", "모델 ID", lab.model) : ""}${lab.provider === "bedrock" ? field("lab-region", "AWS 리전", lab.region) : ""}</div>${lab.provider === "fake" ? `<label class="field">가상 모델 응답 JSON<textarea id="lab-fake" class="json-input" spellcheck="false">${e(lab.fakeText)}</textarea></label>` : ""}<p class="tiny">2. 아래 테스트 입력을 확인한 뒤 오른쪽 위 ‘영향 산정 실행’을 누르세요. 3. 결과를 승인한 뒤 승인·협의 탭에서 협의안 모델을 선택하고 생성하세요.</p></section>`;
 }
 function switchInputSource(source) {
   if (!["sample", "agent2"].includes(source) || state.pending) return;
@@ -729,7 +735,7 @@ try {
   const [inputResponse, previewResponse, sampleResponse] = await Promise.all([fetch(new URL("./data/agent3-input.json?v=common-rate-2", import.meta.url)), fetch(new URL("./data/agent3-preview.json", import.meta.url)), fetch(new URL("./data/agent3-samples.json?v=common-rate-2", import.meta.url))]);
   if (!inputResponse.ok || !previewResponse.ok || !sampleResponse.ok) throw new Error("합성 입력 파일을 불러오지 못했습니다.");
   baseInput = await inputResponse.json(); samples = await sampleResponse.json(); samples.inputs["CR-A-001"] = baseInput; previewClient = new MockPreview(await previewResponse.json()); state.inputText = JSON.stringify(baseInput, null, 2);
-  try { const response = await fetch("/prototype-lab/defaults"); if (response.ok) { const defaults = await response.json(); if (defaults.fake_response && defaults.model) { lab.enabled = true; api.lab = true; lab.defaultFake = defaults.fake_response; lab.fakeText = JSON.stringify(defaults.fake_response, null, 2); if (defaults.default_models) Object.assign(defaultModels, defaults.default_models); lab.model = defaultModel(lab.provider); try { const response = await fetch("/prototype-lab/baselines"); const data = await response.json(); if (response.ok && Array.isArray(data)) availableBaselines = data; } catch { /* 기준선이 없으면 Agent 1 연결을 차단한다. */ } } } } catch { /* Ordinary server retains the existing API mode. */ }
+  try { const response = await fetch("/prototype-lab/defaults"); if (response.ok) { const defaults = await response.json(); if (defaults.fake_response && defaults.model) { lab.enabled = true; api.lab = true; lab.defaultFake = defaults.fake_response; lab.fakeText = JSON.stringify(defaults.fake_response, null, 2); if (defaults.default_models) Object.assign(defaultModels, defaults.default_models); if (Array.isArray(defaults.ollama_models)) ollamaModels = defaults.ollama_models.filter(Boolean); lab.model = defaultModel(lab.provider); try { const response = await fetch("/prototype-lab/baselines"); const data = await response.json(); if (response.ok && Array.isArray(data)) availableBaselines = data; } catch { /* 기준선이 없으면 Agent 1 연결을 차단한다. */ } } } } catch { /* Ordinary server retains the existing API mode. */ }
   try { const a2Response = await fetch(new URL("./data/agent2-inputs.json", import.meta.url)); if (a2Response.ok) agent2Inputs = await a2Response.json(); }
   catch { /* Agent 2 입력이 없어도 나머지 화면은 동작한다 (실행 버튼만 비활성). */ }
   try { const a1Response = await fetch(new URL("./data/agent1-inputs.json", import.meta.url)); if (a1Response.ok) agent1Inputs = await a1Response.json(); }
