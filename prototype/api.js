@@ -107,3 +107,29 @@ export class Agent1Api {
     } finally { clearTimeout(timer); }
   }
 }
+
+// 로컬 테스트 전용: 문서 추가·색인·새 기준선 (--lab). 실제 업로드·승인·기준선 관리는 백엔드 담당이다.
+export class KbApi {
+  async request(path, options = {}, timeoutMs = 30000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(`/prototype-lab/kb${path}`, { ...options, headers: { "Content-Type": "application/json", ...options.headers }, signal: controller.signal });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new ApiError(response.status, detailMessage(body?.detail));
+      return body;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(0, error.name === "AbortError" ? "응답 시간이 초과됐습니다. 서버 상태를 확인해 주세요." : "AI 서버에 연결할 수 없습니다. 로컬 서버 실행 상태를 확인해 주세요.");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  projects() { return this.request("/projects"); }
+  upload(projectId, body) { return this.request(`/projects/${encodeURIComponent(projectId)}/documents`, { method: "POST", body: JSON.stringify(body) }, 180000); }
+  remove(docId) { return this.request(`/documents/${encodeURIComponent(docId)}`, { method: "DELETE" }); }
+  createBaseline(projectId, documentIds, asOf = null) { return this.request(`/projects/${encodeURIComponent(projectId)}/baselines`, { method: "POST", body: JSON.stringify({ document_ids: documentIds, ...(asOf ? { as_of: asOf } : {}) }) }); }
+  createProject(projectId, name) { return this.request("/projects", { method: "POST", body: JSON.stringify({ project_id: projectId, name }) }); }
+  reset() { return this.request("/reset", { method: "POST" }); }
+  lines(docId, page, start, end) { return this.request(`/documents/${encodeURIComponent(docId)}/lines?${new URLSearchParams({ page, start, end })}`); }
+}
