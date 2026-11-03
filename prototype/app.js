@@ -8,12 +8,13 @@ const agent1 = new Agent1Api();
 const kbApi = new KbApi();
 const STORAGE = "weave-prototype-agent3-session-v1";
 const PHASE = { APPROVED: "PM 승인 완료 · 협의안 생성 대기", WAITING_IMPACT_APPROVAL: "PM 산정 검토 대기", WAITING_INPUT: "추가 정보 필요", WAITING_UPSTREAM_REVIEW: "상위 PM 검토 필요", DRAFT_READY: "내부 협의안 초안 준비", NOT_REQUIRED: "산정 대상 없음", FAILED: "산정 실패" };
-const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "", registration: { project_id: "P-COM-101", project_name: "신규 변경 요청 프로젝트", case_id: "", channel: "email", channel_src: "GMAIL", received_at: "", sender_role: "고객사 PM", sender_name: "", subject: "", message_text: "" }, registrationError: "" };
+const state = { page: "list", id: "CR-A-001", tab: "original", query: "", group: "열린 요청", filter: "전체", project: "전체", order: "기본", pageNo: 1, selectedItem: 0, mode: "api", scenario: "normal", inputSource: "sample", sampleInputText: "", pending: false, error: null, view: null, inputText: "", submittedInput: null, signature: null, edits: null, originalLines: [], conflicted: false, invalidated: false, ack: false, reviewer: "local-test-pm", reviewReason: "", editReason: "", registration: { project_id: "P-COM-101", project_name: "신규 변경 요청 프로젝트", case_id: "", channel: "email", channel_src: "GMAIL", baseline_id: "", received_at: "", sender_role: "고객사 PM", sender_name: "", subject: "", message_text: "" }, registrationError: "" };
 let baseInput, agent1Inputs, agent2Input, agent2Inputs, previewClient, toastTimer, composingSearch = false, samples, activeCase;
-const defaultModels = { gemini: "gemini-2.5-flash-lite", openai: "gpt-4.1-mini" };
+let availableBaselines = [];
+const defaultModels = { gemini: "gemini-2.5-flash-lite", openai: "gpt-6-luna" };
 const defaultModel = provider => defaultModels[provider] || "";
-const draftLab = { provider: "gemini", model: "gemini-2.5-flash-lite", region: "ap-northeast-2" };
-const lab = { enabled: false, provider: "fake", model: "gemini-2.5-flash-lite", base_url: "http://127.0.0.1:11434/v1", region: "ap-northeast-2", fakeText: "" };
+const draftLab = { provider: "openai", model: "gpt-6-luna", region: "ap-northeast-2" };
+const lab = { enabled: false, provider: "openai", model: "gpt-6-luna", base_url: "http://127.0.0.1:11434/v1", region: "ap-northeast-2", fakeText: "" };
 const e = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const itemTypeLabel = value => ({ function: "기능", question: "확인", constraint: "제약", deadline: "기한", dependency: "의존성" }[value] || value || "항목");
 const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "—";
@@ -68,11 +69,11 @@ function selectCase(id) {
   if (activeCase && activeCase !== id) rememberA1Case(activeCase);
   activeCase = id;
   agent2Input = agent2Inputs?.[id] ? structuredClone(agent2Inputs[id]) : null;
-  a2.generation++; a2.source = 'sample'; a2.useActive = false; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null;
-  a1.generation++; a1.result = null; a1.pending = false; a1.error = null;
+  a2.generation++; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null; a2.inputSource = "agent1"; a2.useActive = false;
+  a1.generation++; a1.result = null; a1.sourceInput = null; a1.pending = false; a1.error = null;
   state.selectedItem = 0;
-  baseInput = structuredClone(samples.inputs[id] || { context: agent1Inputs?.[id]?.context || {}, items: [], constraints: [], pm_review: { items: [] }, a2_result: { assessments: [] } });
-  state.scenario = "normal"; state.inputSource = "sample"; state.inputText = JSON.stringify(baseInput, null, 2); state.sampleInputText = state.inputText;
+  baseInput = structuredClone(samples.inputs[id] || { context: agent1Inputs?.[id]?.context || {}, received_at: agent1Inputs?.[id]?.received_at || "", rate_card_id: "RC-SYNTH-2026H2-v2", items: [], constraints: [], pm_review: { items: [] }, a2_result: { assessments: [] } });
+  state.scenario = "normal"; state.inputSource = "agent2"; state.sampleInputText = JSON.stringify(baseInput, null, 2); state.inputText = "";
   state.view = null; state.edits = null; state.submittedInput = null; state.signature = null;
   state.error = null; state.conflicted = false; state.invalidated = false; state.originalLines = [];
   restoreA1Case(id);
@@ -99,7 +100,8 @@ function filteredRecords() {
 function registrationPage() {
   const d = state.registration;
   const channelOptions = [["email", "GMAIL"], ["manual", "MEETING"]];
-  return `<div class="page-heading"><div><h1>변경 요청 등록</h1><p class="subtitle">Agent 1이 직접 구조화할 신규 요청 원문을 등록합니다.</p></div><div class="button-group">${button("목록으로", "list", { class: "plain" })}</div></div>${state.registrationError ? `<div class="notice error">${e(state.registrationError)}</div>` : ""}<section class="card"><h2>요청 정보</h2><div class="settings-grid"><label class="field">프로젝트 ID<input id="registration-project" value="${e(d.project_id)}"></label><label class="field">요청 ID<input id="registration-case" placeholder="예: CR-D-001" value="${e(d.case_id)}"></label><label class="field">프로젝트명<input id="registration-project-name" value="${e(d.project_name)}"></label><label class="field">채널<select id="registration-channel">${channelOptions.map(([value,label]) => `<option value="${value}" ${d.channel === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">채널 원본 값<input id="registration-channel-src" value="${e(d.channel_src)}"></label><label class="field">수신 일시<input id="registration-received" type="datetime-local" value="${e(d.received_at)}"></label><label class="field">요청자 역할<input id="registration-sender-role" value="${e(d.sender_role)}"></label><label class="field">요청자 이름<input id="registration-sender-name" value="${e(d.sender_name)}"></label></div><label class="field">제목<input id="registration-subject" value="${e(d.subject)}"></label><label class="field">요청 원문<textarea id="registration-message" rows="8" placeholder="고객이 전달한 요청 내용을 그대로 입력하세요.">${e(d.message_text)}</textarea></label><div class="form-actions">${button("등록하고 Agent 1 실행 화면 열기", "submit-registration", { class: "primary" })}</div></section>`;
+  const baselines = availableBaselines.filter(b => b.project_id === d.project_id.trim());
+  return `<div class="page-heading"><div><h1>변경 요청 등록</h1><p class="subtitle">Agent 1이 직접 구조화할 신규 요청 원문을 등록합니다.</p></div><div class="button-group">${button("목록으로", "list", { class: "plain" })}</div></div>${state.registrationError ? `<div class="notice error">${e(state.registrationError)}</div>` : ""}<section class="card"><h2>요청 정보</h2><div class="settings-grid"><label class="field">프로젝트 ID<input id="registration-project" value="${e(d.project_id)}"></label><label class="field">판단 기준선<select id="registration-baseline"><option value="">기준선 선택</option>${baselines.map(b => `<option value="${e(b.id)}" ${d.baseline_id === b.id ? "selected" : ""}>${e(b.id)} · ${e(b.as_of)}</option>`).join("")}</select></label><label class="field">요청 ID<input id="registration-case" placeholder="예: CR-D-001" value="${e(d.case_id)}"></label><label class="field">프로젝트명<input id="registration-project-name" value="${e(d.project_name)}"></label><label class="field">채널<select id="registration-channel">${channelOptions.map(([value,label]) => `<option value="${value}" ${d.channel === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="field">채널 원본 값<input id="registration-channel-src" value="${e(d.channel_src)}"></label><label class="field">수신 일시<input id="registration-received" type="datetime-local" value="${e(d.received_at)}"></label><label class="field">요청자 역할<input id="registration-sender-role" value="${e(d.sender_role)}"></label><label class="field">요청자 이름<input id="registration-sender-name" value="${e(d.sender_name)}"></label></div><label class="field">제목<input id="registration-subject" value="${e(d.subject)}"></label><label class="field">요청 원문<textarea id="registration-message" rows="8" placeholder="고객이 전달한 요청 내용을 그대로 입력하세요.">${e(d.message_text)}</textarea></label><div class="form-actions">${button("등록하고 Agent 1 실행 화면 열기", "submit-registration", { class: "primary" })}</div></section>`;
 }
 function registerChangeRequest() {
   const d = state.registration;
@@ -109,8 +111,10 @@ function registerChangeRequest() {
   const caseId = d.case_id.trim().toUpperCase();
   if (!/^CR-[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(caseId)) { state.registrationError = "요청 ID는 CR-D-001 형식으로 입력해 주세요."; render(); return; }
   if (records.some(item => item.id === caseId)) { state.registrationError = "이미 존재하는 요청 ID입니다."; render(); return; }
+  const baseline = availableBaselines.find(b => b.id === d.baseline_id && b.project_id === d.project_id.trim());
+  if (!baseline) { state.registrationError = "프로젝트에 등록된 판단 기준선을 선택해 주세요."; render(); return; }
   const receivedAt = d.received_at ? new Date(d.received_at).toISOString() : new Date().toISOString();
-  const input = { context: { project_id: d.project_id.trim(), case_id: caseId, request_revision: 1, baseline_id: `${d.project_id.trim()}:BL-1`, baseline_as_of: new Date(receivedAt).toISOString().slice(0, 10), analysis_id: `AN-${caseId}-r1`, scenario_id: null }, channel: d.channel, channel_src: d.channel_src.trim() || null, received_at: receivedAt, sender_role: d.sender_role.trim(), sender_name: d.sender_name.trim(), subject: d.subject.trim(), message_text: d.message_text.trim(), pm_notes: [], answers: [] };
+  const input = { context: { project_id: d.project_id.trim(), case_id: caseId, request_revision: 1, baseline_id: baseline.id, baseline_as_of: baseline.as_of, analysis_id: `AN-${caseId}-r1`, scenario_id: null }, channel: d.channel, channel_src: d.channel_src.trim() || null, received_at: receivedAt, sender_role: d.sender_role.trim(), sender_name: d.sender_name.trim(), subject: d.subject.trim(), message_text: d.message_text.trim(), pm_notes: [], answers: [] };
   agent1Inputs = agent1Inputs || {}; agent1Inputs[caseId] = input;
   records.unshift({ id: caseId, title: input.subject, project: d.project_name.trim() || "신규 변경 요청 프로젝트", requester: input.sender_name, requesterRole: input.sender_role, channel: input.channel_src || input.channel, date: receivedAt.slice(5, 10), receivedAt, messageText: input.message_text, datasetSample: true, scope: "미분석", process: "접수", approval: "미요청", customer: "미요청", md: "미산정", price: "—", owner: "—", elapsed: "—", api: true });
   state.registrationError = ""; state.id = caseId; state.tab = "original"; selectCase(caseId); navigate(caseId, "original");
@@ -130,12 +134,12 @@ function statusStrip() {
 function tabTestGuide() {
   const guides = {
     original: ["Agent 1", "요청 원문 탭에서 Agent 1 공급자와 모델을 선택하고 바로 실행할 수 있습니다."],
-    scope: ["Agent 2", "범위 검토 탭에서 Agent 2 공급자와 모델, 입력 출처(저장된 입력 또는 Agent 1 실행 결과)를 선택하고 범위 검토를 실행할 수 있습니다."],
+    scope: ["Agent 2", "범위 검토 입력과 Agent 2 공급자를 선택한 뒤 범위 판단을 실행할 수 있습니다."],
     impact: ["Agent 3", "영향 산정 탭에서 Agent 3 공급자와 모델을 선택하고 영향 산정을 실행할 수 있습니다."],
     draft: ["Agent 3", "승인·협의 탭에서 협의안을 생성할 Agent 3 공급자와 모델을 선택하고 실행할 수 있습니다."],
   };
   const [agent, description] = guides[state.tab] || guides.original;
-  return `<div class="notice"><strong>독립 테스트 · ${e(agent)}</strong>${e(description)}</div>`;
+  return `<div class="notice"><strong>테스트 · ${e(agent)}</strong>${e(description)}</div>`;
 }
 function detail() {
   const item = record();
@@ -186,14 +190,15 @@ function original() {
 }
 // ---- C04 범위 검토: Agent 2 실제 결과 (POST /agent2/assessments). 실행 전·조회 예시는 기존 합성 화면(scopeSample) ----
 const A1_MEMORY_STORAGE = "weave-prototype-agent1-memory-v1";
-const a1 = { result: null, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
-const a2 = { source: 'sample', useActive: false, result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'fake', model: 'gemini-2.5-flash-lite', region: 'ap-northeast-2' };
+const a1 = { result: null, sourceInput: null, pending: false, error: null, generation: 0, provider: 'openai', model: 'gpt-6-luna', region: 'ap-northeast-2' };
+const a2 = { inputSource: 'agent1', useActive: false, result: null, sourceInput: null, review: null, choices: {}, pending: false, error: null, generation: 0, provider: 'openai', model: 'gpt-6-luna', region: 'ap-northeast-2' };
 let a1Memory = {};
 try { a1Memory = JSON.parse(sessionStorage.getItem(A1_MEMORY_STORAGE) || "{}") || {}; } catch { a1Memory = {}; }
 function rememberA1Case(caseId = activeCase) {
   if (!caseId) return;
   a1Memory[caseId] = {
     result: a1.result ? structuredClone(a1.result) : null,
+    sourceInput: a1.sourceInput ? structuredClone(a1.sourceInput) : null,
     error: a1.error ? structuredClone(a1.error) : null,
     provider: a1.provider,
     model: a1.model,
@@ -205,11 +210,9 @@ function restoreA1Case(caseId) {
   const saved = a1Memory[caseId];
   if (!saved) return;
   a1.result = saved.result ? structuredClone(saved.result) : null;
+  a1.sourceInput = saved.sourceInput ? structuredClone(saved.sourceInput) : null;
   a1.pending = false;
   a1.error = saved.error ? structuredClone(saved.error) : null;
-  if (saved.provider) a1.provider = saved.provider;
-  if (saved.model) a1.model = saved.model;
-  if (saved.region) a1.region = saved.region;
 }
 function agentSettings(name, data) {
   if (!lab.enabled) return '<div class="notice">공급자를 선택하려면 서버를 <code>python prototype/run_demo.py --lab</code>로 실행하세요.</div>';
@@ -220,14 +223,13 @@ async function runAgent1() {
   const caseId = activeCase, generation = ++a1.generation;
   const input = structuredClone(agent1Inputs[caseId]);
   const config = { provider: a1.provider, model: a1.model, region: a1.region };
-  a1.pending = true; a1.error = null; a1.result = null;
-  if (a2.source === 'agent1') { a2.generation++; a2.result = null; a2.sourceInput = null; a2.choices = {}; a2.pending = false; invalidateLiveReview(); }
-  render();
+  if (a2.inputSource === 'agent1') resetAgent2Result();
+  a1.pending = true; a1.error = null; a1.result = null; a1.sourceInput = null; render();
   try {
     const result = await agent1.run(input, config);
     if (a1.generation !== generation || activeCase !== caseId) return;
     if (result.context?.case_id !== caseId || result.context?.project_id !== input.context.project_id) throw new Error('다른 요청의 Agent 1 결과가 반환되었습니다.');
-    a1.result = result; rememberA1Case(caseId); toast('Agent 1 요청 항목화 결과를 받았습니다.');
+    a1.result = result; a1.sourceInput = input; rememberA1Case(caseId); toast('Agent 1 요청 항목화 결과를 받았습니다.');
   } catch (error) { if (a1.generation === generation && activeCase === caseId) { a1.error = { status: error.status || 0, message: error.message }; rememberA1Case(caseId); } }
   finally { if (a1.generation === generation && activeCase === caseId) { a1.pending = false; rememberA1Case(caseId); render(); } }
 }
@@ -244,29 +246,41 @@ const A2_LEVEL = { strong: "강", medium: "중", none: "근거 없음", interpre
 const A2_ROLE = { basis: "직접 근거", policy: "절차·원칙", superseding: "우선 문서", context: "참고" };
 const DOC_NAME = { CTR: "계약서", SOW: "과업지시서", FSP: "기능명세서", QUO: "견적서", CO: "변경합의서" };
 const docName = id => kbDoc(id)?.title || DOC_NAME[String(id).split("-")[0]] || "문서";
-// 서버 오케스트레이션(engine.py)과 같은 규칙: 기능 항목 → items, 제약·기한·의존 → constraints, 견적 질문은 넘기지 않는다.
-// PM 항목 확인(pm_items) 단계는 아직 화면에 없어 Agent 1 결과를 그대로 쓴다.
-function agent2InputFromAgent1() {
-  const out = a1.result, source = agent1Inputs?.[activeCase];
-  if (!out || a1.pending || !source) throw new Error("요청 원문 탭에서 Agent 1을 먼저 실행해 주세요.");
-  if (out.context?.case_id !== activeCase) throw new Error("현재 요청과 일치하는 Agent 1 결과가 필요합니다.");
-  if (out.status === "NEEDS_INPUT") throw new Error("Agent 1이 추가 정보를 요청했습니다. 질문을 해결한 뒤 실행해 주세요.");
-  const items = out.items.filter(item => item.item_type === "function");
-  if (!items.length) throw new Error("Agent 1 결과에 기능 항목이 없어 범위 판단할 것이 없습니다.");
-  return { context: structuredClone(out.context), message_text: source.message_text, a1_result_id: out.meta?.result_id || null,
-    items: structuredClone(items), constraints: structuredClone(out.items.filter(item => ["constraint", "deadline", "dependency"].includes(item.item_type))), answers: [] };
+function resetAgent2Result() {
+  a2.generation++; a2.pending = false; a2.result = null; a2.sourceInput = null;
+  a2.review = null; a2.choices = {}; a2.error = null;
+  if (state.inputSource === "agent2") { state.inputText = ""; if (state.view) state.invalidated = true; persist(); }
 }
-function switchAgent2Source(source) {
-  if (!["sample", "agent1"].includes(source) || a2.pending || a2.source === source) return;
-  a2.source = source; a2.generation++; a2.result = null; a2.sourceInput = null; a2.choices = {}; a2.error = null;
-  invalidateLiveReview(); render();
+function selectAgent2Input(source) {
+  if (!['sample', 'agent1'].includes(source) || source === a2.inputSource || a2.pending) return;
+  resetAgent2Result(); a2.inputSource = source; render();
+}
+function agent1ToAgent2Input() {
+  const out = a1.result, source = a1.sourceInput, current = agent1Inputs?.[activeCase];
+  if (a1.pending || !out || !source || !current) throw new Error('먼저 요청 원문 탭에서 Agent 1을 실행해 주세요.');
+  if (JSON.stringify(source) !== JSON.stringify(current) || JSON.stringify(out.context) !== JSON.stringify(source.context) || source.context?.case_id !== activeCase) throw new Error('현재 요청과 Agent 1 결과가 다릅니다. Agent 1을 다시 실행해 주세요.');
+  if (out.status !== 'READY' || (out.questions || []).some(q => q.blocking && ['open', 'answered'].includes(q.status))) throw new Error('Agent 1의 필수 확인 사항을 해결한 뒤 다시 실행해 주세요.');
+  if (!out.meta?.result_id) throw new Error('Agent 1 결과 ID가 없습니다. 다시 실행해 주세요.');
+  const baseline = availableBaselines.find(b => b.id === source.context.baseline_id && b.project_id === source.context.project_id && b.as_of === source.context.baseline_as_of);
+  if (!baseline) throw new Error('이 프로젝트의 유효한 기준선을 확인할 수 없습니다. 등록된 기준선으로 다시 시작해 주세요.');
+  const items = (out.items || []).filter(x => x.item_type === 'function');
+  if (!items.length) throw new Error('범위 판단할 기능 항목이 없습니다. Agent 1 항목을 확인해 주세요.');
+  if (new Set(items.map(x => x.item_id)).size !== items.length || items.some(x => x.case_id !== activeCase)) throw new Error('Agent 1 항목의 요청 ID를 확인해 주세요.');
+  return { context: structuredClone(source.context), message_text: source.message_text, a1_result_id: out.meta.result_id,
+    items: structuredClone(items), constraints: structuredClone((out.items || []).filter(x => ['constraint', 'deadline', 'dependency'].includes(x.item_type))), answers: structuredClone(source.answers || []) };
+}
+function selectedAgent2Input() {
+  if (a2.inputSource === 'agent1') return agent1ToAgent2Input();
+  if (!agent2Input) throw new Error('이 요청에는 기존 샘플 입력이 없습니다. Agent 1 실행 결과를 선택해 주세요.');
+  return structuredClone(agent2Input);
 }
 async function runAgent2() {
   if (a2.pending) return;
   let input;
-  try { input = a2.source === "agent1" ? agent2InputFromAgent1() : structuredClone(agent2Input); }
-  catch (error) { a2.error = { status: 0, message: error.message }; render(); return; }
-  if (!input) return;
+  try {
+    input = selectedAgent2Input();
+    if (a2.inputSource === 'agent1' && (!lab.enabled || a2.provider === 'fake')) throw new Error('Agent 1 결과를 분석하려면 Gemini·GPT·Bedrock을 선택해 주세요. 가상 응답은 저장된 샘플입니다.');
+  } catch (error) { a2.error = { status: 0, message: error.message }; render(); return; }
   const active = a2.useActive ? kbBaselineState(input.context)?.active : null;
   if (active && active.baseline_id !== input.context.baseline_id) input.context = { ...input.context, baseline_id: active.baseline_id, baseline_as_of: active.as_of };
   const caseId = activeCase, generation = ++a2.generation;
@@ -275,7 +289,9 @@ async function runAgent2() {
     const config = lab.enabled ? { provider: a2.provider, model: a2.model, region: a2.region } : null;
     const result = await agent2.assess(input, config);
     if (a2.generation !== generation || activeCase !== caseId) return;
-    if (result.context?.case_id !== caseId || result.context?.project_id !== input.context.project_id) throw new Error("다른 요청의 Agent 2 결과가 반환되었습니다.");
+    if (JSON.stringify(result.context) !== JSON.stringify(input.context)) throw new Error("다른 요청 또는 기준선의 Agent 2 결과가 반환되었습니다.");
+    const ids = input.items.map(x => x.item_id), assessed = (result.assessments || []).map(x => x.item_id);
+    if (ids.length !== assessed.length || new Set(assessed).size !== ids.length || assessed.some(id => !ids.includes(id))) throw new Error('Agent 2 결과 항목이 전달한 입력과 일치하지 않습니다.');
     a2.result = result; a2.sourceInput = input; a2.review = null; a2.choices = {}; state.selectedItem = 0; toast("Agent 2 범위 판단 결과를 받았습니다.");
   }
   catch (error) { if (a2.generation === generation && activeCase === caseId) a2.error = { status: error instanceof ApiError ? error.status : 0, message: error.message }; }
@@ -283,19 +299,19 @@ async function runAgent2() {
 }
 function agent2Bar() {
   const label = a2.pending ? "범위 판단 중… (최대 1~2분)" : a2.result ? "다시 실행" : "AI 범위 판단 실행";
-  const status = a2.result ? `${chip(a2.result.status === "NEEDS_INPUT" ? "추가 정보 필요" : "PM 검토 대기", a2.result.status === "NEEDS_INPUT" ? "warning" : "info")}<span class="tiny">결과 ${e(a2.result.meta.result_id)} · ${e(a2.result.meta.model || a2.result.meta.agent_version || "서버 설정 확인")}</span>` : '<span class="muted">아래는 실행 전 합성 결과입니다. 실행 방식은 서버의 Agent 2 설정에 따릅니다.</span>';
+  const status = a2.result ? `${chip(a2.result.status === "NEEDS_INPUT" ? "추가 정보 필요" : "PM 검토 대기", a2.result.status === "NEEDS_INPUT" ? "warning" : "info")}<span class="tiny">결과 ${e(a2.result.meta.result_id)} · ${e(a2.result.meta.model || a2.result.meta.agent_version || "서버 설정 확인")}</span>` : '<span class="muted">입력을 선택하고 내용을 확인한 뒤 범위 판단을 실행하세요.</span>';
   const failure = a2.error ? `<div class="notice inline"><strong>Agent 2 실행 실패${a2.error.status ? ` (HTTP ${a2.error.status})` : ""}</strong>${e(a2.error.message)}</div>` : "";
-  const sources = [["sample", "저장된 입력"], ["agent1", "Agent 1 실행 결과"]].map(([v, l]) => `<label class="check"><input type="radio" name="a2-source" value="${v}" ${a2.source === v ? "checked" : ""} ${a2.pending ? "disabled" : ""}>${l}</label>`).join("");
-  const sourceNote = a2.source === "agent1" ? `<p class="caption">${a1.result ? `Agent 1 결과 ${e(a1.result.meta?.result_id || "")}의 기능 항목을 PM 항목 확인 없이 그대로 사용합니다 (테스트용).` : "요청 원문 탭에서 Agent 1을 먼저 실행해 주세요."}</p>` : "";
-  const ready = a2.source === "agent1" ? !!a1.result && !a1.pending : !!agent2Input;
-  return `${agentSettings('a2', a2)}${baselineBanner()}<section class="card"><h2>Agent 2 입력 출처</h2><div class="button-group">${sources}</div>${sourceNote}</section><div class="baseline">${icon("2b0e7")}<strong>Agent 2 범위 판단</strong>${status}${button(label, "run-a2", { class: "primary small", icon: "a1cb9", disabled: a2.pending || !ready })}</div>${failure}`;
+  let input, why = '';
+  try { input = selectedAgent2Input(); } catch (error) { why = error.message; }
+  const preview = input ? `<div class="input-preview-grid"><section class="input-preview-panel"><div class="input-preview-label">범위 판단 대상 · ${input.items.length}건</div>${input.items.map(x => `<div class="input-preview-item"><strong>${e(x.display_no)} · ${e(x.text)}</strong></div>`).join('')}</section><section class="input-preview-panel"><div class="input-preview-label">판단 기준선 · 일정과 제약</div><p>${e(input.context.baseline_id || '미선택')} · ${e(input.context.baseline_as_of || '날짜 없음')}</p>${(input.constraints || []).map(x => `<p>${e(x.text)}</p>`).join('') || '<p>전달된 일정·제약 없음</p>'}</section></div>` : `<p class="input-preview-muted">${e(why)}</p>`;
+  const choice = `<section class="card"><h2>범위 판단 입력 선택</h2><fieldset class="field"><legend>입력 출처</legend><div class="button-group">${[['sample','기존 샘플 입력'],['agent1','Agent 1 실행 결과']].map(([v,l]) => `<label class="check"><input type="radio" name="a2-input-source" value="${v}" ${a2.inputSource === v ? 'checked' : ''} ${a2.pending ? 'disabled' : ''}>${l}</label>`).join('')}</div></fieldset><p class="caption">선택한 입력을 확인하고 Agent 2를 실행합니다. Agent 1 결과는 항목 검토 후 사용해 주세요.</p>${preview}${a2.inputSource === 'agent1' ? '<p class="tiny">가상 응답은 이 결과를 분석하지 않습니다. Gemini·GPT·Bedrock 중 하나를 선택하세요.</p>' : ''}</section>`;
+  return `${choice}${agentSettings('a2', a2)}${baselineBanner()}<div class="baseline">${icon("2b0e7")}<strong>Agent 2 범위 판단</strong>${status}${button(label, "run-a2", { class: "primary small", icon: "a1cb9", disabled: a2.pending })}</div>${failure}`;
 }
 function scope() {
   if (!record().api) return scopeSample();
-  if (!a2.result) return agent2Bar() + (record().datasetSample ? datasetScope() : scopeSample());
+  if (!a2.result) return agent2Bar() + (a2.inputSource === "sample" && agent2Input ? (record().datasetSample ? datasetScope() : scopeSample()) : "");
   const out = a2.result, rows = out.assessments;
-  const used = a2.sourceInput || agent2Input;
-  const meta = Object.fromEntries([...(used.items || []), ...(used.constraints || [])].map(item => [item.item_id, item]));
+  const meta = Object.fromEntries([...(a2.sourceInput.items || []), ...(a2.sourceInput.constraints || [])].map(item => [item.item_id, item]));
   state.selectedItem = Math.min(state.selectedItem, Math.max(rows.length - 1, 0));
   const sel = rows[state.selectedItem];
   if (!sel) return agent2Bar() + '<section class="card"><div class="empty-state"><h3>판단할 기능 항목이 없습니다.</h3></div></section>';
@@ -572,7 +588,7 @@ function kbReset() {
 }
 function baselineBanner() {
   if (!lab.enabled) return "";
-  const ctx = a2.source === "agent1" ? a1.result?.context : agent2Input?.context;
+  const ctx = (a2.inputSource === "agent1" ? (a1.sourceInput || agent1Inputs?.[activeCase])?.context : null) || agent2Input?.context;
   const info = kbBaselineState(ctx);
   if (!info?.current) return "";
   const { current, active } = info, link = button("기준 문서 보기", "projects", { class: "small", icon: "ec151" });
@@ -691,7 +707,7 @@ async function restore() {
   try { saved = JSON.parse(sessionStorage.getItem(STORAGE) || "null"); } catch { return; }
   if (!saved?.sessionId || typeof saved.inputText !== "string") return;
   try { if (JSON.parse(saved.inputText)?.context?.case_id !== baseInput.context.case_id) return; } catch { return; }
-  if (lab.enabled && saved.labSettings) { Object.assign(lab, saved.labSettings); if (lab.provider === "local") { lab.provider = "fake"; saved.invalidated = true; } }
+  if (lab.enabled && saved.labSettings && saved.labSettings.provider !== lab.provider) saved.invalidated = true;
   state.inputSource = saved.inputSource === "agent2" ? "agent2" : "sample"; state.sampleInputText = saved.sampleInputText || JSON.stringify(baseInput, null, 2); state.inputText = saved.inputText; state.signature = saved.signature; state.originalLines = Array.isArray(saved.originalLines) ? saved.originalLines : [];
   // v1 sessions stored the successful request as signature, separately from editable inputText.
   try { state.submittedInput = structuredClone(saved.submittedInput || JSON.parse(saved.signature)); } catch { state.submittedInput = null; }
@@ -758,8 +774,8 @@ root.addEventListener("input", event => {
     const key = { "registration-project": "project_id", "registration-project-name": "project_name", "registration-case": "case_id", "registration-channel": "channel", "registration-channel-src": "channel_src", "registration-received": "received_at", "registration-sender-role": "sender_role", "registration-sender-name": "sender_name", "registration-subject": "subject", "registration-message": "message_text" }[target.id];
     if (key) state.registration[key] = target.value;
   }
-  if (target.id === "a1-model") { a1.model = target.value; a1.result = null; a1.error = null; rememberA1Case(activeCase); }
-  if (target.id === "a1-region") { a1.region = target.value; a1.result = null; a1.error = null; rememberA1Case(activeCase); }
+  if (target.id === "a1-model") { a1.model = target.value; a1.error = null; rememberA1Case(activeCase); }
+  if (target.id === "a1-region") { a1.region = target.value; a1.error = null; rememberA1Case(activeCase); }
   if (target.id === "a2-model") { a2.model = target.value; a2.result = null; invalidateLiveReview(); }
   if (target.id === "a2-region") { a2.region = target.value; a2.result = null; invalidateLiveReview(); }
   if (target.id === "input-json" && state.inputSource === "sample") { state.inputText = target.value; state.sampleInputText = target.value; updateFormControls(); }
@@ -776,6 +792,9 @@ root.addEventListener("compositionend", event => { if (event.target.id === "requ
 root.addEventListener("change", async event => {
   const target = event.target;
   if (target.id === "registration-channel") state.registration.channel = target.value;
+  if (target.id === "registration-project") { state.registration.baseline_id = ""; render(); }
+  if (target.id === "registration-baseline") state.registration.baseline_id = target.value;
+  if (target.name === "a2-input-source") selectAgent2Input(target.value);
   if (target.dataset.editRole) { const [i,j] = target.dataset.editRole.split(":").map(Number); state.edits[i].lines[j].role = target.value; render(); }
   if (target.name === "input-source") switchInputSource(target.value);
   if (target.id === "input-json" && state.inputSource === "sample") render();
@@ -783,19 +802,18 @@ root.addEventListener("change", async event => {
   if (target.dataset.pmEstimate) { const c = a2.choices[target.dataset.pmEstimate] || (a2.choices[target.dataset.pmEstimate] = {}); c.estimate = target.checked; invalidateLiveReview(); render(); }
   if (target.id === "draft-provider") { draftLab.provider = target.value; draftLab.model = defaultModel(target.value); render(); }
   if (target.name === "lab-provider") { if (state.view && state.mode === "api") { state.invalidated = true; persist(); } lab.provider = target.value; lab.model = defaultModel(target.value); render(); }
-  if (target.name === "a2-source") switchAgent2Source(target.value);
+  if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.error = null; if (agent === a1) rememberA1Case(activeCase); if (agent === a2) resetAgent2Result(); render(); }
   if (target.id === "kb-file") { kb.file = target.files?.[0] || null; kb.last = null; render(); }
   if (target.id === "kb-doc-type") kb.docType = target.value;
   if (target.dataset.kbInclude) { const set = kbSelection(); target.checked ? set.add(target.dataset.kbInclude) : set.delete(target.dataset.kbInclude); render(); }
   if (target.id === "a2-use-active") { a2.useActive = target.checked; a2.result = null; a2.error = null; invalidateLiveReview(); render(); }
-  if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.result = null; agent.error = null; if (agent === a1) rememberA1Case(activeCase); if (agent === a2) invalidateLiveReview(); render(); }
   if (target.id === "scope-filter") { state.filter = target.value; state.pageNo = 1; render(); }
   if (target.id === "project-filter") { state.project = target.value; state.pageNo = 1; render(); }
   if (target.id === "sort") { state.order = target.value; state.pageNo = 1; render(); }
   if (target.id === "ack-schedule") { state.ack = target.checked; updateFormControls(); }
   if (target.id === "scenario") { state.scenario = target.value; state.inputText = JSON.stringify(scenarioInput(baseInput, state.scenario), null, 2); state.sampleInputText = state.inputText; render(); }
   if (target.id === "mode") {
-    state.mode = target.value; state.view = null; state.edits = null; state.submittedInput = null; state.signature = null; state.error = null; state.conflicted = false; state.invalidated = false; state.scenario = "normal"; state.inputSource = "sample"; state.inputText = JSON.stringify(baseInput, null, 2); state.sampleInputText = state.inputText; render();
+    state.mode = target.value; state.view = null; state.edits = null; state.submittedInput = null; state.signature = null; state.error = null; state.conflicted = false; state.invalidated = false; state.scenario = "normal"; state.inputSource = "agent2"; state.sampleInputText = JSON.stringify(baseInput, null, 2); state.inputText = ""; render();
     if (state.mode === "api") await restore();
   }
 });
@@ -808,7 +826,7 @@ try {
   const [inputResponse, previewResponse, sampleResponse] = await Promise.all([fetch(new URL("./data/agent3-input.json?v=common-rate-2", import.meta.url)), fetch(new URL("./data/agent3-preview.json", import.meta.url)), fetch(new URL("./data/agent3-samples.json?v=common-rate-2", import.meta.url))]);
   if (!inputResponse.ok || !previewResponse.ok || !sampleResponse.ok) throw new Error("합성 입력 파일을 불러오지 못했습니다.");
   baseInput = await inputResponse.json(); samples = await sampleResponse.json(); samples.inputs["CR-A-001"] = baseInput; previewClient = new MockPreview(await previewResponse.json()); state.inputText = JSON.stringify(baseInput, null, 2);
-  try { const response = await fetch("/prototype-lab/defaults"); if (response.ok) { const defaults = await response.json(); if (defaults.fake_response && defaults.model) { lab.enabled = true; api.lab = true; lab.defaultFake = defaults.fake_response; lab.fakeText = JSON.stringify(defaults.fake_response, null, 2); lab.model = defaults.model; if (defaults.default_models) Object.assign(defaultModels, defaults.default_models); } } } catch { /* Ordinary server retains the existing API mode. */ }
+  try { const response = await fetch("/prototype-lab/defaults"); if (response.ok) { const defaults = await response.json(); if (defaults.fake_response && defaults.model) { lab.enabled = true; api.lab = true; lab.defaultFake = defaults.fake_response; lab.fakeText = JSON.stringify(defaults.fake_response, null, 2); if (defaults.default_models) Object.assign(defaultModels, defaults.default_models); lab.model = defaultModel(lab.provider); try { const response = await fetch("/prototype-lab/baselines"); const data = await response.json(); if (response.ok && Array.isArray(data)) availableBaselines = data; } catch { /* 기준선이 없으면 Agent 1 연결을 차단한다. */ } } } } catch { /* Ordinary server retains the existing API mode. */ }
   try { const a2Response = await fetch(new URL("./data/agent2-inputs.json", import.meta.url)); if (a2Response.ok) agent2Inputs = await a2Response.json(); }
   catch { /* Agent 2 입력이 없어도 나머지 화면은 동작한다 (실행 버튼만 비활성). */ }
   try { const a1Response = await fetch(new URL("./data/agent1-inputs.json", import.meta.url)); if (a1Response.ok) agent1Inputs = await a1Response.json(); }
