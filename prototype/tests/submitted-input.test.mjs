@@ -9,6 +9,7 @@ const appUrl = new URL('../app.js', import.meta.url);
 const input = JSON.parse(await readFile(new URL('../data/agent3-input.json', import.meta.url), 'utf8'));
 const response = JSON.parse(await readFile(new URL('../data/agent3-preview.json', import.meta.url), 'utf8'));
 const appSource = await readFile(appUrl, 'utf8');
+const analysisSource = await readFile(new URL('../analysis-demo.js', import.meta.url), 'utf8');
 const fixtureSource = await readFile(new URL('../fixtures.js', import.meta.url), 'utf8');
 const requestSamplesSource = await readFile(new URL('../data/request-samples.js', import.meta.url), 'utf8');
 const samples = JSON.parse(await readFile(new URL('../data/agent3-samples.json', import.meta.url), 'utf8'));
@@ -32,7 +33,7 @@ async function boot(options = {}) {
   const context = vm.createContext({
     structuredClone, URL, console, setTimeout, clearTimeout, crypto: webcrypto,
     document: { activeElement: null, querySelector() { return node; } },
-    location: { hash: '' }, window: { addEventListener() {}, scrollTo() {} },
+    location: { hash: options.hash ?? '#/request/CR-A-001/impact' }, window: { addEventListener() {}, scrollTo() {} },
     sessionStorage: { getItem: key => store.get(key) || null, setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key) },
     fetch: async url => {
       const path = String(url);
@@ -52,12 +53,14 @@ async function boot(options = {}) {
     this.setExport('MockPreview', class { constructor() {} });
   }, { context });
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
+  const analysisModule = new vm.SourceTextModule(analysisSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { analysisDemo, route, detail, state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
     if (specifier === './api.js') return transport;
+    if (specifier === './analysis-demo.js') return analysisModule;
     if (specifier.split('?')[0] === './fixtures.js') return fixtures;
     if (specifier === './data/request-samples.js') return requestSamples;
     throw new Error(`Unexpected module: ${specifier}`);
@@ -67,6 +70,24 @@ async function boot(options = {}) {
 }
 
 function saved(store) { return JSON.parse(store.get(storageKey)); }
+
+test('integrated preview loads the existing agent screens and never runs model APIs', async t => {
+  const s={id:'CR-UI-TEST1234',text:'고객 원문 테스트',items:['고객 원문 테스트'],created:'2026-11-03T09:00:00Z',events:[],provider:'local',step:6,ready:true,approved:false,answer:'기존 기능 사용',md:6.5,price:4250000};
+  const store=new Map([['weave-analysis-preview-v1',JSON.stringify([s])]]);
+  let calls=0;
+  const app=await boot({store,hash:`#/request/${s.id}/original`,callbacks:{agent1:()=>{calls++;},assess:()=>{calls++;},prepare:()=>{calls++;}}});
+  t.after(app.cleanup);
+  assert.match(app.detail(),/1\. 요청 원문 입력/);
+  assert.match(app.detail(),/2\. Agent 1 항목화 결과/);
+  assert.match(app.detail(),/로컬 LLM/);
+  app.state.tab='scope'; assert.match(app.detail(),/항목별 범위 판단/);
+  app.state.tab='impact'; assert.match(app.detail(),/작업 분해 · 공수/);
+  app.state.tab='draft'; assert.match(app.detail(),/고객 전달용 협의 메일 초안/);
+  assert.match(app.detail(),/변경합의서 초안/);
+  await app.runAgent1(); await app.runAgent2(); await app.prepare();
+  assert.equal(calls,0);
+  assert.equal(store.has(storageKey),false);
+});
 
 test('fresh session defaults to GPT and the previous agent results', async t => {
   const app = await boot({ labDefaults: { model: 'fake-ui-demo', fake_response: {} } });
