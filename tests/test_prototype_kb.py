@@ -123,3 +123,51 @@ def test_formless_pdf_reports_failure_and_is_not_added(lab, pg):
                   json={"filename": "x.pdf", "doc_type": "sow", "content_base64": base64.b64encode(b"not a pdf").decode()})
     assert up.json()["result"]["errorCode"] == "EXTRACT_FAILED" and up.json()["document"] is None
     assert not any(d.get("version") == "lab" for d in loader.documents().values())
+
+
+def test_evidence_source_lines_mark_the_quoted_range_with_context():
+    from prototype.lab import router
+    app = FastAPI()
+    app.include_router(router)
+    url = "/prototype-lab/kb/documents/SOW-A-001-v1.0/lines"
+    with TestClient(app) as client:
+        body = client.get(url, params={"page": 1, "start": 44, "end": 46}).json()
+        assert [line["no"] for line in body["lines"]] == list(range(41, 50))
+        assert [line["no"] for line in body["lines"] if line["hit"]] == [44, 45, 46]
+        assert "최초 제외 기능" in body["lines"][3]["text"]
+        assert client.get(url, params={"page": 1, "start": 1, "end": 1, "context": 0}).json()["lines"][0]["no"] == 1
+        assert client.get(url, params={"page": 9, "start": 1, "end": 1}).status_code == 422
+        assert client.get(url, params={"page": 1, "start": 46, "end": 44}).status_code == 422
+        assert client.get("/prototype-lab/kb/documents/NOPE/lines", params={"page": 1, "start": 1, "end": 1}).status_code == 404
+
+
+def _lab_doc(project_id: str, doc_id: str, doc_type: str) -> dict:
+    return {"doc_id": doc_id, "project_id": project_id, "doc_type": doc_type, "version": "lab", "title": doc_id}
+
+
+def test_new_project_is_draft_until_first_baseline_with_contract_or_sow(lab):
+    from prototype import kb_routes
+    base = "/prototype-lab/kb/projects"
+    assert lab.post(base, json={"project_id": "p-new", "name": "x"}).status_code == 422
+    assert lab.post(base, json={"project_id": "P-COM-101", "name": "중복"}).status_code == 409
+    assert lab.post(base, json={"project_id": "P-NEW-1", "name": "신규"}).status_code == 200
+    p = next(p for p in lab.get(base).json()["projects"] if p["project_id"] == "P-NEW-1")
+    assert p["draft"] and p["name"] == "신규" and p["documents"] == [] and p["active_baseline_id"] is None
+    # 작성 중 프로젝트에도 업로드할 수 있다 (vector-db가 없으면 409, 알 수 없는 프로젝트 404가 아니다)
+    up = lab.post(f"{base}/P-NEW-1/documents", json={"filename": "a.pdf", "doc_type": "sow", "content_base64": base64.b64encode(b"x").decode()})
+    assert up.status_code == 409
+
+    data = kb_routes._load()
+    data["documents"] += [_lab_doc("P-NEW-1", "q", "quote"), _lab_doc("P-NEW-1", "co", "change_order"), _lab_doc("P-NEW-1", "s", "sow")]
+    kb_routes._save(data)
+    assert lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["q"]}).status_code == 422          # 계약서·과업지시서 없음
+    assert lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["s", "co"]}).status_code == 422    # 변경합의서는 나중에
+    assert lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["s"], "as_of": "2999-01-01"}).status_code == 422
+    first = lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["s", "q"], "as_of": "2026-09-01"}).json()
+    assert first["baseline_id"] == "P-NEW-1:BL-1" and first["as_of"] == "2026-09-01" and first["supersedes"] is None
+    p = next(p for p in lab.get(base).json()["projects"] if p["project_id"] == "P-NEW-1")
+    assert not p["draft"] and p["active_baseline_id"] == "P-NEW-1:BL-1"
+    assert lab.post(base, json={"project_id": "P-NEW-1", "name": "다시"}).status_code == 409
+    # 이후 기준선은 변경합의서를 넣을 수 있고 기준일은 오늘이다
+    assert lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["s"], "as_of": "2026-09-02"}).status_code == 422
+    assert lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["s", "q", "co"]}).json()["supersedes"] == "P-NEW-1:BL-1"

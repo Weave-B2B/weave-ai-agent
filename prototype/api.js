@@ -128,6 +128,8 @@ export class KbApi {
   projects() { return this.request("/projects"); }
   upload(projectId, body) { return this.request(`/projects/${encodeURIComponent(projectId)}/documents`, { method: "POST", body: JSON.stringify(body) }, 180000); }
   remove(docId) { return this.request(`/documents/${encodeURIComponent(docId)}`, { method: "DELETE" }); }
-  createBaseline(projectId, documentIds) { return this.request(`/projects/${encodeURIComponent(projectId)}/baselines`, { method: "POST", body: JSON.stringify({ document_ids: documentIds }) }); }
+  createBaseline(projectId, documentIds, asOf = null) { return this.request(`/projects/${encodeURIComponent(projectId)}/baselines`, { method: "POST", body: JSON.stringify({ document_ids: documentIds, ...(asOf ? { as_of: asOf } : {}) }) }); }
+  createProject(projectId, name) { return this.request("/projects", { method: "POST", body: JSON.stringify({ project_id: projectId, name }) }); }
   reset() { return this.request("/reset", { method: "POST" }); }
+  lines(docId, page, start, end) { return this.request(`/documents/${encodeURIComponent(docId)}/lines?${new URLSearchParams({ page, start, end })}`); }
 }
