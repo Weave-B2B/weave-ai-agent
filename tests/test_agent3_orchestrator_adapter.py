@@ -7,8 +7,8 @@ from pydantic import ValidationError
 from test_agent3_agent import a3_input, a3_payload
 from app.agents.agent3.agent import LlmAgent3
 from app.agents.agent3.orchestration import Agent3Orchestration
-from app.agents.agent3.supervisor_adapter import (
-    Agent3CaseSnapshot, Agent3SupervisorAdapter, tool_schemas,
+from app.agents.agent3.orchestrator_adapter import (
+    Agent3CaseSnapshot, Agent3OrchestratorAdapter, tool_schemas,
 )
 from app.agents.agent3.workflow import FAKE_EMAIL, WorkflowConflict
 from app.llm.fake import FakeLlm
@@ -60,7 +60,7 @@ def host(a3_input):
 def adapter(host, a3_payload):
     model = FakeLlm([copy.deepcopy(a3_payload)] * 20)
     prose = FakeLlm([copy.deepcopy(FAKE_EMAIL)] * 20)
-    return Agent3SupervisorAdapter(host, lambda snapshot: Agent3Orchestration(LlmAgent3(model), draft_llm=prose))
+    return Agent3OrchestratorAdapter(host, lambda snapshot: Agent3Orchestration(LlmAgent3(model), draft_llm=prose))
 
 
 def estimate(adapter, host, op="estimate", ids=None, revision=None):
@@ -98,7 +98,7 @@ def test_id_tools_build_input_from_host_and_commit_reference(adapter, host):
     assert "context" not in tool_schemas()[0]["parameters"]["properties"]
 
 
-def test_supervisor_cannot_set_runtime_or_approve(adapter, host):
+def test_orchestrator_cannot_set_runtime_or_approve(adapter, host):
     raw = {"action": "estimate_impact", "args": {"item_ids": host.snapshot.input().target_item_ids,
         "rate_card_id": "forged"}, "reason": "test"}
     result = adapter.execute(host.snapshot.a1_input.context.case_id, 1, "bad", raw)
@@ -179,7 +179,7 @@ def test_model_error_returns_retryable_failure_without_state_change(host):
         llm = None
         def run(self, inp):
             raise AgentFailure(AgentError(code="OUTPUT_INVALID", message="invalid model coverage", stage="agent3"))
-    adapter = Agent3SupervisorAdapter(host, lambda snapshot: Agent3Orchestration(BadAgent()))
+    adapter = Agent3OrchestratorAdapter(host, lambda snapshot: Agent3Orchestration(BadAgent()))
     result = estimate(adapter, host)
     assert result.error.code == "OUTPUT_INVALID" and result.error.retryable
     assert not host.updates
@@ -237,7 +237,7 @@ def test_pm_calculation_uses_no_model_and_updates_host_rate_reference(adapter, h
 
 def test_adapter_restart_requires_explicit_full_estimation(adapter, host, a3_payload):
     estimate(adapter, host)
-    restarted = Agent3SupervisorAdapter(host, lambda snapshot: Agent3Orchestration(
+    restarted = Agent3OrchestratorAdapter(host, lambda snapshot: Agent3Orchestration(
         LlmAgent3(FakeLlm([a3_payload])), draft_llm=FakeLlm([FAKE_EMAIL])))
     assert document(restarted, host, op="restart-doc").error.code == "UPSTREAM_NOT_READY"
     assert estimate(restarted, host, op="restart-estimate").status == "ready"
@@ -266,7 +266,7 @@ def test_partial_estimate_adapter_keeps_other_item_and_reports_processed_scope(h
         return {"item_numbers": [n], "status": "draft", "lines": [{"task": f"작업 {n}", "item_numbers": [n], "role": "BE", "rule_id": rule}]}
     payloads = [{"estimates": [row(1), row(2)], "questions": []}, {"estimates": [row(1)], "questions": []}]
     model = FakeLlm(payloads)
-    adapter = Agent3SupervisorAdapter(host, lambda snapshot: Agent3Orchestration(LlmAgent3(model)))
+    adapter = Agent3OrchestratorAdapter(host, lambda snapshot: Agent3Orchestration(LlmAgent3(model)))
     assert estimate(adapter, host).status == "ready"
     untouched = copy.deepcopy(host.updates[-1].view["impact"]["estimates"][1])
     host.advance()
@@ -285,7 +285,7 @@ def test_rechecked_question_resolution_is_reported_to_host(host, a3_payload):
     first["questions"] = [{"item_numbers": [1], "field": "storage", "text": "저장 조건을 확인해 주세요.",
         "reason": "필수 확인", "target": "client", "blocking": True}]
     model = FakeLlm([first, a3_payload])
-    adapter = Agent3SupervisorAdapter(host, lambda snapshot: Agent3Orchestration(LlmAgent3(model)))
+    adapter = Agent3OrchestratorAdapter(host, lambda snapshot: Agent3Orchestration(LlmAgent3(model)))
     assert estimate(adapter, host).status == "needs_input"
     question_id = host.updates[-1].active_questions[0].question_id
     host.advance()

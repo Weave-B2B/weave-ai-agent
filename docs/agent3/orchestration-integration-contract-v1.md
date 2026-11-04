@@ -3,40 +3,40 @@
 - 작성일: 2026-11-04
 - 계약 식별자: `a3-orchestration/1.0.0-draft`
 - 상태: **Agent 3 측 제안. 팀 공통 규격으로 확정되지 않았음.**
-- 범위: 슈퍼바이저 ↔ 공통 실행 서버 ↔ Agent 3 도구. Agent 1·2 내부 구현을 변경하는 계약은 아니다.
+- 범위: 오케스트레이터 에이전트 ↔ 공통 실행 서버 ↔ Agent 3 도구. Agent 1·2 내부 구현을 변경하는 계약은 아니다.
 - 기준: [통합 분석 설계 4·6장](../prototype/integrated-request-analysis-plan.md), [현재 Agent 3 서비스·API](orchestration-tools.md).
 
 ## 용어 정의
 
 - **멀티에이전트 오케스트레이션(Multi-agent orchestration)**: 여러 에이전트의 실행·상태·상호작용을 조율하는 전체 구조와 과정.
-- **슈퍼바이저 에이전트(Supervisor agent)**: 대화·실행 문맥과 중간 결과를 보고 다음에 호출할 전문 에이전트·도구를 선택하고, 반환 결과를 종합하는 중앙 에이전트. 이 문서의 조율 주체를 뜻한다.
-- **패턴: Supervisor pattern / Agents as tools**: 전문 에이전트를 슈퍼바이저가 호출하는 도구로 노출한다. OpenAI 문서의 Manager pattern도 이 중앙 조율 구조를 가리킨다. 프레임워크별 표현 차이이며 하나의 독점적인 표준 명칭은 아니다.
-- **공통 실행 서버**: 슈퍼바이저의 선택을 검증하고 상태·버전·권한·실제 호출을 관리하는 런타임. LLM 에이전트와 구분한다.
+- **오케스트레이터 에이전트(Orchestrator agent)**: 대화·실행 문맥과 중간 결과를 보고 다음에 호출할 전문 에이전트·도구를 선택하고, 반환 결과를 종합하는 중앙 에이전트. 이 문서의 조율 주체를 뜻한다. 이 문서에서는 오케스트레이터 에이전트로 통일하며, 업계의 유일한 표준 명칭이라는 뜻은 아니다.
+- **패턴: 중앙 조율형 / Agents as Tools**: 전문 에이전트를 오케스트레이터 에이전트가 호출하는 도구로 노출한다. 프레임워크별 표현 차이이며 하나의 독점적인 표준 명칭은 아니다.
+- **공통 실행 서버**: 오케스트레이터 에이전트의 선택을 검증하고 상태·버전·권한·실제 호출을 관리하는 런타임. LLM 에이전트와 구분한다.
 
-현재 설계는 한 번 분류해서 전달하는 Router보다, 결과를 보고 재조사·재산정·질문·종료를 반복 선택하는 Supervisor 패턴에 해당한다. 문서에서 ‘오케스트레이터’라는 넓은 표현 대신 의사결정 AI에는 ‘슈퍼바이저 에이전트’를 사용한다.
+현재 설계는 한 번 분류해서 전달하는 Router보다, 결과를 보고 재조사·재산정·질문·종료를 반복 선택하는 중앙 조율형 패턴에 해당한다. 의사결정 AI는 ‘오케스트레이터 에이전트’, 전체 조율 구조는 ‘멀티에이전트 오케스트레이션’, 상태·권한·버전·실제 호출을 관리하는 서버는 ‘오케스트레이션 런타임’으로 구분한다.
 
-근거: [LangChain — Subagents / Supervisor vs. Router](https://docs.langchain.com/oss/python/langchain/multi-agent/subagents), [OpenAI Agents SDK — Agent orchestration](https://openai.github.io/openai-agents-js/guides/multi-agent/). 특정 SDK를 도입했다는 뜻은 아니다.
+근거: [LangChain — Subagents](https://docs.langchain.com/oss/python/langchain/multi-agent/subagents), [OpenAI Agents SDK — Agent orchestration](https://openai.github.io/openai-agents-js/guides/multi-agent/). 특정 SDK를 도입했다는 뜻은 아니다.
 
 ## 1. 채택할 구조와 현재 구현 상태
 
-슈퍼바이저 LLM은 필요한 작업과 대상 ID를 선택한다. **공통 실행 서버가 입력·버전·권한을 채우고 검증하며, Agent 3은 잠정 산정·문서 생성 도구로 동작한다.** PM 승인은 마지막 검토에서 한 번만 받는다.
+오케스트레이터 에이전트는 필요한 작업과 대상 ID를 선택한다. **공통 실행 서버가 입력·버전·권한을 채우고 검증하며, Agent 3은 잠정 산정·문서 생성 도구로 동작한다.** PM 승인은 마지막 검토에서 한 번만 받는다.
 
 | 구분 | 현재 상태 | 본 계약의 제안 |
 |---|---|---|
 | Agent 3 잠정 산정·재산정·재계산·문서·검토 | 서비스 메서드와 `/agent3/orchestration` API 구현 | 기존 도구 재사용 |
-| 슈퍼바이저 도구 입력 | `Agent3SupervisorAdapter`의 ID 중심 호출·변환 구현 | 공통 실행 서버가 `Agent3StatePort`를 연결 |
+| 오케스트레이터 에이전트 도구 입력 | `Agent3OrchestratorAdapter`의 ID 중심 호출·변환 구현 | 공통 실행 서버가 `Agent3StatePort`를 연결 |
 | 질문·추가 조사 | `needs`의 대상·출처와 질문 ID 제공 | 공통 질문 목록에 병합하고 조사·답변·재개 연결 |
 | 상태·버전 | adapter의 참조·CAS 포트·격리 실행 구현. 실제 공통 엔진은 미연결 | 공통 상태 소유권과 영속 저장 연결 |
 | 문서별 대상 선택·수동 문안 수정 | 전체 묶음 생성·kind 대응·PM 문안 수정 API 구현 | 부분 문서 범위는 명시적으로 거부. 수치는 서버 사실 블록으로 고정 |
-| 통합 UI·슈퍼바이저 루프 | 신규 요청 화면은 가상 시연 | 실제 실행 결과를 기존 상세 화면에 연결 |
+| 통합 UI·오케스트레이터 에이전트 루프 | 신규 요청 화면은 가상 시연 | 실제 실행 결과를 기존 상세 화면에 연결 |
 
-**Agent 3 측 연결 계층은 구현했으며, 슈퍼바이저 루프·Agent 1/2·공통 저장소에는 아직 연결하지 않았다.** 기존 입력 스키마·엔드포인트는 유지하고 별도 adapter를 제공한다. 사용 진입점은 11장을 참조한다.
+**Agent 3 측 연결 계층은 구현했으며, 오케스트레이터 에이전트 루프·Agent 1/2·공통 저장소에는 아직 연결하지 않았다.** 기존 입력 스키마·엔드포인트는 유지하고 별도 adapter를 제공한다. 사용 진입점은 11장을 참조한다.
 
 ## 2. 역할과 권한
 
 | 주체 | 책임 |
 |---|---|
-| 슈퍼바이저 LLM | 허용된 도구 중 선택, 대상 ID·문서 종류·재검토 이유 제안 |
+| 오케스트레이터 에이전트 | 허용된 도구 중 선택, 대상 ID·문서 종류·재검토 이유 제안 |
 | 공통 실행 서버 | 케이스·원문 버전·기준선·최신 결과·질문·승인 관리, 입력 구성, 허용 행동 검증, 결과 반영 |
 | Agent 3 | 작업·기준·가정 제안, 서버 계산, 필요한 정보 반환, 고객 문서 초안 생성 |
 | PM | 질문 답변, 공수·가정·문안 검토, 최종 승인·수정 지시·보류·반려 |
@@ -45,7 +45,7 @@
 
 ## 3. 서버가 주입할 실행 정보
 
-슈퍼바이저가 반환한 `{action,args,reason}`에 아래 정보를 공통 서버가 결합한다. 아래 이름은 **제안 필드**이며 현재 `WorkflowState`에 모두 존재하는 것은 아니다.
+오케스트레이터 에이전트가 반환한 `{action,args,reason}`에 아래 정보를 공통 서버가 결합한다. 아래 이름은 **제안 필드**이며 현재 `WorkflowState`에 모두 존재하는 것은 아니다.
 
 | 필드 | 의미·검증 |
 |---|---|
@@ -59,7 +59,7 @@
 
 공통 revision과 Agent 3 revision은 서로 다른 값이다. 한쪽 값을 다른 쪽 자리에 복사하지 않는다. LLM에게는 판단에 필요한 결과 요약만 제공한다.
 
-## 4. 슈퍼바이저 도구 입력
+## 4. 오케스트레이터 에이전트 도구 입력
 
 모든 `args`는 미정의 필드를 거부한다. `item_ids`는 중복 없는 현재 케이스의 실제 ID이며 표시용 R1·R2 문자열을 대신 사용하지 않는다.
 
@@ -105,13 +105,13 @@ Agent 1·2의 실제 출력에서 위 정보를 만드는 adapter는 별도 구�
 | `change_agreement` | 고객 협의 전 변경합의서 초안 | `agreement` |
 | `scope_response` | 범위 확인 답변 | `scope_reply` |
 
-`bundle`은 서버 내부 묶음 생성 옵션이며 슈퍼바이저 kind에는 노출하지 않는다. 확인·변경이 섞이면 메일은 한 통으로 합친다.
+`bundle`은 서버 내부 묶음 생성 옵션이며 오케스트레이터 에이전트 kind에는 노출하지 않는다. 확인·변경이 섞이면 메일은 한 통으로 합친다.
 
 **v1 문서 대상은 세션의 전체 문서 검토 대상 집합이다.** 현재 API에 `item_ids` 필터가 없으므로 adapter는 전체 집합과 일치하는지 검사한다. 부분 집합 요청은 `UNSUPPORTED_DOCUMENT_SCOPE`로 거부하며, 인자를 무시하고 전체 문서를 생성하지 않는다.
 
-현재 생성 API는 호출 때마다 기존 문서 묶음을 교체한다. 따라서 변경 건에서는 adapter가 `bundle`로 메일·합의서를 함께 생성·보관하고, 슈퍼바이저가 요청한 종류의 결과 ID를 반환한다. 동일 snapshot의 다른 문서를 요청하면 보관된 결과를 반환한다. `email` 후 `agreement`를 순차 호출해 앞 문서를 없애는 연결은 금지한다.
+현재 생성 API는 호출 때마다 기존 문서 묶음을 교체한다. 따라서 변경 건에서는 adapter가 `bundle`로 메일·합의서를 함께 생성·보관하고, 오케스트레이터 에이전트가 요청한 종류의 결과 ID를 반환한다. 동일 snapshot의 다른 문서를 요청하면 보관된 결과를 반환한다. `email` 후 `agreement`를 순차 호출해 앞 문서를 없애는 연결은 금지한다.
 
-## 5. 슈퍼바이저에 반환할 결과
+## 5. 오케스트레이터 에이전트에 반환할 결과
 
 반환 형식은 아래 제안 envelope로 통일한다. 실제 메모리 세션 객체를 그대로 LLM에 보내지 않는다.
 
@@ -146,7 +146,7 @@ Agent 1·2의 실제 출력에서 위 정보를 만드는 adapter는 별도 구�
 
 ## 6. 조사·질문·답변 연결
 
-| kind / target | 슈퍼바이저·서버 처리 |
+| kind / target | 오케스트레이터 에이전트·서버 처리 |
 |---|---|
 | `more_evidence` / `agent2` | `assess_scope(item_ids,focus=topic)`를 먼저 호출. 결과 반영 후 영향 항목 재산정 |
 | `client_input` / `pm` | 문서로 해결되지 않은 사실 확인을 PM 질문 목록에 병합 |
@@ -154,7 +154,7 @@ Agent 1·2의 실제 출력에서 위 정보를 만드는 adapter는 별도 구�
 | `missing_standard` / `pm` | 공수·단가 기준 보완 요청. 계약 조사 완료로 대신 해결하지 않음 |
 | `not_required` / `none` | 제외 사유 표시. 질문이나 승인 대기로 만들지 않음 |
 
-PM/고객 대상 신호라도 문서로 확인 가능한 내용은 Agent 2 조사 후 남은 것만 묻는다. 슈퍼바이저의 선택을 서버 허용 행동 검사로 제한한다. 신호가 반복되면 조사·질문을 중복 생성하지 않는다.
+PM/고객 대상 신호라도 문서로 확인 가능한 내용은 Agent 2 조사 후 남은 것만 묻는다. 오케스트레이터 에이전트의 선택을 서버 허용 행동 검사로 제한한다. 신호가 반복되면 조사·질문을 중복 생성하지 않는다.
 
 질문은 `question_id` 기준으로 공통 목록에 병합하고 `target`, `source`, `item_ids`를 보존한다. 답변은 `question_id`와 `answer_id`로 연결한다. 답변 도착은 해소가 아니며, Agent 1의 답변 해석·Agent 2 조사·Agent 3 재산정 결과로 해소 여부를 확인한다.
 
@@ -207,7 +207,7 @@ PM 이벤트에는 서버가 인증한 검토자, `review_request_id`, 공통 ex
 
 | 과제 | 완료 기준 |
 |---|---|
-| 슈퍼바이저 도구 adapter | ID args로 서버가 전체 입력 구성. LLM의 실행 문맥 변경 거부 |
+| 오케스트레이터 에이전트 도구 adapter | ID args로 서버가 전체 입력 구성. LLM의 실행 문맥 변경 거부 |
 | 결과·질문·상태 매핑 | 위 envelope와 현재 Agent 3 응답 대응, 결과·답변의 버전 연결 |
 | 문서 묶음 매핑 | kind 이름 대응, 부분 범위 거부, 순차 요청에도 필요한 문서 보존 |
 | 최종 검토 연결 | 실제 PM 이벤트만 승인 호출, 수정 시 효력 해제, 장애 후 중복 승인 방지 |
@@ -221,13 +221,13 @@ PM 이벤트에는 서버가 인증한 검토자, `review_request_id`, 공통 ex
 
 ## 11. 구현된 Agent 3 측 진입점
 
-구현: `app/agents/agent3/supervisor_adapter.py`. 코드의 이름은 `Supervisor`를 사용하며, 특정 에이전트 프레임워크에는 의존하지 않는다.
+구현: `app/agents/agent3/orchestrator_adapter.py`. 코드와 문서의 중앙 조율 주체 명칭을 `Orchestrator`로 통일한다. 특정 에이전트 프레임워크에는 의존하지 않는다.
 
 ```python
 from app.agents.agent3.agent import LlmAgent3
 from app.agents.agent3.orchestration import Agent3Orchestration
-from app.agents.agent3.supervisor_adapter import (
-    Agent3StatePort, Agent3SupervisorAdapter, tool_schemas, action_schema,
+from app.agents.agent3.orchestrator_adapter import (
+    Agent3StatePort, Agent3OrchestratorAdapter, tool_schemas, action_schema,
 )
 
 def bind_agent3(port: Agent3StatePort, resolve_llm):
@@ -236,12 +236,12 @@ def bind_agent3(port: Agent3StatePort, resolve_llm):
         return Agent3Orchestration(
             LlmAgent3(resolve_llm(snapshot.execution_config_revision))
         )
-    return Agent3SupervisorAdapter(port, factory)
+    return Agent3OrchestratorAdapter(port, factory)
 ```
 
 - `tool_schemas()`: `estimate_impact`, `draft_documents`의 인자 스키마.
 - `action_schema()`: 구조화된 `{action,args,reason}` 전체 스키마. 함수 호출형 SDK를 쓰면 호스트가 함수 이름·args와 진행 설명을 이 envelope로 변환한다.
-- `adapter.execute(case_id, expected_state_revision, operation_id, call)`: 앞의 세 인자는 신뢰된 실행 서버가 주입한다. `call`만 슈퍼바이저 결정이다. PM 승인 도구는 포함되지 않는다.
+- `adapter.execute(case_id, expected_state_revision, operation_id, call)`: 앞의 세 인자는 신뢰된 실행 서버가 주입한다. `call`만 오케스트레이터 에이전트 결정이다. PM 승인 도구는 포함되지 않는다.
 - `adapter.execute_pm(case_id, expected_state_revision, operation_id, command, actor_ref=...)`: 호스트가 실제 PM 응답·인증 주체를 검증한 뒤 호출한다. `command.action`은 `recalculate` / `edit_document` / `review`다. `review`는 PM이 본 `expected_snapshot_hash`를 요구한다.
 - 반환은 `ToolResult`. 본문의 결과 envelope를 구현하며 오류도 같은 형식으로 반환한다. 자동 재시도·Agent 2 호출은 수행하지 않는다.
 
@@ -284,4 +284,4 @@ PM 전용 command 예시다. Agent 3은 `[[APPROVED_FACTS]]` 자리에 최신 �
 
 저수준 API에도 `POST /agent3/orchestration/{session_id}/documents/edit`가 추가되었다. body는 `state_revision`, `kind`(`email`/`agreement`), `narrative`, `editor_ref`, `reason`이다. 기존 Agent 3 API와 같이 신뢰된 서버 호출용이며 실제 사용자 인증 API가 아니다.
 
-검증: `tests/test_agent3_supervisor_adapter.py`. 메모리 호스트 예제는 테스트에만 두며, 기존 공통 상태 저장소를 대체하지 않는다. 기존 프로토타입 화면에는 새 도구 영역을 추가하지 않았다.
+검증: `tests/test_agent3_orchestrator_adapter.py`. 메모리 호스트 예제는 테스트에만 두며, 기존 공통 상태 저장소를 대체하지 않는다. 기존 프로토타입 화면에는 새 도구 영역을 추가하지 않았다.

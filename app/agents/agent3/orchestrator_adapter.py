@@ -1,4 +1,4 @@
-"""ID-only Agent 3 tools. A trusted host injects state; no supervisor loop lives here.
+"""ID-only Agent 3 tools. A trusted host injects state; no orchestrator loop lives here.
 
 The host implements Agent3StatePort (atomic revision check + update + receipt).
 Agent 3 transactions are forked and published only after that commit succeeds.
@@ -53,8 +53,8 @@ class DocumentAction(StrictModel):
     reason: str = Field(min_length=1, max_length=300)
 
 
-SupervisorAction = Annotated[EstimateAction | DocumentAction, Field(discriminator="action")]
-ACTION = TypeAdapter(SupervisorAction)
+OrchestratorAction = Annotated[EstimateAction | DocumentAction, Field(discriminator="action")]
+ACTION = TypeAdapter(OrchestratorAction)
 
 
 def tool_schemas():
@@ -66,7 +66,7 @@ def tool_schemas():
 
 
 def action_schema():
-    """Full {action,args,reason} schema for a structured supervisor decision."""
+    """Full {action,args,reason} schema for a structured orchestrator decision."""
     return ACTION.json_schema()
 
 
@@ -190,7 +190,7 @@ PM_ACTION = TypeAdapter(Annotated[PmRecalculate | PmEdit | PmReview, Field(discr
 DOCUMENT_KEYS = {"negotiation_email": "email", "change_agreement": "agreement", "scope_response": "email"}
 
 
-class Agent3SupervisorAdapter:
+class Agent3OrchestratorAdapter:
     def __init__(self, state: Agent3StatePort, tools_factory: Callable[[Agent3CaseSnapshot], Agent3Orchestration]):
         self.state, self.tools_factory = state, tools_factory
         self._services = {}
@@ -354,7 +354,7 @@ class Agent3SupervisorAdapter:
                 still_blocked = any(n["blocking"] and scope & set(n["item_ids"]) for n in view["needs"])
                 (superseded if still_blocked else resolved).append(q["question_id"])
         return Agent3Update(a3_ref=Agent3Reference(session_id=view["session_id"], state_revision=view["state_revision"],
-            snapshot_hash=view["snapshot_hash"], input_hash=Agent3SupervisorAdapter._input_hash(snapshot, inp),
+            snapshot_hash=view["snapshot_hash"], input_hash=Agent3OrchestratorAdapter._input_hash(snapshot, inp),
             execution_config_revision=snapshot.execution_config_revision), view=view, rate_card_id=inp.rate_card_id,
             source_result_ids={"agent1": snapshot.a1_result_id, "agent2": inp.a2_result.meta.result_id,
                 "agent3": view["impact"]["meta"]["result_id"]}, active_questions=questions,

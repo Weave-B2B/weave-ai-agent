@@ -1,7 +1,7 @@
-"""Agent 3 tools for a supervisor. This module does not choose or call Agent 1/2.
+"""Agent 3 tools for an orchestrator. This module does not choose or call Agent 1/2.
 
 Trusted server integration only, memory persistence, provisional until final PM review.
-The supervisor owns the returned session/revision and calls these tools as needed.
+The orchestrator owns the returned session/revision and calls these tools as needed.
 """
 import json
 import copy
@@ -170,7 +170,7 @@ class Agent3Orchestration:
             return fork
 
     def source_input(self, sid):
-        """Trusted adapter access; never exposed as supervisor tool arguments."""
+        """Trusted adapter access; never exposed as orchestrator tool arguments."""
         with self._lock:
             return self._load(sid, standards=False)["input"].model_copy(deep=True)
 
