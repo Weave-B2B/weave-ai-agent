@@ -142,6 +142,69 @@ def test_lab_gpt_default_ignores_fake_server_model(monkeypatch):
     assert lab.defaults(SimpleNamespace(client=SimpleNamespace(host='testclient'), headers={}))['default_models']['openai'] == 'gpt-6-luna'
 
 
+def test_lab_ollama_defaults_and_model_override(monkeypatch):
+    import prototype.lab as lab
+    from types import SimpleNamespace
+    monkeypatch.setenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+    monkeypatch.setenv('OLLAMA_MODEL', 'gpt-oss:20b')
+    captured = []
+    monkeypatch.setattr(lab, 'build_llm', lambda settings: captured.append(settings) or object())
+
+    lab.provider_client(SimpleNamespace(provider='ollama', model='', region='ap-northeast-2'))
+    lab.provider_client(SimpleNamespace(provider='ollama', model='qwen3:8b', region='ap-northeast-2'))
+
+    assert captured[0].llm_provider == 'ollama'
+    assert captured[0].ollama_base_url == 'http://localhost:11434'
+    assert captured[0].ollama_model == 'gpt-oss:20b'
+    assert captured[1].llm_model == 'qwen3:8b'
+    assert captured[1].ollama_model == 'qwen3:8b'
+
+
+def test_lab_ollama_llm_model_fallback(monkeypatch):
+    import prototype.lab as lab
+    from types import SimpleNamespace
+    monkeypatch.setenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+    monkeypatch.delenv('OLLAMA_MODEL', raising=False)
+    monkeypatch.setenv('LLM_MODEL', 'qwen3.5:9b')
+    monkeypatch.setattr(lab, 'dotenv_values', lambda path: {})
+    captured = []
+    monkeypatch.setattr(lab, 'build_llm', lambda settings: captured.append(settings) or object())
+
+    lab.provider_client(SimpleNamespace(provider='ollama', model='', region='ap-northeast-2'))
+
+    assert captured[0].llm_model == 'qwen3.5:9b'
+    assert captured[0].ollama_model == 'qwen3.5:9b'
+
+
+def test_lab_installed_ollama_models(monkeypatch):
+    import prototype.lab as lab
+    import httpx
+
+    class Response:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {'models': [{'name': 'qwen3.5:9b'}, {'name': 'gpt-oss:20b'}]}
+
+    monkeypatch.setattr(lab.httpx, 'get', lambda url, timeout: Response())
+
+    assert lab.list_ollama_models('http://localhost:11434') == ['qwen3.5:9b', 'gpt-oss:20b']
+
+
+def test_lab_ollama_read_timeout_defaults(monkeypatch):
+    import prototype.lab as lab
+    from types import SimpleNamespace
+    monkeypatch.setenv('OLLAMA_READ_TIMEOUT_SEC', '300')
+    monkeypatch.setenv('OLLAMA_CONNECT_TIMEOUT_SEC', '10')
+    captured = []
+    monkeypatch.setattr(lab, 'build_llm', lambda settings: captured.append(settings) or object())
+
+    lab.provider_client(SimpleNamespace(provider='ollama', model='gpt-oss:20b', region='ap-northeast-2'))
+
+    assert captured[0].ollama_read_timeout_sec == 300
+    assert captured[0].ollama_connect_timeout_sec == 10
+
+
 def test_agent3_uses_shared_provider_configuration(monkeypatch):
     import prototype.lab as lab
     from types import SimpleNamespace
