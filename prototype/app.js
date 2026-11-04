@@ -601,7 +601,7 @@ function evSourceView(ev) {
     : `<p class="tiny">${e(ev.doc_id)} · ${slot.data.page}/${slot.data.page_count}페이지 · 전체 ${slot.data.line_count}행 중</p><div class="source-lines">${slot.data.lines.map(l => `<div class="source-line ${l.hit ? "hit" : ""}"><span class="source-no">${l.no}</span><span>${e(l.text) || "&nbsp;"}</span></div>`).join("")}</div>`;
   return `<div class="form-actions">${toggle}</div>${body}`;
 }
-const kb = { data: null, pending: false, error: null, projectId: null, docType: "sow", files: [], results: [], creating: null, selection: {} };
+const kb = { data: null, pending: false, error: null, projectId: null, files: [], results: [], creating: null, selection: {} };
 const KB_TYPE = { contract: "계약서", sow: "과업지시서", functional_spec: "기능명세서", quote: "견적서", change_order: "변경합의서" };
 const kbProjectData = id => kb.data?.projects.find(p => p.project_id === id);
 const kbDoc = id => kb.data?.projects.flatMap(p => p.documents).find(d => d.doc_id === id && d.source === "lab");
@@ -633,12 +633,13 @@ async function kbOperation(action, message) {
 function kbUpload() {
   const files = [...kb.files], projectId = kb.projectId;
   if (!files.length) { kb.error = "PDF 파일을 선택해 주세요."; render(); return; }
-  if (files.some(file => file.type && file.type !== "application/pdf")) { kb.error = "PDF 파일만 올릴 수 있습니다."; render(); return; }
+  if (files.some(({ file }) => file.type && file.type !== "application/pdf")) { kb.error = "PDF 파일만 올릴 수 있습니다."; render(); return; }
+  if (files.some(f => !f.docType)) { kb.error = "파일마다 문서 종류를 선택해 주세요."; render(); return; }
   return kbOperation(async () => {
     kb.results = [];
-    for (const file of files) {   // 서버 색인은 한 건씩 처리한다
+    for (const { file, docType } of files) {   // 서버 색인은 한 건씩 처리한다
       const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1] || ""); reader.onerror = () => reject(new Error(`${file.name}을 읽지 못했습니다.`)); reader.readAsDataURL(file); });
-      kb.results.push({ filename: file.name, ...await kbApi.upload(projectId, { filename: file.name, doc_type: kb.docType, content_base64: content }) });
+      kb.results.push({ filename: file.name, ...await kbApi.upload(projectId, { filename: file.name, doc_type: docType, content_base64: content }) });
     }
     kb.files = [];
   }, `문서 ${files.length}건 색인을 마쳤습니다. 결과를 확인해 주세요.`);
@@ -664,7 +665,9 @@ function baselineBanner() {
 }
 // ---- 새 프로젝트: 정보 입력 → 기준 문서 업로드·색인 → 첫 기준선(BL-1) 생성으로 확정 ----
 const BASE_TYPES = ["contract", "sow", "functional_spec", "quote"];   // 변경합의서는 프로젝트를 만든 뒤 새 기준선으로
-const guessDocType = name => ({ CTR: "contract", SOW: "sow", FSP: "functional_spec", QUO: "quote" })[String(name).split("-")[0].toUpperCase()] || "sow";
+// 파일 이름 접두어로 종류를 고른다. 모르면 비워 두고 직접 고르게 한다 (기본값으로 잘못 등록되는 것을 막는다)
+const guessDocType = name => ({ CTR: "contract", SOW: "sow", FSP: "functional_spec", QUO: "quote", CO: "change_order" })[String(name).split("-")[0].toUpperCase()] || "";
+const fileTypeList = (files, types, attr, busy) => `<ul class="file-names">${files.map((f, i) => `<li class="np-file"><span>${e(f.file.name)} <small>${Math.ceil(f.file.size / 1024)} KB</small>${f.docType ? "" : '<small class="file-type-needed">종류를 선택해 주세요</small>'}</span><select ${attr}="${i}" aria-label="${e(f.file.name)} 문서 종류" ${busy ? "disabled" : ""}><option value="" ${f.docType ? "" : "selected"} disabled>종류 선택</option>${types.map(t => `<option value="${t}" ${f.docType === t ? "selected" : ""}>${KB_TYPE[t]}</option>`).join("")}</select></li>`).join("")}</ul>`;
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 function startNewProject() { kb.creating = { step: 1, project_id: "", name: "", as_of: today(), files: [], uploaded: [], include: new Set(), error: null }; render(); }
 async function npStart() {
@@ -687,6 +690,7 @@ async function npStart() {
 async function npUpload() {
   const c = kb.creating, files = [...c.files];
   if (!files.length) return;
+  if (files.some(f => !f.docType)) { c.error = "파일마다 문서 종류를 선택해 주세요."; render(); return; }
   kb.pending = true; c.error = null; render();
   try {
     for (const item of files) {
@@ -718,14 +722,15 @@ function newProjectView() {
   const steps = ["프로젝트 정보", "기준 문서 업로드", "첫 기준선 만들기"].map((label, i) => `<span class="version-pill ${c.step === i + 1 || (c.step === 2 && i === 2 && c.uploaded.length) ? "current" : ""}">${i + 1}. ${label}</span>`).join("");
   const head = `<section class="card"><div class="card-heading"><div><h2>새 프로젝트</h2><p class="caption">기준 문서를 올리고 첫 기준선(BL-1)을 만들면 프로젝트가 확정됩니다. 그 전까지는 목록에 보이지 않습니다.</p></div>${button("취소", "np-cancel", { disabled: busy })}</div><div class="version-row">${steps}</div>`;
   if (c.step === 1) return `${error}${head}<div class="settings-grid"><label class="field">프로젝트 ID<input id="np-id" value="${e(c.project_id)}" placeholder="P-COM-104" autocomplete="off" ${busy ? "disabled" : ""}></label><label class="field">프로젝트 이름<input id="np-name" value="${e(c.name)}" placeholder="신규 커머스 구축" ${busy ? "disabled" : ""}></label><label class="field">기준일 (첫 기준선)<input id="np-asof" type="date" value="${e(c.as_of)}" max="${today()}" ${busy ? "disabled" : ""}></label></div><p class="tiny" style="margin-top:8px">작성 중이던 프로젝트 ID를 입력하면 이미 올린 문서를 이어서 씁니다.</p><div class="form-actions">${button(busy ? "확인 중…" : "다음: 기준 문서 업로드", "np-start", { class: "primary", disabled: busy })}</div></section>`;
-  const picked = c.files.map((f, i) => `<li class="np-file"><span>${e(f.file.name)} <small>${Math.ceil(f.file.size / 1024)} KB</small></span><select data-np-type="${i}" aria-label="${e(f.file.name)} 문서 종류" ${busy ? "disabled" : ""}>${BASE_TYPES.map(t => `<option value="${t}" ${f.docType === t ? "selected" : ""}>${KB_TYPE[t]}</option>`).join("")}</select></li>`).join("");
+  const picked = c.files.length ? fileTypeList(c.files, BASE_TYPES, "data-np-type", busy) : "";
+  const orders = c.files.filter(f => f.order).map(f => f.file.name);
   const rows = c.uploaded.map(u => `<tr><td><strong>${e(u.filename)}</strong>${u.doc_id ? `<small>${e(u.doc_id)}</small>` : ""}</td><td>${e(KB_TYPE[u.doc_type] || u.doc_type)}</td><td>${u.status === "READY" ? chip(`READY · 조항 ${u.sections}개`, "success") : chip("FAILED", "warning")}${u.error ? `<small>${e(u.error)}</small>` : ""}</td><td>${u.doc_id ? `<label class="check" style="margin:0"><input type="checkbox" data-np-include="${e(u.doc_id)}" ${c.include.has(u.doc_id) ? "checked" : ""} ${busy ? "disabled" : ""}><span>BL-1에 포함</span></label>` : ""}</td></tr>`).join("");
   const types = new Set(c.uploaded.filter(u => c.include.has(u.doc_id)).map(u => u.doc_type));
   const ready = types.has("contract") || types.has("sow");
   return `${error}${head}<p class="caption"><strong>${e(c.project_id)}</strong> · ${e(c.name)} · 기준일 ${e(c.as_of)}</p>
-<div class="field">기준 문서 PDF<label class="file-picker ${busy ? "disabled" : ""}"><input id="np-file" class="file-input" type="file" accept="application/pdf" multiple ${busy ? "disabled" : ""}><span class="button small">파일 선택</span><span class="${c.files.length ? "" : "muted"}">${c.files.length ? `파일 선택 완료 (${c.files.length}개)` : "선택된 파일 없음"}</span></label>${picked ? `<ul class="file-names">${picked}</ul>` : ""}</div>
+<div class="field">기준 문서 PDF<label class="file-picker ${busy ? "disabled" : ""}"><input id="np-file" class="file-input" type="file" accept="application/pdf" multiple ${busy ? "disabled" : ""}><span class="button small">파일 선택</span><span class="${c.files.length ? "" : "muted"}">${c.files.length ? `파일 선택 완료 (${c.files.length}개)` : "선택된 파일 없음"}</span></label>${picked}${orders.length ? `<p class="tiny file-type-needed">${e(orders.join(", "))}: 변경합의서로 보입니다. 첫 기준선에는 넣을 수 없으니 프로젝트를 만든 뒤 추가해 주세요.</p>` : ""}</div>
 <p class="tiny" style="margin-top:8px">파일마다 문서 종류를 확인해 주세요. 파일 이름이 CTR·SOW·FSP·QUO로 시작하면 자동으로 고릅니다. 변경합의서는 프로젝트를 만든 뒤 추가합니다.</p>
-<div class="form-actions">${button(busy ? "색인 중…" : "업로드·색인", "np-upload", { class: "primary", disabled: busy || !c.files.length, icon: "416f8" })}</div>${busy ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>처리 중입니다. 임베딩 호출로 파일당 수십 초 걸릴 수 있습니다…</p>' : ""}
+<div class="form-actions">${button(busy ? "색인 중…" : "업로드·색인", "np-upload", { class: "primary", disabled: busy || !c.files.length || c.files.some(f => !f.docType), icon: "416f8" })}</div>${busy ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>처리 중입니다. 임베딩 호출로 파일당 수십 초 걸릴 수 있습니다…</p>' : ""}
 ${rows ? `<div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>문서</th><th>종류</th><th>색인</th><th>첫 기준선</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
 <div class="form-actions" style="margin-top:16px">${button(`${c.project_id} 만들기 (BL-1)`, "np-create", { class: "primary", disabled: busy || !ready, icon: "6ce49" })}<span class="tiny">${ready ? `선택 ${c.include.size}개로 첫 기준선을 만듭니다.` : "계약서나 과업지시서를 하나 이상 올리고 포함해 주세요."}</span></div></section>`;
 }
@@ -747,7 +752,7 @@ function projectsPage() {
     : `<div class="notice error inline"><strong>${e(filename)} · FAILED · ${e(last.failedStage)} · ${e(last.errorCode)}</strong>${e(last.errorMessage || "")}${last.retryable ? " (다시 시도 가능)" : ""}</div>`).join("");
   const cases = Object.entries(agent2Inputs || {}).filter(([, input]) => input.context?.project_id === p.project_id);
   const usedBy = cases.length ? `<p class="caption" style="margin-top:12px">이 프로젝트의 테스트 요청: ${cases.map(([id, input]) => `<button type="button" class="rate-card-link" data-open="${e(id)}">${e(id)}</button> <span class="tiny">(${e(input.context.baseline_id)})</span>`).join(" · ")}</p>` : "";
-  const upload = `<section class="card"><div class="card-heading"><div><h2>테스트 문서 추가</h2><p class="caption">PDF → 조항 분할 → 청크 ID 계산 → 임베딩 → vector-db 저장. 백엔드 색인 요청(A-MQ-01)과 같은 파이프라인을 씁니다.</p></div></div><div class="settings-grid"><div class="field">PDF 파일<label class="file-picker ${kb.pending ? "disabled" : ""}"><input id="kb-file" class="file-input" type="file" accept="application/pdf" multiple ${kb.pending ? "disabled" : ""}><span class="button small">파일 선택</span><span class="${kb.files.length ? "" : "muted"}">${kb.files.length ? `파일 선택 완료 (${kb.files.length}개)` : "선택된 파일 없음"}</span></label>${kb.files.length ? `<ul class="file-names">${kb.files.map(f => `<li>${e(f.name)} <small>${Math.ceil(f.size / 1024)} KB</small></li>`).join("")}</ul>` : ""}</div><label class="field">문서 종류<select id="kb-doc-type" ${kb.pending ? "disabled" : ""}>${Object.entries(KB_TYPE).map(([v, l]) => `<option value="${v}" ${kb.docType === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div><p class="tiny" style="margin-top:8px">계약 문서 양식(조항 머리줄 끝 C-01·S-02 등, 기능명세 표)만 조항으로 나뉩니다. 스캔본은 지원하지 않습니다.</p><div class="form-actions">${button(kb.pending ? "처리 중…" : "업로드·색인", "kb-upload", { class: "primary", disabled: kb.pending || !kb.files.length, icon: "416f8" })}</div>${kb.pending ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>색인 중입니다. 임베딩 호출로 수십 초 걸릴 수 있습니다…</p>' : ""}${result}</section>`;
+  const upload = `<section class="card"><div class="card-heading"><div><h2>테스트 문서 추가</h2><p class="caption">PDF → 조항 분할 → 청크 ID 계산 → 임베딩 → vector-db 저장. 백엔드 색인 요청(A-MQ-01)과 같은 파이프라인을 씁니다.</p></div></div><div class="settings-grid"><div class="field">PDF 파일<label class="file-picker ${kb.pending ? "disabled" : ""}"><input id="kb-file" class="file-input" type="file" accept="application/pdf" multiple ${kb.pending ? "disabled" : ""}><span class="button small">파일 선택</span><span class="${kb.files.length ? "" : "muted"}">${kb.files.length ? `파일 선택 완료 (${kb.files.length}개)` : "선택된 파일 없음"}</span></label>${kb.files.length ? fileTypeList(kb.files, Object.keys(KB_TYPE), "data-kb-type", kb.pending) : ""}</div></div><p class="tiny" style="margin-top:8px">파일 이름이 CTR·SOW·FSP·QUO·CO로 시작하면 종류를 자동으로 고릅니다. 종류가 틀리면 변경합의서가 승인 근거로 인정되지 않으니 확인해 주세요.</p><p class="tiny" style="margin-top:8px">계약 문서 양식(조항 머리줄 끝 C-01·S-02 등, 기능명세 표)만 조항으로 나뉩니다. 스캔본은 지원하지 않습니다.</p><div class="form-actions">${button(kb.pending ? "처리 중…" : "업로드·색인", "kb-upload", { class: "primary", disabled: kb.pending || !kb.files.length || kb.files.some(f => !f.docType), icon: "416f8" })}</div>${kb.pending ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>색인 중입니다. 임베딩 호출로 수십 초 걸릴 수 있습니다…</p>' : ""}${result}</section>`;
   const create = `<section class="card"><div class="card-heading"><div><h2>새 기준선 만들기</h2><p class="caption">선택한 문서로 새 버전을 만듭니다. 현재 기준선 ${e(active?.baseline_id || "없음")}은 폐기됨(SUPERSEDED)으로 바뀌고, 그 기준선으로 요청하면 Agent 2가 판단하지 않습니다.</p></div></div><p class="caption">선택 ${selected.size}개: ${[...selected].map(id => `<span class="mini-tag">${e(name(id))}</span>`).join(" ") || "없음"}</p><div class="form-actions">${button("새 기준선 만들기", "kb-create-baseline", { class: "primary", disabled: kb.pending || !selected.size, icon: "6ce49" })}</div>${usedBy}</section>`;
   return `${heading}${tabs}${error}<section class="card"><div class="card-heading"><div><h2>기준선 버전</h2><p class="caption">현재 기준선만 새 판단에 쓰입니다. 폐기된 기준선은 조회·재현용으로 남습니다.</p></div></div><div class="table-wrap"><table><thead><tr><th>기준선</th><th>기준일</th><th>상태</th><th>문서</th><th>출처</th></tr></thead><tbody>${baselineRows}</tbody></table></div></section><section class="card" style="margin-top:24px"><div class="card-heading"><div><h2>문서</h2><p class="caption">문서를 선택해 새 기준선을 만들 수 있습니다. 테스트로 추가한 문서는 기준선에 넣기 전까지 뺄 수 있습니다.</p></div></div><div class="table-wrap"><table><thead><tr><th>문서</th><th>종류</th><th>조항</th><th>현재 기준선</th><th>출처</th><th>새 기준선</th><th></th></tr></thead><tbody>${docRows}</tbody></table></div></section><div class="columns" style="margin-top:24px">${upload}${create}</div><div class="notice inline">${icon("d5e00")}로컬 테스트 전용입니다. 테스트 문서·기준선은 .prototype-kb/에만 저장되며 원본 data/kb는 바뀌지 않습니다. 초기화해도 vector-db 벡터는 남습니다(같은 문서 ID면 재사용).</div>`;
 }
@@ -954,10 +959,10 @@ root.addEventListener("change", async event => {
   if (target.id === "a2-model") { a2.model = target.value; a2.result = null; invalidateLiveReview(); }
   if (target.name === "lab-provider") { if (state.view && state.mode === "api") { state.invalidated = true; persist(); } lab.provider = target.value; lab.model = defaultModel(target.value); render(); }
   if (target.name === "a1-provider" || target.name === "a2-provider") { const agent = target.name === "a1-provider" ? a1 : a2; agent.provider = target.value; agent.model = defaultModel(target.value); agent.error = null; if (agent === a1) rememberA1Case(activeCase); if (agent === a2) resetAgent2Result(); render(); }
-  if (target.id === "kb-file") { kb.files = [...(target.files || [])]; kb.results = []; render(); }
-  if (target.id === "kb-doc-type") kb.docType = target.value;
-  if (target.id === "np-file" && kb.creating) { kb.creating.files = [...(target.files || [])].map(file => ({ file, docType: guessDocType(file.name) })); render(); }
-  if (target.dataset.npType && kb.creating) kb.creating.files[Number(target.dataset.npType)].docType = target.value;
+  if (target.id === "kb-file") { kb.files = [...(target.files || [])].map(file => ({ file, docType: guessDocType(file.name) })); kb.results = []; render(); }
+  if (target.dataset.kbType) { kb.files[Number(target.dataset.kbType)].docType = target.value; render(); }
+  if (target.id === "np-file" && kb.creating) { kb.creating.files = [...(target.files || [])].map(file => { const docType = guessDocType(file.name); return { file, docType: BASE_TYPES.includes(docType) ? docType : "", order: docType === "change_order" }; }); render(); }
+  if (target.dataset.npType && kb.creating) { kb.creating.files[Number(target.dataset.npType)].docType = target.value; render(); }
   if (target.dataset.npInclude && kb.creating) { target.checked ? kb.creating.include.add(target.dataset.npInclude) : kb.creating.include.delete(target.dataset.npInclude); render(); }
   if (target.dataset.kbInclude) { const set = kbSelection(); target.checked ? set.add(target.dataset.kbInclude) : set.delete(target.dataset.kbInclude); render(); }
   if (target.id === "a2-use-active") { a2.useActive = target.checked; a2.result = null; a2.error = null; invalidateLiveReview(); render(); }
