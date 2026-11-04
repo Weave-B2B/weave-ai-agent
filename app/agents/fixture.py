@@ -42,6 +42,8 @@ class FixtureAgent1(_Base):
 
 class FixtureAgent2(_Base):
     def run(self, inp: Agent2Input) -> Agent2Output:
+        from app.tools.doc_tools import require_active_baseline
+        require_active_baseline(inp.context.baseline_id or "")
         return Agent2Output.model_validate(self.chain[inp.context.case_id]["agent2_gold"]).model_copy(update={"context": inp.context})
 
 
