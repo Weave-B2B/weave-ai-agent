@@ -43,4 +43,4 @@ def finalize_estimates(out: Agent3Output, rate_card_id: str) -> Agent3Output:
         data["questions"] = [old for old in data["questions"] if old["question_id"] != q.question_id] + [q.model_dump()]
         data["status"] = "NEEDS_INPUT"
         data["draft"] = None
-    return Agent3Output.model_validate(data)
+    return type(out).model_validate(data)
