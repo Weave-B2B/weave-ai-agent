@@ -11,6 +11,10 @@ from app.core.config import settings
 from app.llm.client import build_llm
 from app.tools.errors import ToolInputError
 from schema.schemas import Agent3Input
+from app.agents.agent3.contracts import ProvisionalAgent3Input
+from app.agents.agent3.orchestration import (
+    Agent3Orchestration, DraftDocuments, Reestimate, Recalculate, FinalReview, EditDocument,
+)
 
 router = APIRouter(prefix="/agent3", tags=["Agent3 MVP"])
 
@@ -63,3 +67,45 @@ def review_impact(session_id: str, req: ReviewImpact):
 @router.post("/impacts/{session_id}/draft")
 def generate_draft(session_id: str, req: GenerateDraft):
     return _guard(lambda: get_workflow().generate_draft(session_id, req))
+
+
+@lru_cache
+def get_orchestration() -> Agent3Orchestration:
+    workflow = get_workflow()
+    return Agent3Orchestration(workflow.agent, draft_llm=workflow.draft_llm)
+
+
+@router.post("/orchestration/impacts")
+def provisional_impact(inp: ProvisionalAgent3Input):
+    return _guard(lambda: get_orchestration().estimate_impact(inp))
+
+
+@router.get("/orchestration/{session_id}")
+def orchestration_state(session_id: str):
+    return _guard(lambda: get_orchestration().get(session_id))
+
+
+@router.post("/orchestration/{session_id}/documents")
+def provisional_documents(session_id: str, req: DraftDocuments):
+    return _guard(lambda: get_orchestration().draft_documents(session_id, req))
+
+
+@router.post("/orchestration/{session_id}/reestimate")
+def reestimate_items(session_id: str, req: Reestimate):
+    return _guard(lambda: get_orchestration().reestimate(session_id, req))
+
+
+@router.post("/orchestration/{session_id}/recalculate")
+def recalculate_items(session_id: str, req: Recalculate):
+    return _guard(lambda: get_orchestration().recalculate(session_id, req))
+
+
+@router.post("/orchestration/{session_id}/review")
+def final_review(session_id: str, req: FinalReview):
+    return _guard(lambda: get_orchestration().review(session_id, req))
+
+
+@router.post("/orchestration/{session_id}/documents/edit")
+def edit_provisional_document(session_id: str, req: EditDocument):
+    """Trusted PM caller only; not an orchestrator-callable capability."""
+    return _guard(lambda: get_orchestration().edit_document(session_id, req))
