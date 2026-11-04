@@ -476,4 +476,3 @@ def test_model_customer_need_retains_routing_and_appears_in_draft(provisional, a
     view = documents(service, view)
     assert "고객 담당자를 지정해 주세요." in view["documents"]["email"]["body"]
     assert not view["can_final_review"]
-
