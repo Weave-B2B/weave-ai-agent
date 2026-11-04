@@ -12,6 +12,7 @@ class _Proposal(BaseModel):
 
 
 class ProposedLine(_Proposal):
+    shared_work_key: str | None = None
     task: str = Field(min_length=1)
     item_numbers: list[int] = Field(min_length=1)
     role: Role
@@ -50,6 +51,14 @@ class ProposedQuestion(_Proposal):
     blocking: bool = False
 
 
+class ProposedNeed(_Proposal):
+    kind: Literal["more_evidence", "client_input", "missing_standard"]
+    item_numbers: list[int] = Field(min_length=1)
+    topic: str = Field(min_length=1)
+    target: Literal["pm", "client"] | None = None
+
+
 class Agent3ImpactDraft(_Proposal):
     estimates: list[ProposedEstimate] = Field(min_length=1)
     questions: list[ProposedQuestion] = Field(default_factory=list, max_length=3)
+    needs: list[ProposedNeed] = Field(default_factory=list, max_length=5)

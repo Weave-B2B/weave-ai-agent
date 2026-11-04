@@ -13,7 +13,9 @@ from pydantic import BaseModel, ConfigDict
 
 from app.agents.agent3.agent import LlmAgent3, _matches_rule
 from app.agents.agent3.effort import load_effort_rules
-from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft
+from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft, WorkflowConflict
+from app.agents.agent3.contracts import ProvisionalAgent3Input
+from app.agents.agent3.orchestration import Agent3Orchestration, DraftDocuments, Recalculate, Reestimate, FinalReview
 from app.api.agent3_routes import _guard
 from app.core.config import ROOT, Settings
 from app.llm.factory import build_llm
@@ -56,6 +58,65 @@ class LabInput(BaseModel):
     region: str = 'ap-northeast-2'
     fake_response: dict | None = None
     fake_auto_multi: bool = False
+
+
+class LabProvisionalInput(LabInput):
+    input: ProvisionalAgent3Input
+
+
+orchestration_sessions = {}
+orchestration_current = {}
+
+
+def orchestration_for(sid):
+    with lock:
+        tools, key = orchestration_sessions[sid]
+        if orchestration_current.get(key) != sid:
+            raise WorkflowConflict('새 잠정 산정 세션이 있습니다. 최신 결과를 열어 주세요.')
+        return tools
+
+
+@router.post('/agent3-orchestration')
+def provisional_prepare(request: Request, body: LabProvisionalInput):
+    local_only(request)
+    def execute():
+        from app.agents.agent3.workflow import FAKE_EMAIL
+        from app.orchestration.preflight import provisional_selection
+        allowed, _ = provisional_selection(body.input)
+        fake_input = body.input.model_copy(update={"target_item_ids": allowed})
+        client = FakeLlm([_multi_fake_response(fake_input)] * 3) if body.provider == 'fake' else provider_client(body)
+        tools = Agent3Orchestration(LlmAgent3(client), draft_llm=FakeLlm([FAKE_EMAIL] * 20) if body.provider == 'fake' else client)
+        view = tools.estimate_impact(body.input)
+        key = (body.input.context.project_id, body.input.context.case_id)
+        with lock:
+            orchestration_sessions[view['session_id']] = (tools, key)
+            orchestration_current[key] = view['session_id']
+        return view
+    return _guard(execute)
+
+
+@router.post('/agent3-orchestration/{sid}/documents')
+def provisional_documents(request: Request, sid: str, body: DraftDocuments):
+    local_only(request)
+    return _guard(lambda: orchestration_for(sid).draft_documents(sid, body))
+
+
+@router.post('/agent3-orchestration/{sid}/recalculate')
+def provisional_recalculate(request: Request, sid: str, body: Recalculate):
+    local_only(request)
+    return _guard(lambda: orchestration_for(sid).recalculate(sid, body))
+
+
+@router.post('/agent3-orchestration/{sid}/reestimate')
+def provisional_reestimate(request: Request, sid: str, body: Reestimate):
+    local_only(request)
+    return _guard(lambda: orchestration_for(sid).reestimate(sid, body))
+
+
+@router.post('/agent3-orchestration/{sid}/review')
+def provisional_review(request: Request, sid: str, body: FinalReview):
+    local_only(request)
+    return _guard(lambda: orchestration_for(sid).review(sid, body))
 
 class Agent1LabInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
