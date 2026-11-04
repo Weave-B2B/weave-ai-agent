@@ -5,8 +5,8 @@ import re
 from collections import Counter
 from functools import lru_cache
 
-from app.kb.loader import baselines, documents, sections
-from app.tools.errors import ToolInputError
+from app.kb.loader import baselines, documents, sections, superseded_by
+from app.tools.errors import BaselineSuperseded, ToolInputError
 from app.tools.trace import traced
 
 log = logging.getLogger(__name__)
@@ -17,6 +17,16 @@ def _baseline(baseline_id: str) -> dict:
     if b is None:
         raise ToolInputError(f"unknown baseline_id {baseline_id}")
     return b
+
+
+def require_active_baseline(baseline_id: str) -> None:
+    """새 판단은 현재 기준선으로만 한다. 폐기된 기준선이면 변경합의서로 바뀐 범위를 놓치므로 판단하지 않는다.
+    검색 도구 자체는 과거 기준선도 조회할 수 있다 (재현·감사용)."""
+    _baseline(baseline_id)
+    latest = superseded_by(baseline_id)
+    if latest:
+        raise BaselineSuperseded(f"BASELINE_SUPERSEDED: {baseline_id}는 {latest}로 대체된 기준선입니다. "
+                                 f"현재 기준선({latest}, as_of {baselines()[latest]['as_of']})으로 다시 요청하세요.")
 
 
 @traced("list_baseline_docs")

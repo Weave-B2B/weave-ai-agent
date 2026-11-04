@@ -57,9 +57,26 @@ def _offsets(pages: list[str], s: dict) -> tuple[Optional[int], Optional[int]]:
     return at(s["page"], s["line_start"], False), at(s["page_end"] or s["page"], s["line_end"] or s["line_start"], True)
 
 
+def lab_kb_path() -> Path:
+    """프로토타입(--lab)에서 올린 테스트 문서·기준선. 원본 data/kb는 고치지 않는다 (단가표 로컬 버전과 같은 방식)."""
+    return settings.data_dir.parent / ".prototype-kb" / "kb.json"
+
+
+def _lab_kb() -> dict:
+    if os.environ.get("PROTOTYPE_LAB") != "1" or not lab_kb_path().is_file():
+        return {}
+    return json.loads(lab_kb_path().read_text(encoding="utf-8"))
+
+
+def clear_caches() -> None:
+    for f in (sections, documents, baselines):
+        f.cache_clear()
+
+
 def doc_text(doc_id: str) -> str:
     """offset 기준 텍스트: 추출 페이지를 \\f로 이은 것."""
-    return "\f".join(_read_json("doc_pages.json")["docs"].get(doc_id, []))
+    pages = _read_json("doc_pages.json")["docs"].get(doc_id) or _lab_kb().get("pages", {}).get(doc_id, [])
+    return "\f".join(pages)
 
 
 @lru_cache
@@ -71,17 +88,36 @@ def sections() -> dict[tuple[str, str], dict]:
         out[(s["doc_id"], s["section_id"])] = {
             **s, "chunk_id": chunk_uuid(s["doc_id"], s["section_id"], s["extraction_version"]),
             "start_offset": start, "end_offset": end}
+    for s in _lab_kb().get("sections", []):                # 색인 파이프라인이 만든 청크 (chunk_id·offset 포함)
+        out.setdefault((s["doc_id"], s["section_id"]), s)
     return out
 
 
 @lru_cache
 def documents() -> dict[str, dict]:
-    return {d["doc_id"]: d for d in _read_jsonl("documents.jsonl")}
+    out = {d["doc_id"]: d for d in _read_jsonl("documents.jsonl")}
+    for d in _lab_kb().get("documents", []):
+        out.setdefault(d["doc_id"], d)
+    return out
 
 
 @lru_cache
 def baselines() -> dict[str, dict]:
-    return _read_json("baselines.json")["baselines"]
+    out = dict(_read_json("baselines.json")["baselines"])
+    for k, b in _lab_kb().get("baselines", {}).items():
+        out.setdefault(k, b)
+    return out
+
+
+def superseded_by(baseline_id: str) -> Optional[str]:
+    """이 기준선을 대체한 최신 기준선 ID. 현재 기준선이면 None. 상태의 원본은 백엔드 Baseline(ACTIVE/SUPERSEDED)이고,
+    연동 전에는 baselines.json의 supersedes로 대신한다."""
+    newer = {b["supersedes"]: k for k, b in baselines().items() if b.get("supersedes")}
+    latest, seen = None, {baseline_id}
+    while baseline_id in newer and newer[baseline_id] not in seen:
+        latest = baseline_id = newer[baseline_id]
+        seen.add(latest)
+    return latest
 
 
 def rate_cards() -> dict[str, dict]:

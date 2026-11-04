@@ -19,7 +19,7 @@ from app.agents.agent2.guards import apply_guards
 from app.agents.agent3.guards import finalize_estimates
 from app.agents.base import AgentFailure, AgentSet
 from app.core.config import settings
-from app.kb.loader import baselines, rate_cards
+from app.kb.loader import baselines, rate_cards, superseded_by
 from app.orchestration.ids import new_result_id, now_iso
 from app.orchestration.preflight import preflight_a3
 from app.orchestration.state_store import CaseRecord, StateStore
@@ -52,6 +52,8 @@ class Engine:
         bl = baselines().get(ctx.baseline_id or "")
         if bl is None or bl["project_id"] != ctx.project_id or bl["as_of"] != ctx.baseline_as_of:
             raise InvalidInput("baseline_id·baseline_as_of가 프로젝트와 맞지 않음")
+        if latest := superseded_by(ctx.baseline_id):
+            raise InvalidInput(f"BASELINE_SUPERSEDED: {ctx.baseline_id}는 {latest}로 대체된 기준선입니다")
         if rate_card_id not in rate_cards():
             raise InvalidInput(f"unknown rate_card_id {rate_card_id}")
         old = self.store.get(ctx.case_id)

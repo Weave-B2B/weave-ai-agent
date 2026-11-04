@@ -186,3 +186,4 @@ data/index/
 
 # 로컬 프로토타입에서 수정한 단가표 (원가 등 민감 정보가 포함될 수 있음)
 .prototype-rate-cards/
+.prototype-kb/
