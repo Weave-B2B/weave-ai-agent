@@ -246,6 +246,21 @@ def test_precheck_requires_defect_clause_for_defect_items():
     assert agent._precheck(Item.model_validate(item), [], [defect], {defect: {}}, allowed) == []
 
 
+
+def test_precheck_requires_change_order_before_out_of_scope():
+    # 최초 범위 제외(OUT) 기능도 이후 변경합의서로 승인됐을 수 있다 — 변경합의서를 읽지 않고 범위 밖이면 되돌린다
+    from schema.schemas import Item
+    item = Item.model_validate(INPUTS["CR-A-001"]["items"][0])
+    agent = ToolAgent2(ScriptLLM(GOLD["CR-A-001"]), use_hints=False)
+    allowed = agent._baseline_docs("P-COM-101:BL-2")
+    order = next(k for k, s in sections().items() if k[0] in allowed and s["doc_type"] == "change_order")
+    out_of_scope = Judgment.model_construct(label="out_of_scope")
+    gaps = agent._precheck(item, [], [], {}, allowed, out_of_scope)
+    assert any("변경합의서" in g and f"{order[0]}:{order[1]}" in g for g in gaps)
+    assert agent._precheck(item, [], [order], {order: {}}, allowed, out_of_scope) == []
+    assert agent._precheck(item, [], [], {}, allowed, Judgment.model_construct(label="in_scope")) == []
+    assert agent._precheck(item, [], [], {}, agent._baseline_docs("P-COM-101:BL-1"), out_of_scope) == []   # 변경합의서 없는 기준선
+
 def test_steps_trace_records_queries_and_hits():
     out, _ = _run("CR-A-001")
     steps = out.meta.debug["steps"]["CR-A-001-1"]
