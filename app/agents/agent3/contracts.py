@@ -14,7 +14,7 @@ class ProvisionalAgent3Input(Agent3Input):
     conditional_item_ids: list[str] = Field(default_factory=list)
     customer_questions: list[str] = Field(default_factory=list)
     quote_links: dict[str, list[str]] = Field(default_factory=dict,
-        description="estimate_request item_id -> 견적 대상 item_ids. 매니저가 Agent 1 결과로 채운다.")
+        description="estimate_request item_id -> 견적 대상 item_ids. 오케스트레이터 에이전트가 Agent 1 결과로 채운다.")
 
     @model_validator(mode="after")
     def unique_targets(self):

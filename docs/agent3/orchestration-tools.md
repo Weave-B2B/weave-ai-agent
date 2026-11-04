@@ -1,17 +1,17 @@
 # Agent 3 오케스트레이션 도구 연동
 
-2026-11-04 · Agent 3 도구 구현. 중앙 의사결정 주체는 **슈퍼바이저 에이전트(Supervisor agent)**, 전체 구조는 **멀티에이전트 오케스트레이션**으로 구분한다. 슈퍼바이저 LLM의 자동 도구 선택·Agent 1/2 호출은 별도 연동 대상이다.
+2026-11-04 · Agent 3 도구 구현. 중앙 의사결정 주체는 **오케스트레이터 에이전트(Orchestrator agent)**, 전체 구조는 **멀티에이전트 오케스트레이션**으로 구분한다. 오케스트레이터 에이전트의 자동 도구 선택·Agent 1/2 호출은 별도 연동 대상이다.
 
-슈퍼바이저 담당에게 제안할 호출·상태·질문·승인 규격은 [Agent 3 멀티에이전트 오케스트레이션 연동 제안 계약 v1](orchestration-integration-contract-v1.md)을 따른다. 제안 adapter와 현재 구현을 구분하며, 이 문서는 현재 저수준 서비스·API를 설명한다.
+오케스트레이션 담당에게 제안할 호출·상태·질문·승인 규격은 [Agent 3 멀티에이전트 오케스트레이션 연동 제안 계약 v1](orchestration-integration-contract-v1.md)을 따른다. 제안 adapter와 현재 구현을 구분하며, 이 문서는 현재 저수준 서비스·API를 설명한다.
 
-Agent 3 측 adapter 진입점은 `Agent3SupervisorAdapter`다. ID 중심 호출, kind 대응, 결과 envelope, 질문 변경 정보, 호스트 CAS 포트와 PM 전용 수정·검토를 구현했다. 실제 공통 엔진 연결·슈퍼바이저 루프는 포함하지 않는다. 사용법은 [계약 11장](orchestration-integration-contract-v1.md#11-구현된-agent-3-측-진입점)을 참조한다.
+Agent 3 측 adapter 진입점은 `Agent3OrchestratorAdapter`다. ID 중심 호출, kind 대응, 결과 envelope, 질문 변경 정보, 호스트 CAS 포트와 PM 전용 수정·검토를 구현했다. 실제 공통 엔진 연결·오케스트레이터 에이전트 루프는 포함하지 않는다. 사용법은 [계약 11장](orchestration-integration-contract-v1.md#11-구현된-agent-3-측-진입점)을 참조한다.
 
 ## 이번 구현의 범위
 
 - 기존 `/agent3/impacts`와 `Agent3Workflow`의 개별 PM 검토 경로는 유지한다.
 - `Agent3Orchestration`은 PM 검토 기록을 만들지 않고 잠정 산정·메일·변경합의서 초안을 생성한다.
 - 공통 `schema/schemas.py`를 변경하지 않고 `app/agents/agent3/contracts.py`에 별도 계약을 둔다.
-- 공통 엔진의 기존 `lead_review`를 승인으로 사용하지 않는다. 통합 슈퍼바이저가 도구의 세션 ID·revision을 공통 실행 상태에 연결하고 실제 PM 최종 검토 때만 `review`를 호출해야 한다.
+- 공통 엔진의 기존 `lead_review`를 승인으로 사용하지 않는다. 통합 오케스트레이터 에이전트가 도구의 세션 ID·revision을 공통 실행 상태에 연결하고 실제 PM 최종 검토 때만 `review`를 호출해야 한다.
 - 메모리 저장, 신뢰된 서버 호출용이다. 사용자 인증·권한, 업무 DB 저장·재시작 복구, 고객 발송·서명·기준선 반영은 추가하지 않았다.
 
 ## 입력과 산정 대상
@@ -22,7 +22,7 @@ Agent 3 측 adapter 진입점은 `Agent3SupervisorAdapter`다. ID 중심 호출,
 |---|---|
 | `mode` | `provisional` |
 | `target_item_ids` | 산정을 요청하는 항목. 서버가 다시 적합성을 검사한다. |
-| `conditional_item_ids` | 원문에서 조건부 추가 의도가 확인된 confirmation 항목. 슈퍼바이저가 Agent 1의 원문 분석 결과로 채운다. |
+| `conditional_item_ids` | 원문에서 조건부 추가 의도가 확인된 confirmation 항목. 오케스트레이터 에이전트가 Agent 1의 원문 분석 결과로 채운다. |
 | `customer_questions` | Agent 2 문서 조사 이후에도 남은 고객 확인 사항. 메일에 별도 표시한다. |
 | `pm_review` | 생략 또는 null. PM 승인 객체는 받지 않는다. |
 
@@ -32,7 +32,7 @@ Agent 3 측 adapter 진입점은 `Agent3SupervisorAdapter`다. ID 중심 호출,
 2. 조건부 의도가 보존되어 있고 범위 밖인 `confirmation`.
 3. 명시적 `estimate_request`도 검증된 범위 밖 근거가 있어야 산정한다. 기존 범위 내·기승인 변경은 새 견적 산정에서 제외하고, 근거 없음·판단 보류는 추가 조사를 요청한다. 별도 견적 문의는 `quote_links`로 실제 작업 항목에 연결하며 문의 자체는 중복 산정하지 않는다.
 
-단순 확인·하자·진행 문의는 산정하지 않는다. `estimate_only`와 `estimate_request`를 임의로 동일하게 해석하지 않는다. 이 구분은 Agent 1과 공통 슈퍼바이저에서 확정해야 한다.
+단순 확인·하자·진행 문의는 산정하지 않는다. `estimate_only`와 `estimate_request`를 임의로 동일하게 해석하지 않는다. 이 구분은 Agent 1과 공통 오케스트레이터 에이전트에서 확정해야 한다.
 
 서버는 기준선·프로젝트·요청 context와 Agent 2 결과 ID를 검사하고 `apply_guards`로 실제 인용을 재검증한다. `verified=true`를 전달했다고 신뢰하지 않는다. 보류 항목과 산정 가능한 항목을 분리하고, 항목 또는 전체에 블로킹 질문이 있으면 해당 산정을 멈춘다. 필수 산정 요청을 선택 목록에서 빠뜨리면 추가 확인 상태로 남긴다.
 
@@ -42,7 +42,7 @@ LLM은 작업·직군·공수 기준 ID·가정을 제안한다. 서버가 기�
 
 | 도구 | 동작 | 다음 단계 |
 |---|---|---|
-| `estimate_impact(input)` | 적합한 항목만 잠정 산정 | 반환된 needs·산정 결과로 슈퍼바이저가 선택 |
+| `estimate_impact(input)` | 적합한 항목만 잠정 산정 | 반환된 needs·산정 결과로 오케스트레이터 에이전트가 선택 |
 | `reestimate(session_id, request)` | 작업·가정·Agent 2 근거 변경 후 선택 항목 재산정 | 공유 산정 그룹까지 확대 |
 | `recalculate(session_id, request)` | MD 수정·단가 변경 재계산 | LLM 호출 없음, 초안·승인 무효화 |
 | `draft_documents(session_id, request)` | 잠정 결과로 고객 문서 생성 | PM 최종 검토 전 실행 가능 |
@@ -56,14 +56,14 @@ LLM은 작업·직군·공수 기준 ID·가정을 제안한다. 서버가 기�
 
 `needs`는 `{kind, item_ids, topic, target, source, question_id, blocking}` 목록이다. `target`은 `agent2`/`pm`/`client`/`none`이며, `source`는 생성 주체를 보존한다. 고객 문서에는 고객용 질문(`target=client`)만 포함한다. 표현에 특정 단어가 들어갔는지로 고객 질문을 추정하지 않는다.
 
-- `more_evidence`: 계약 조건·제외 범위 부족. 슈퍼바이저가 Agent 2를 `focus=topic`으로 호출하고 새 결과로 해당 항목을 reestimate한다.
-- `client_input`: 의도·규모·질문 답변 또는 누락 대상 확인. 슈퍼바이저가 기존 문서로 해결 가능한지 확인한 뒤 필요시에만 PM/고객에게 질문한다.
+- `more_evidence`: 계약 조건·제외 범위 부족. 오케스트레이터 에이전트가 Agent 2를 `focus=topic`으로 호출하고 새 결과로 해당 항목을 reestimate한다.
+- `client_input`: 의도·규모·질문 답변 또는 누락 대상 확인. 오케스트레이터 에이전트가 기존 문서로 해결 가능한지 확인한 뒤 필요시에만 PM/고객에게 질문한다.
 - `missing_standard`: 공수 기준 또는 단가표 보완 필요. 문서 조사로 대신 해결했다고 처리하지 않는다.
 - `not_required`: 해당 항목은 산정 대상 아님. 범위 확인 답변에는 포함할 수 있다.
 
 이 도구가 Agent 2나 PM 질문 창을 자동 호출하지는 않는다. `AgentFailure`/HTTP 502와 업무상 정보 부족을 구별한다.
 
-`more_evidence` 때문에 미산정이어도 PM 필수 질문을 별도로 만들지 않는다. `needs.target=agent2`로 유지하여 슈퍼바이저가 문서 조사부터 진행하도록 한다. 일반 질문 ID는 요청 버전·기준선·대상 항목·필드·대상·질문 내용에서 결정하며, 목록 순서 변경으로 다른 질문에 같은 ID가 배정되지 않는다. 질문 의미나 요청 버전이 바뀌면 새 ID를 사용한다.
+`more_evidence` 때문에 미산정이어도 PM 필수 질문을 별도로 만들지 않는다. `needs.target=agent2`로 유지하여 오케스트레이터 에이전트가 문서 조사부터 진행하도록 한다. 일반 질문 ID는 요청 버전·기준선·대상 항목·필드·대상·질문 내용에서 결정하며, 목록 순서 변경으로 다른 질문에 같은 ID가 배정되지 않는다. 질문 의미나 요청 버전이 바뀌면 새 ID를 사용한다.
 
 최초 산정과 부분 재산정은 동일한 대상 선정 규칙을 사용한다. 연결된 견적 문의를 직접 산정 대상에서 제외해도 누락으로 처리하지 않으며, 연결된 작업의 산정 조건은 계속 검사한다.
 
@@ -90,16 +90,16 @@ LLM은 작업·직군·공수 기준 ID·가정을 제안한다. 서버가 기�
 - `POST /{session_id}/review`: `{state_revision, snapshot_hash, request_id, reviewer_ref, decision, reason, acknowledge_unknown_schedule}`
 - `POST /{session_id}/documents/edit`: `{state_revision, kind, narrative, editor_ref, reason}`. PM 전용 문구 수정이며 수치·근거는 서버 사실 블록으로 유지한다.
 
-실제 PM의 확인을 받은 신뢰된 호출부만 review를 호출해야 한다. 요청의 reviewer_ref 문자열은 인증 수단이 아니다. 슈퍼바이저 LLM의 도구 목록에 무제한 승인 권한을 주면 안 된다.
+실제 PM의 확인을 받은 신뢰된 호출부만 review를 호출해야 한다. 요청의 reviewer_ref 문자열은 인증 수단이 아니다. 오케스트레이터 에이전트의 도구 목록에 무제한 승인 권한을 주면 안 된다.
 
 ## 검증 및 기존 화면 연동
 
 - 별도 도구 테스트 패널은 추가하지 않는다. 기존 영향 산정·승인·협의 화면과 개별 API 동작은 유지한다.
 - `tests/test_agent3_orchestration.py`에서 잠정 산정·문서 생성·최종 검토·부분 재산정·공유 작업·버전 충돌을 검증한다. GPT·Gemini 공급자 연결은 모의 응답으로 확인하며 실제 외부 호출은 하지 않는다.
 - 로컬 API 확인을 위한 `/prototype-lab/agent3-orchestration` 경로는 `--lab`에서만 제공한다. 키는 기존 서버 설정에서 읽으며 브라우저에 노출하지 않는다.
-- 실제 슈퍼바이저 연결 시 서버의 `impact`, `documents`, `needs`, `approval`을 기존 화면에서 사용하는 표시 형식으로 매핑한다. 실제 PM 확인은 슈퍼바이저의 최종 검토 단계에서 받는다. 기존 개별 테스트의 중간 승인 버튼을 통합 경로에서 다시 요구하지 않도록 한다.
-- `/analysis` 신규 요청 화면은 여전히 가상 시연이다. Agent 3 도구 구현만으로 슈퍼바이저 자동 호출이 완성된 것은 아니다.
+- 실제 오케스트레이터 에이전트 연결 시 서버의 `impact`, `documents`, `needs`, `approval`을 기존 화면에서 사용하는 표시 형식으로 매핑한다. 실제 PM 확인은 오케스트레이터 에이전트의 최종 검토 단계에서 받는다. 기존 개별 테스트의 중간 승인 버튼을 통합 경로에서 다시 요구하지 않도록 한다.
+- `/analysis` 신규 요청 화면은 여전히 가상 시연이다. Agent 3 도구 구현만으로 오케스트레이터 에이전트 자동 호출이 완성된 것은 아니다.
 
-## 후속 슈퍼바이저 연동
+## 후속 오케스트레이터 에이전트 연동
 
-슈퍼바이저 구현 담당은 도구 반환의 session_id/revision/needs를 공통 케이스 상태에 연결하고, Agent 2 추가 조사와 PM 답변 후 적절한 도구를 재호출한다. 최종 검토에서는 최신 snapshot만 보여주고 실제 사용자 응답으로 review를 호출한다. 이미 구현된 프론트 가상 요청은 실제 에이전트 결과인 것처럼 전달하지 않는다.
+오케스트레이션 구현 담당은 도구 반환의 session_id/revision/needs를 공통 케이스 상태에 연결하고, Agent 2 추가 조사와 PM 답변 후 적절한 도구를 재호출한다. 최종 검토에서는 최신 snapshot만 보여주고 실제 사용자 응답으로 review를 호출한다. 이미 구현된 프론트 가상 요청은 실제 에이전트 결과인 것처럼 전달하지 않는다.

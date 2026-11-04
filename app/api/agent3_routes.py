@@ -107,5 +107,5 @@ def final_review(session_id: str, req: FinalReview):
 
 @router.post("/orchestration/{session_id}/documents/edit")
 def edit_provisional_document(session_id: str, req: EditDocument):
-    """Trusted PM caller only; not a supervisor-callable capability."""
+    """Trusted PM caller only; not an orchestrator-callable capability."""
     return _guard(lambda: get_orchestration().edit_document(session_id, req))
