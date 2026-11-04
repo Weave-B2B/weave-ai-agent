@@ -10,7 +10,7 @@ from schema.schemas import (
     Meta,
 )
 
-from app.agents.agent1.assemble import FeatureSearch, assemble, default_feature_search
+from app.agents.agent1.assemble import FeatureSearch, assemble
 from app.agents.agent1.draft import Agent1Draft
 from app.agents.agent1.prompts import PROMPT_VERSION, SYSTEM, build_user_prompt
 from app.llm.client import LlmClient
@@ -33,7 +33,7 @@ class LlmAgent1:
         self,
         llm: LlmClient,
         *,
-        feature_search: FeatureSearch = default_feature_search,
+        feature_search: FeatureSearch | None = None,
     ) -> None:
         """Store the structured LLM client and feature-candidate search function."""
         self.llm = llm

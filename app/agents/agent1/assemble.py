@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from app.agents.agent1.draft import Agent1Draft, DraftItem
 from app.agents.base import AgentFailure
-from app.tools.doc_tools import search_docs
 from schema.schemas import Agent1Input, Agent1Output, AgentError, Item, Question, Span
 
 
@@ -284,14 +283,6 @@ def assemble(
             for error in exc.errors(include_input=False, include_url=False)
         ]
         raise _assembly_failure(paths) from None
-
-
-def default_feature_search(text: str, baseline_id: str) -> list[str]:
-    """Return up to three baseline section references matching a function item."""
-    return [
-        f"{result['doc_id']}:{result['section_id']}"
-        for result in search_docs(text, baseline_id, top_k=3)
-    ]
 
 
 def _assemble_questions(

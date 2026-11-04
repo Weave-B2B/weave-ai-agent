@@ -58,6 +58,25 @@ def _draft_payload(
     }
 
 
+def test_llm_agent1_does_not_enable_document_search_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.tools import doc_tools
+
+    def unexpected_search(*_args, **_kwargs):
+        raise AssertionError("Agent1 must not call document search")
+
+    monkeypatch.setattr(doc_tools, "search_docs", unexpected_search)
+    inp = _input().model_copy(
+        update={"context": _input().context.model_copy(update={"baseline_id": "BASE-TEST"})}
+    )
+    llm = FakeLlm([_draft_payload()])
+    agent = LlmAgent1(llm)
+
+    output = agent.run(inp)
+
+    assert agent.feature_search is None
+    assert output.items[0].feature_candidates == []
+
+
 def test_llm_agent1_returns_valid_output_and_redacted_metadata() -> None:
     inp = _input()
     llm = FakeLlm([_draft_payload()])
