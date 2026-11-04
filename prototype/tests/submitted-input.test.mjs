@@ -81,6 +81,17 @@ test('integrated preview loads the existing agent screens and never runs model A
   assert.match(app.detail(),/1\. 요청 원문 입력/);
   assert.match(app.detail(),/2\. Agent 1 항목화 결과/);
   assert.match(app.detail(),/로컬 LLM/);
+  for (const tab of ['original','scope','impact','draft']) {
+    app.state.tab=tab;
+    const html=app.detail();
+    assert.match(html,/class="detail-title"/);
+    assert.match(html,/class="detail-meta"/);
+    assert.match(html,/요청 처리/);
+    for (const label of ['요청 원문','범위 검토','영향 산정','승인·협의','실행·검수','청구','이력']) assert.ok(html.includes(label));
+    assert.match(html,/data-action="list"/);
+    assert.match(html,/통합 진행 기록으로/);
+    assert.doesNotMatch(html,/data-action="(?:run-a1|prepare)"/);
+  }
   app.state.tab='scope'; assert.match(app.detail(),/항목별 범위 판단/);
   app.state.tab='impact'; assert.match(app.detail(),/작업 분해 · 공수/);
   app.state.tab='draft'; assert.match(app.detail(),/고객 전달용 협의 메일 초안/);

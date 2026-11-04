@@ -29,7 +29,7 @@ test('preview waits for explicit PM input, resumes and registers only when ready
   assert.equal(h.demo.current().ready,true); assert.equal(h.records.length,1);
   assert.equal(h.demo.current().answer,'사진은 이번에 제외');
   assert.equal(h.records[0].analysisDemo,true); assert.equal(h.records[0].api,undefined);
-  assert.match(h.demo.detail(h.records[0].id,'draft'),/사진은 이번에 제외/);
+  assert.match(h.demo.resultPreview(h.records[0].id,'draft'),/사진은 이번에 제외/);
   h.click('final'); h.choice('approve'); h.click('answer');
   assert.equal(h.records[0].process,'검토 완료');
 });
@@ -54,7 +54,7 @@ test('completed requests and each agent result survive reload without a backend'
   h.choice('기존 기능을 재사용하는 가정으로 초안 작성'); h.click('answer'); h.flush();
   const reloaded=setup(h.store); reloaded.demo.enter(id);
   assert.equal(reloaded.records.length,1);
-  for(const tab of ['original','scope','impact','draft']) assert.ok(reloaded.demo.detail(id,tab).length);
+  for(const tab of ['original','scope','impact','draft']) assert.ok(reloaded.demo.resultPreview(id,tab).length);
   assert.equal(reloaded.demo.current().running,false);
 });
 
