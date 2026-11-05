@@ -31,7 +31,9 @@ RunStatus = Literal["QUEUED", "RUNNING", "WAITING_INPUT", "WAITING_PM_REVIEW", "
 ErrorCode = Literal["INVALID_INPUT", "UPSTREAM_NOT_READY", "VERSION_CONFLICT", "RETRIEVAL_UNAVAILABLE",
                     "MODEL_TIMEOUT", "TOOL_TIMEOUT", "TOOL_FAILED", "OUTPUT_INVALID", "INTERNAL_ERROR"]
 
-ESTIMABLE_INTENTS = {"change_request", "estimate_only"}
+# estimate_only: ask to price an already specified item without requesting a code change.
+# estimate_request: separately ask for an estimate linked to one or more change targets.
+ESTIMABLE_INTENTS = {"change_request", "estimate_request"}
 
 
 class _M(BaseModel):
@@ -107,6 +109,10 @@ class Item(_M):
     feature_candidates: list[str] = Field([], description="'doc_id:section_id'")
     inferred: bool = Field(False, description="원문에 없는 추정 항목")
     gold_origin: Optional[str] = Field(None, description="데이터셋 전용 — 정답 출처·검수 상태")
+    conditional_followup: Optional[str] = Field(
+        None,
+        description="원문상 범위 밖이면 추가를 희망하는 조건부 후속 요청과 원문 근거",
+    )
 
 
 class Question(_M):
@@ -202,7 +208,7 @@ class Agent2Input(_M):
     context: Context = Field(description="baseline_id 필수")
     message_text: str
     a1_result_id: Optional[str] = None
-    items: list[Item] = Field(description="item_type == function 만")
+    items: list[Item] = Field(description="Intent 기반 범위 판단 대상. function 항목과 confirmation 문의를 모두 포함 가능")
     constraints: list[Item] = Field([], description="참고용 비기능 항목")
     answers: list[Answer] = []
 

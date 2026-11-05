@@ -142,6 +142,10 @@ text: 견적 요청
 
 견적 항목은 Agent 3 산정 요청으로 전달되며, 단순 세부 항목 확인 때문에 blocking 질문을 만들지 않는다.
 
+`estimate_only`는 변경 요청이 없는 기존/명시 기능의 가격 문의를 뜻한다. 자동으로 `estimate_request`로 치환하지 않는다. `estimate_request`는 실제 변경 대상 항목과 연결되는 별도 명시적 견적 요청이다.
+
+확인과 변경 의도가 같은 항목이면 목록 하나로 묶지 않고 항목을 나눈다. 범위 확인 뒤 추가를 조건부로 요청하는 경우 `Item.conditional_followup`에 원문 근거를 보존한다.
+
 ### 8. 원문 span 및 근거 연결
 
 Assembly는 draft의 `quotes`를 원문에서 정확히 찾는다.
