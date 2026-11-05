@@ -8,7 +8,7 @@
 
 **테스트 화면:** `python -m streamlit run app/demo_streamlit.py`의 **③ Agent3** 탭에서 입력·산정·공수 수정·승인·협의안을 확인할 수 있습니다. 에이전트 3만 열려면 `python -m streamlit run app/demo_agent3.py`를 사용합니다. 기본 모드는 반복 실행 가능한 오프라인 가상 응답입니다.
 
-현재 프로젝트는 **REST API와 결정적 오케스트레이션 엔진을 검증하는 MVP**입니다. 실제 LLM 에이전트와 영속 저장소는 아직 연결되지 않았으며, 기본 실행 모드인 `fixture`는 평가 데이터셋의 예시 출력을 사용합니다.
+현재 프로젝트는 **REST API와 결정적 오케스트레이션 엔진을 검증하는 MVP**입니다. 기본 실행 모드인 `fixture`는 평가 데이터셋의 예시 출력을 사용합니다.
 
 ## 목차
 
@@ -143,6 +143,9 @@ Google AI Studio의 OpenAI 호환 API를 Local provider로 사용할 때는 `.en
 | `POST` | `/cases/{case_id}/resume` | PM 항목 확인, PM 검토 또는 리드 결정으로 흐름 재개 |
 | `POST` | `/cases/{case_id}/questions/{question_id}/answer` | 확인 질문에 답변 |
 | `POST` | `/cases/{case_id}/retry` | 기술 오류로 실패한 단계 재시도 |
+| `POST` | `/api/v1/analyses` | 프로토타입과 연동하지 않는 일반 서비스 분석 Workflow 시작 |
+| `GET` | `/api/v1/analyses/{analysis_id}` | 누적된 DTO와 Workflow 상태 조회 |
+| `GET` | `/api/v1/analyses/{analysis_id}/status` | 분석 진행 상태만 조회 |
 
 요청·응답 스키마와 단계별 사용 예시는 서버 실행 후 [`/docs`](http://127.0.0.1:8000/docs)에서 확인할 수 있습니다. 잘못된 입력은 `422`, 잘못된 단계 전이 또는 상태 버전 충돌은 `409`, 존재하지 않는 케이스 조회는 `404`를 반환합니다.
 

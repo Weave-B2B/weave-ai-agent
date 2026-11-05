@@ -16,6 +16,7 @@ class _Req(BaseModel):
 class RunRequest(_Req):
     input: Agent1Input
     rate_card_id: str = Field(examples=["RC-SYNTH-2026H2-v2"])
+    auto_confirm_items: bool = False
 
 
 class ConfirmItems(_Req):

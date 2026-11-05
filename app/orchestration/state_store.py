@@ -21,6 +21,7 @@ class CaseRecord:
     a3: Optional[Agent3Output] = None
     answers: list[Answer] = field(default_factory=list)
     questions: dict[str, Question] = field(default_factory=dict)
+    auto_confirm_items: bool = False          # True면 ① 항목을 PM 확인 없이 그대로 확정
     archive: dict[str, dict] = field(default_factory=dict)   # 무효화(STALE)된 결과는 삭제하지 않고 보존
 
     def view(self) -> dict:

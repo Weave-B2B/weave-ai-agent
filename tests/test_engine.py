@@ -59,7 +59,7 @@ def test_a3_input_built_by_engine_matches_dataset(chain):
         if not a3.calls:
             continue
         checked += 1
-        got, want = a3.calls[0].model_dump(), row["agent3_input"]
+        got, want = a3.calls[0].model_dump(exclude_none=True), row["agent3_input"]
         for k in ("context", "rate_card_id", "received_at", "items", "constraints", "answers"):
             assert got[k] == want[k], (row["case_id"], k)
     assert checked >= 10
@@ -282,3 +282,12 @@ def test_start_rejects_unknown_baseline_and_rate_card(chain):
     bad = json.loads(json.dumps(chain[0]["agent1_input"])); bad["context"]["baseline_id"] = "P-COM-101:BL-9"
     with pytest.raises(InvalidInput): eng.start(Agent1Input.model_validate(bad), RC)
     with pytest.raises(InvalidInput): eng.start(Agent1Input.model_validate(chain[0]["agent1_input"]), "RC-NOPE")
+
+
+def test_auto_confirm_items_skips_pm_items_gate(chain):
+    row = chain[0]
+    eng, _ = make()
+    rec = eng.start(Agent1Input.model_validate(row["agent1_input"]), RC, auto_confirm_items=True)
+    assert rec.state.stage != "pm_items" and rec.items is not None
+    assert rec.items == rec.a1.items
+    assert rec.a2 is not None
