@@ -143,6 +143,9 @@ Google AI Studio의 OpenAI 호환 API를 Local provider로 사용할 때는 `.en
 | `POST` | `/cases/{case_id}/resume` | PM 항목 확인, PM 검토 또는 리드 결정으로 흐름 재개 |
 | `POST` | `/cases/{case_id}/questions/{question_id}/answer` | 확인 질문에 답변 |
 | `POST` | `/cases/{case_id}/retry` | 기술 오류로 실패한 단계 재시도 |
+| `POST` | `/api/v1/analyses` | 프로토타입과 연동하지 않는 일반 서비스 분석 Workflow 시작 |
+| `GET` | `/api/v1/analyses/{analysis_id}` | 누적된 DTO와 Workflow 상태 조회 |
+| `GET` | `/api/v1/analyses/{analysis_id}/status` | 분석 진행 상태만 조회 |
 
 요청·응답 스키마와 단계별 사용 예시는 서버 실행 후 [`/docs`](http://127.0.0.1:8000/docs)에서 확인할 수 있습니다. 잘못된 입력은 `422`, 잘못된 단계 전이 또는 상태 버전 충돌은 `409`, 존재하지 않는 케이스 조회는 `404`를 반환합니다.
 

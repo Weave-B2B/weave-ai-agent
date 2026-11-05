@@ -154,14 +154,20 @@ class Engine:
                 return
             rec.a1, s.a1_result_id = out, out.meta.result_id
             self._sync_questions(rec)
-            # Agent 1의 판단 보류 질문은 잠정 상태로 보존하고, 확인 가능한 항목은 Agent 2로 계속 보낸다.
-            if rec.items is None:
-                rec.items = list(out.items)
+            if any(q.blocking and q.status == "open" for q in rec.a1.questions):
+                return self._wait(rec, "WAITING_INPUT", "agent1")
 
         if rec.items is None:
             return self._wait(rec, "WAITING_PM_REVIEW", "pm_items")
 
-        scope_intents = {"change_request", "confirmation", "defect", "issue_report"}
+        scope_intents = {
+            "change_request",
+            "confirmation",
+            "defect",
+            "issue_report",
+            "status_check",
+            "estimate_only",
+        }
         scope_items = [i for i in rec.items if i.intent in scope_intents]
         if not scope_items:                             # 요청이 아닌 메일: 판단·산정할 것이 없다
             s.status, s.stage = "COMPLETED", None

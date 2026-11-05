@@ -59,7 +59,7 @@ def test_a3_input_built_by_engine_matches_dataset(chain):
         if not a3.calls:
             continue
         checked += 1
-        got, want = a3.calls[0].model_dump(), row["agent3_input"]
+        got, want = a3.calls[0].model_dump(exclude_none=True), row["agent3_input"]
         for k in ("context", "rate_card_id", "received_at", "items", "constraints", "answers"):
             assert got[k] == want[k], (row["case_id"], k)
     assert checked >= 10
