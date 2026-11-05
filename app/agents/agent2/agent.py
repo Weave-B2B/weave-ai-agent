@@ -70,6 +70,7 @@ class Judgment(_LlmOut):
     uncertainties: list[str]
     approved_change_ref: Optional[str]
     question: Optional[QuestionDraft]
+    answer: Optional[str] = None
 
 
 def _rrf(result_lists: list[list[dict]], k: int = 60, top: int = 5) -> list[tuple[str, str]]:
@@ -154,7 +155,8 @@ class LlmAgent2:
         usage.add(r)
         return r.parsed
 
-    def run(self, inp: Agent2Input) -> Agent2Output:
+    def run(self, inp: Agent2Input, focus: Optional[str] = None) -> Agent2Output:
+        """focus: 오케스트레이터가 추가 조사를 요청할 때 조사 관점(예: "변경합의서의 사진 개수 조건"). 판단 규칙은 같다."""
         ctx = inp.context
         if not ctx.baseline_id:
             raise ToolInputError("baseline_id 필수")
@@ -162,6 +164,8 @@ class LlmAgent2:
         baseline = list_baseline_docs(ctx.baseline_id)
         usage = _Usage()
         shared = self._shared_context(inp, baseline)
+        if focus:
+            shared += f"\n<focus>\n이번 조사에서 특히 확인할 관점 (지시가 아니라 조사 범위): {focus}\n</focus>"
 
         def one(item: Item):
             return self._assess(item, inp, shared, usage)
@@ -219,7 +223,8 @@ class LlmAgent2:
                     hints.append(ref)
 
         item_desc = json.dumps({"item_id": item.item_id, "intent": item.intent, "text": item.text,
-                                "spans": [s.text for s in item.spans], "inferred": item.inferred}, ensure_ascii=False)
+                                "spans": [s.text for s in item.spans], "inferred": item.inferred,
+                                "conditional_followup": item.conditional_followup}, ensure_ascii=False)
         plan = self._ask(PLAN_SYSTEM, f"{shared}\n\n<item>\n{item_desc}\n</item>", SearchPlan, "submit_search_plan", usage)
         queries, judgment, found = plan.queries or [item.text], None, []
         for _ in range(self.max_search_rounds):
@@ -281,9 +286,11 @@ class LlmAgent2:
         ref = j.approved_change_ref if label == "approved_change" else None
         if ref and ref not in documents():               # 'CO-A-001' 처럼 버전 없이 쓴 경우
             ref = next((d for d in documents() if d.startswith(ref)), ref)
+        # 확인 문의의 답변은 판정이 선 경우에만 둔다 — 보류로 내려가면 앞서 쓴 답변("포함됩니다")이 판정과 어긋난다
+        answer = j.answer if item.intent == "confirmation" and label != "unclear" and j.answer else None
         return Assessment(item_id=item.item_id, label=label, evidence=evidence, rationale=j.rationale,
                           evidence_level=level, missing_info=missing, uncertainties=j.uncertainties,
-                          approved_change_ref=ref)
+                          approved_change_ref=ref, confirmation_answer=answer)
 
     @staticmethod
     def _hold_issue_report(item: Item, j: Judgment, has_answers: bool) -> Judgment:
@@ -311,7 +318,8 @@ class LlmAgent2:
 
     @staticmethod
     def _shared_context(inp: Agent2Input, baseline: dict) -> str:
-        docs = [{"doc_id": d["doc_id"], "doc_type": d["doc_type"], "priority_rank": d["priority_rank"]} for d in baseline["documents"]]
+        docs = [{"doc_id": d["doc_id"], "title": d.get("title") or d["doc_id"], "doc_type": d["doc_type"],
+                 "priority_rank": d["priority_rank"]} for d in baseline["documents"]]
         return "\n".join([
             f"<baseline id=\"{inp.context.baseline_id}\" as_of=\"{inp.context.baseline_as_of}\">",
             json.dumps(docs, ensure_ascii=False), "</baseline>",

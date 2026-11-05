@@ -32,10 +32,10 @@ def apply_guards(out: Agent2Output) -> Agent2Output:
             if kept and a["evidence_level"] == "strong" and not any(ev["match_type"] == "direct" for ev in kept):
                 a["evidence_level"] = "medium"
         if a["label"] in _NEED_EVIDENCE and not kept:
-            a["label"], a["evidence_level"], a["approved_change_ref"] = "unclear", "none", None
+            a["label"], a["evidence_level"], a["approved_change_ref"], a["confirmation_answer"] = "unclear", "none", None, None
             a["missing_info"] = a["missing_info"] + ["검증된 근거 없음 — 판단 보류"]
         elif a["label"] == "approved_change" and not _valid_change_order(a["approved_change_ref"], kept, allowed):
             # 다른 기능만 승인한 변경합의서로 승인 범위를 넓히지 않는다 — 참조 문서가 이 기준선의 변경합의서이고 근거에도 있어야 한다
-            a["label"], a["evidence_level"], a["approved_change_ref"] = "unclear", "none", None
+            a["label"], a["evidence_level"], a["approved_change_ref"], a["confirmation_answer"] = "unclear", "none", None, None
             a["missing_info"] = a["missing_info"] + ["이 항목을 승인한 변경합의서 근거 미확인 — 판단 보류"]
     return Agent2Output.model_validate(data)

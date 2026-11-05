@@ -50,7 +50,7 @@ class ToolAgent2(LlmAgent2):
         hints = [r for r in item.feature_candidates if r.partition(":")[0] in allowed] if self.use_hints else []
         item_desc = json.dumps({"item_id": item.item_id, "intent": item.intent, "text": item.text,
                                 "spans": [s.text for s in item.spans], "inferred": item.inferred,
-                                "feature_hints": hints}, ensure_ascii=False)
+                                "conditional_followup": item.conditional_followup, "feature_hints": hints}, ensure_ascii=False)
         seen: list[tuple[str, str]] = []                 # 이번 실행에서 실제로 본 섹션 = 근거로 쓸 수 있는 범위
         read: dict[tuple[str, str], dict] = {}           # get_section으로 읽은 전문 — 관찰에 한 번만 싣는다
         history: list[dict] = []
