@@ -47,7 +47,7 @@ class Engine:
         self.agents, self.store = agents, store
 
     # ------------------------------------------------------------------ 외부 진입점
-    def start(self, inp: Agent1Input, rate_card_id: str) -> CaseRecord:
+    def start(self, inp: Agent1Input, rate_card_id: str, auto_confirm_items: bool = False) -> CaseRecord:
         ctx = inp.context
         bl = baselines().get(ctx.baseline_id or "")
         if bl is None or bl["project_id"] != ctx.project_id or bl["as_of"] != ctx.baseline_as_of:
@@ -57,7 +57,7 @@ class Engine:
         if rate_card_id not in rate_cards():
             raise InvalidInput(f"unknown rate_card_id {rate_card_id}")
         old = self.store.get(ctx.case_id)
-        rec = CaseRecord(inp=inp, rate_card_id=rate_card_id, state=WorkflowState(context=ctx))
+        rec = CaseRecord(inp=inp, rate_card_id=rate_card_id, state=WorkflowState(context=ctx), auto_confirm_items=auto_confirm_items)
         if old is not None:
             # 원문이 바뀐 재요청: revision이 올라야 하고, 이전 결과는 모두 STALE로 보존 (RERUN_TABLE request_changed)
             if ctx.request_revision <= old.inp.context.request_revision or ctx.analysis_id == old.inp.context.analysis_id:
@@ -156,6 +156,10 @@ class Engine:
             self._sync_questions(rec)
             if any(q.blocking and q.status == "open" for q in rec.a1.questions):
                 return self._wait(rec, "WAITING_INPUT", "agent1")
+
+        if rec.items is None and rec.auto_confirm_items:
+            rec.items = list(rec.a1.items)
+            self._event(rec, "items_auto_confirmed", "system")
 
         if rec.items is None:
             return self._wait(rec, "WAITING_PM_REVIEW", "pm_items")

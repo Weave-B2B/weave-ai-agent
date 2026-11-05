@@ -43,7 +43,7 @@ def health() -> dict:
 def run_case(case_id: str, req: RunRequest):
     if req.input.context.case_id != case_id:
         raise HTTPException(422, "path case_id ≠ context.case_id")
-    return _guard(lambda: get_engine().start(req.input, req.rate_card_id))
+    return _guard(lambda: get_engine().start(req.input, req.rate_card_id, req.auto_confirm_items))
 
 
 @router.get("/cases/{case_id}/state")

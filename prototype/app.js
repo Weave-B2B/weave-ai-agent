@@ -39,7 +39,7 @@ function canEdit() { return safeCurrent() && estimates().length > 0 && estimates
 function currentTotals() {
   const rows = estimates();
   if (!rows.length || rows.some(item => !item.totals)) return null;
-  if (record().analysisDemo) return {md:6.5,price:4250000,cost:null};
+  if (record().analysisDemo && state.view?.phase === 'FRONTEND_PREVIEW') return {md:6.5,price:4250000,cost:null};
   const totals = rows.reduce((sum, item) => ({ md: sum.md + item.totals.md, cost: sum.cost + item.totals.cost, price: sum.price + item.totals.price }), { md: 0, cost: 0, price: 0 });
   return totals;
 }

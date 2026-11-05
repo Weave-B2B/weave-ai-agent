@@ -82,6 +82,11 @@ test('snapshot keeps real Agent 1 item types, spans and questions',()=>{
   assert.equal(withA2.input.a2_result.assessments[0].evidence.length,1);
   const fallback=analysisSnapshot({id:'C',text:'원문',created:'x',step:2,items:['a']});
   assert.equal(fallback.a1.items[0].item_type,'function');
+  const realA3={status:'IMPACT_DRAFT_READY',estimates:[{item_ids:['C-1'],status:'draft',lines:[{task:'t',role:'FE',md:2,item_ids:['C-1']}],totals:{md:2,cost:1000,price:1500,margin:0.3},rate_card_id:'RC-X',schedule:{business_days:null,reason:'r'}}],questions:[]};
+  const withA3=analysisSnapshot({id:'C',text:'원문',created:'x',step:6,items:['a'],realA1:{status:'READY',items,questions},realA3});
+  assert.equal(withA3.view.phase,'ORCHESTRATION');
+  assert.equal(withA3.view.impact.estimates[0].rate_card_id,'RC-X');
+  assert.equal(withA3.view.impact.estimates[0].totals.cost,1000);
 });
 
 test('real flow runs Agent 2 right after Agent 1, then asks PM to confirm judgments',async()=>{

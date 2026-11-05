@@ -282,3 +282,12 @@ def test_start_rejects_unknown_baseline_and_rate_card(chain):
     bad = json.loads(json.dumps(chain[0]["agent1_input"])); bad["context"]["baseline_id"] = "P-COM-101:BL-9"
     with pytest.raises(InvalidInput): eng.start(Agent1Input.model_validate(bad), RC)
     with pytest.raises(InvalidInput): eng.start(Agent1Input.model_validate(chain[0]["agent1_input"]), "RC-NOPE")
+
+
+def test_auto_confirm_items_skips_pm_items_gate(chain):
+    row = chain[0]
+    eng, _ = make()
+    rec = eng.start(Agent1Input.model_validate(row["agent1_input"]), RC, auto_confirm_items=True)
+    assert rec.state.stage != "pm_items" and rec.items is not None
+    assert rec.items == rec.a1.items
+    assert rec.a2 is not None
