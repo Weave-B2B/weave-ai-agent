@@ -60,11 +60,12 @@ class ToolAgent2(LlmAgent2):
         def observe(steps_left: int) -> str:
             return self._observation(shared, item_desc, index, read, history, steps_left)
 
-        pushed_back = False
+        pushed_back = checked = False
         for n in range(self.max_steps):
             step = self._ask(AGENT_SYSTEM, observe(self.max_steps - n), AgentStep, "choose_next_action", usage)
             if step.action == "submit_judgment" and step.judgment is not None:
-                gaps = [] if pushed_back or n == self.max_steps - 1 else self._precheck(item, hints, seen, read, allowed)
+                checked = pushed_back or n < self.max_steps - 1
+                gaps = [] if pushed_back or not checked else self._precheck(item, hints, seen, read, allowed, step.judgment)
                 if gaps:                                 # 제출 전 점검 — 한 번만 되돌려 빠진 조사를 하게 한다
                     pushed_back = True
                     history.append({"action": "submit_judgment", "result": {"rejected": "제출 전 확인 필요", "gaps": gaps}})
@@ -79,6 +80,8 @@ class ToolAgent2(LlmAgent2):
                             "result": obs})
         if judgment is None:                             # 상한 도달 — 본 것만으로 판단을 강제한다
             judgment = self._ask(FINAL_SYSTEM, observe(0), Judgment, "submit_judgment", usage)
+        if not checked:
+            judgment = self._hold_unchecked_out_of_scope(judgment, read, allowed)
 
         usage.trace(item.item_id, [h["action"] for h in history], [self._step_brief(h) for h in history])
         usage.note(item.item_id, label=judgment.label)
@@ -133,8 +136,9 @@ class ToolAgent2(LlmAgent2):
             seen.append(key)
 
     @staticmethod
-    def _precheck(item: Item, hints: list[str], seen: list, read: dict, allowed: set[str]) -> list[str]:
-        """프롬프트로는 지켜지지 않던 조사 누락을 코드가 잡는다 (평가 트레이스에서 반복 확인된 두 가지)."""
+    def _precheck(item: Item, hints: list[str], seen: list, read: dict, allowed: set[str],
+                  judgment: Optional[Judgment] = None) -> list[str]:
+        """프롬프트로는 지켜지지 않던 조사 누락을 코드가 잡는다 (평가 트레이스에서 반복 확인된 누락)."""
         gaps = []
         unseen = [h for h in hints if tuple(h.split(":", 1)) not in seen]
         if unseen:
@@ -144,7 +148,37 @@ class ToolAgent2(LlmAgent2):
                       and "하자" in s["heading"]]
             if defect and not any(k in read for k in defect):
                 gaps.append(f"결함(defect) 항목인데 계약서 하자 조항 {[f'{d}:{c}' for d, c in defect]}을 읽지 않았다")
+        if judgment is not None and judgment.label == "out_of_scope":
+            unread = ToolAgent2._unread_change_orders(read, allowed)
+            if unread:
+                gaps.append("범위 밖으로 판단하기 전에 이 기준선의 변경합의서마다 무엇을 승인했는지 확인하라. "
+                            f"아직 읽지 않은 변경합의서의 변경 대상 조항: {unread}")
         return gaps
+
+    @staticmethod
+    def _unread_change_orders(read: dict, allowed: set[str]) -> list[str]:
+        """최초 범위에서 제외(OUT)된 기능도 이후 변경합의서로 승인됐을 수 있다 — 확인 없이 범위 밖이면 이중 청구 위험.
+        변경합의서가 여럿이면 다른 기능을 승인한 문서만 읽고 넘어갈 수 있어, 문서마다 '변경 대상' 조항을 확인한다."""
+        unread = []
+        for doc_id in sorted({k[0] for k, s in sections().items() if k[0] in allowed and s["doc_type"] == "change_order"}):
+            secs = [k for k in sections() if k[0] == doc_id]
+            if any(k in read for k in secs):
+                continue
+            target = next((k for k in secs if "변경 대상" in sections()[k]["heading"]), secs[0])
+            unread.append(f"{target[0]}:{target[1]} {sections()[target]['heading']}")
+        return unread
+
+    @staticmethod
+    def _hold_unchecked_out_of_scope(j: Judgment, read: dict, allowed: set[str]) -> Judgment:
+        """제출 전 점검을 거치지 못한 판단(단계 상한 강제 판단·마지막 단계 제출)도 변경합의서 확인 없이는 범위 밖으로 확정하지 않는다."""
+        if j.label != "out_of_scope":
+            return j
+        unread = ToolAgent2._unread_change_orders(read, allowed)
+        if not unread:
+            return j
+        return j.model_copy(update={
+            "label": "unclear",
+            "missing_info": j.missing_info + [f"변경합의서 승인 여부 미확인 — 범위 밖으로 확정하기 전에 확인 필요: {unread}"]})
 
     @staticmethod
     def _step_brief(h: dict) -> dict:

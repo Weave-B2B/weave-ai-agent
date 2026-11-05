@@ -246,6 +246,52 @@ def test_precheck_requires_defect_clause_for_defect_items():
     assert agent._precheck(Item.model_validate(item), [], [defect], {defect: {}}, allowed) == []
 
 
+
+def test_precheck_requires_change_order_before_out_of_scope():
+    # 최초 범위 제외(OUT) 기능도 이후 변경합의서로 승인됐을 수 있다 — 변경합의서를 읽지 않고 범위 밖이면 되돌린다
+    from schema.schemas import Item
+    item = Item.model_validate(INPUTS["CR-A-001"]["items"][0])
+    agent = ToolAgent2(ScriptLLM(GOLD["CR-A-001"]), use_hints=False)
+    allowed = agent._baseline_docs("P-COM-101:BL-2")
+    order = next(k for k, s in sections().items() if k[0] in allowed and s["doc_type"] == "change_order")
+    out_of_scope = Judgment.model_construct(label="out_of_scope")
+    gaps = agent._precheck(item, [], [], {}, allowed, out_of_scope)
+    assert any("변경합의서" in g and f"{order[0]}:{order[1]}" in g for g in gaps)
+    assert agent._precheck(item, [], [order], {order: {}}, allowed, out_of_scope) == []
+    assert agent._precheck(item, [], [], {}, allowed, Judgment.model_construct(label="in_scope")) == []
+    assert agent._precheck(item, [], [], {}, agent._baseline_docs("P-COM-101:BL-1"), out_of_scope) == []   # 변경합의서 없는 기준선
+
+
+def test_precheck_requires_every_change_order_not_just_one(monkeypatch):
+    # 변경합의서가 둘이면 다른 기능을 승인한 쪽만 읽고 범위 밖으로 넘어가지 못한다
+    from schema.schemas import Item
+    from app.agents.agent2 import tool_agent
+    secs = {**sections(), ("CO-NEW", "CO-01"): {**sections()[("CO-A-001-v1.0", "CO-01")], "doc_id": "CO-NEW"},
+            ("CO-NEW", "CO-02"): {**sections()[("CO-A-001-v1.0", "CO-02")], "doc_id": "CO-NEW"}}
+    monkeypatch.setattr(tool_agent, "sections", lambda: secs)
+    item = Item.model_validate(INPUTS["CR-A-001"]["items"][0])
+    agent = ToolAgent2(ScriptLLM(GOLD["CR-A-001"]), use_hints=False)
+    allowed = agent._baseline_docs("P-COM-101:BL-2") | {"CO-NEW"}
+    out_of_scope = Judgment.model_construct(label="out_of_scope")
+    first = ("CO-A-001-v1.0", "CO-01")
+    gaps = agent._precheck(item, [], [first], {first: {}}, allowed, out_of_scope)
+    assert gaps and "CO-NEW:CO-01" in gaps[0] and "CO-A-001-v1.0" not in gaps[0]
+    other = ("CO-NEW", "CO-01")
+    assert agent._precheck(item, [], [first, other], {first: {}, other: {}}, allowed, out_of_scope) == []
+
+def test_forced_out_of_scope_without_change_order_is_held():
+    # 단계 상한 강제 판단은 제출 전 점검을 거치지 않으므로, 변경합의서를 안 읽은 범위 밖 판단은 보류로 내린다
+    agent = ToolAgent2(ScriptLLM(GOLD["CR-A-001"]), use_hints=False)
+    allowed = agent._baseline_docs("P-COM-101:BL-2")
+    j = Judgment.model_construct(label="out_of_scope", missing_info=[])
+    held = agent._hold_unchecked_out_of_scope(j, {}, allowed)
+    assert held.label == "unclear" and "CO-A-001-v1.0" in held.missing_info[0]
+    read = {("CO-A-001-v1.0", "CO-01"): {}}
+    assert agent._hold_unchecked_out_of_scope(j, read, allowed).label == "out_of_scope"
+    in_scope = Judgment.model_construct(label="in_scope", missing_info=[])
+    assert agent._hold_unchecked_out_of_scope(in_scope, {}, allowed).label == "in_scope"
+
+
 def test_steps_trace_records_queries_and_hits():
     out, _ = _run("CR-A-001")
     steps = out.meta.debug["steps"]["CR-A-001-1"]

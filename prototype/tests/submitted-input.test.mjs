@@ -56,7 +56,7 @@ async function boot(options = {}) {
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const analysisModule = new vm.SourceTextModule(analysisSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { analysisDemo, route, detail, state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage, startNewProject, npStart, npCreate }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { analysisDemo, route, detail, state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage, startNewProject, npStart, npCreate, guessDocType }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -488,4 +488,21 @@ test('new project wizard resumes a draft and creates the first baseline from con
   await app.npCreate();
   assert.equal(JSON.stringify(baselineCall), JSON.stringify({ id: 'P-NEW-9', ids: ['d-quo', 'd-sow'], asOf: '2026-09-01' }));
   assert.equal(app.kb.creating, null);
+});
+
+test('upload guesses document type from the file name and blocks unknown types', async t => {
+  const projects = { projects: [{ project_id: 'P-COM-101', name: null, draft: false, active_baseline_id: 'P-COM-101:BL-2', documents: [], baselines: [{ baseline_id: 'P-COM-101:BL-2', as_of: '2026-10-05', document_ids: [], status: 'ACTIVE', source: 'dataset' }] }], doc_types: [] };
+  const app = await boot({ labDefaults: { model: 'test-model', fake_response: { estimates: [] } }, callbacks: { kb: async () => structuredClone(projects) } });
+  t.after(app.cleanup);
+  assert.equal(app.guessDocType('CO-A-002-v1.0.pdf'), 'change_order');
+  assert.equal(app.guessDocType('sow-a-001.pdf'), 'sow');
+  assert.equal(app.guessDocType('회의록.pdf'), '');   // 모르면 기본값으로 등록하지 않는다
+  await app.loadKb();
+  app.kb.files = [{ file: { name: 'CO-A-002-v1.0.pdf', size: 2048 }, docType: 'change_order' }, { file: { name: '회의록.pdf', size: 1024 }, docType: '' }];
+  const page = app.projectsPage();
+  assert.match(page, /<option value="change_order" selected>변경합의서<\/option>/);
+  assert.match(page, /종류를 선택해 주세요/);
+  assert.match(page, /data-action="kb-upload" disabled/);
+  app.kb.files[1].docType = 'quote';
+  assert.doesNotMatch(app.projectsPage(), /data-action="kb-upload" disabled/);
 });
