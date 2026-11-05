@@ -23,7 +23,9 @@ from app.agents.agent2.guards import apply_guards
 from app.agents.agent2.prompts import JUDGE_SYSTEM, PLAN_SYSTEM
 from app.agents.base import AgentFailure
 from app.core.config import settings
+from app.embed import EmbedConfigError
 from app.kb.loader import baselines, documents, sections
+from app.kb.vector_store import IndexConflict, IndexMismatch
 from app.llm.client import LlmClient
 from app.tools.doc_tools import get_section, list_baseline_docs, require_active_baseline, search_docs
 from app.tools.errors import ToolInputError
@@ -82,6 +84,19 @@ def _rrf(result_lists: list[list[dict]], k: int = 60, top: int = 5) -> list[tupl
             key = (r["doc_id"], r["section_id"])
             score[key] = score.get(key, 0.0) + 1 / (k + rank)
     return [key for key, _ in sorted(score.items(), key=lambda x: -x[1])[:top]]
+
+
+# 설정 오류·코드 버그는 그대로 올린다. 재시도 가능한 검색 장애로 바꾸면 원인이 가려지고, API가 설정 오류(503)로 알리지 못한다
+_NOT_RETRIEVAL_FAILURE = (ToolInputError, EmbedConfigError, IndexMismatch, IndexConflict, KeyError, TypeError, AttributeError)
+
+
+def _searching(fn):
+    try:
+        return fn()
+    except _NOT_RETRIEVAL_FAILURE:
+        raise
+    except Exception as e:                               # vector-db 연결·임베딩 API 장애
+        raise AgentFailure(AgentError(code="RETRIEVAL_UNAVAILABLE", message=type(e).__name__, stage="agent2", retryable=True))
 
 
 def _candidate(key: tuple[str, str]) -> dict:
@@ -239,20 +254,15 @@ class LlmAgent2:
                 break
             queries = judgment.next_queries
         usage.note(item.item_id, label=judgment.label)
-        judgment = self._hold_issue_report(item, judgment, bool(inp.answers))
+        judgment = self._hold_issue_report(item, judgment, self._answered(item, inp.answers))
         return (self._to_assessment(item, judgment, keys),
                 self._to_question(item, judgment, ctx.case_id), hints)
 
     def _search(self, queries: list[str], doc_types: list[str], baseline_id: str, found: list,
                 exclude: set) -> list[tuple[str, str]]:
         """이번 검색 결과를 앞에, 이전 라운드 결과를 뒤에 두고 max_found에서 자른다. 기본 후보(exclude)는 따로 붙는다."""
-        try:
-            results = [search_docs(q, baseline_id, top_k=5, filters={"doc_types": doc_types} if doc_types else None)
-                       for q in queries[:3]]
-        except ToolInputError:
-            raise
-        except Exception as e:
-            raise AgentFailure(AgentError(code="RETRIEVAL_UNAVAILABLE", message=type(e).__name__, stage="agent2", retryable=True))
+        results = _searching(lambda: [search_docs(q, baseline_id, top_k=5, filters={"doc_types": doc_types} if doc_types else None)
+                                      for q in queries[:3]])
         merged = [k for k in _rrf(results) if k not in exclude]
         merged += [k for k in found if k not in merged]
         return merged[:self.max_found]                   # 판단 프롬프트가 너무 길어지지 않도록
@@ -286,7 +296,7 @@ class LlmAgent2:
             missing = [j.question.reason if j.question else "판단할 근거·정보 부족"]
         ref = j.approved_change_ref if label == "approved_change" else None
         if ref and ref not in documents():               # 'CO-A-001' 처럼 버전 없이 쓴 경우
-            ref = next((d for d in documents() if d.startswith(ref)), ref)
+            ref = next((d for d in documents() if d.startswith(f"{ref}-v")), ref)
         # 확인 문의의 답변은 판정이 선 경우에만 둔다 — 보류로 내려가면 앞서 쓴 답변("포함됩니다")이 판정과 어긋난다
         answer = j.answer if item.intent == "confirmation" and label != "unclear" and j.answer else None
         return Assessment(item_id=item.item_id, label=label, evidence=evidence, rationale=j.rationale,
@@ -324,7 +334,16 @@ class LlmAgent2:
         같은 입력의 같은 질문은 같은 ID — 답변이 새로 붙으면 다시 물어도 새 질문이다."""
         key = json.dumps({"items": q.item_ids, "field": q.field, "text": q.text,
                           "answers": sorted(a.answer_id for a in answers)}, ensure_ascii=False, sort_keys=True)
-        return f"{case_id}-A2Q-{hashlib.sha256(key.encode()).hexdigest()[:10]}"
+        # 항목 하나의 질문은 항목 ID로 시작한다 — 답변이 어느 항목의 질문에 대한 것인지 가릴 수 있게(_answered)
+        prefix = q.item_ids[0] if len(q.item_ids) == 1 else case_id
+        return f"{prefix}-A2Q-{hashlib.sha256(key.encode()).hexdigest()[:10]}"
+
+    @staticmethod
+    def _answered(item: Item, answers: list) -> bool:
+        """이 항목과 관련됐을 수 있는 답변이 있는가. 다른 항목의 Agent 2 질문에 대한 답변은 세지 않는다.
+        Agent 1 등 다른 단계 질문의 답변은 어느 항목 것인지 알 수 없어 관련 있을 수 있다고 본다."""
+        mine = f"{item.item_id}-A2Q-"
+        return any(a.question_id.startswith(mine) or "-A2Q" not in a.question_id for a in answers)
 
     @staticmethod
     def _shared_context(inp: Agent2Input, baseline: dict) -> str:

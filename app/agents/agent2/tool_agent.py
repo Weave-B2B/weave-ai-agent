@@ -14,11 +14,10 @@ import json
 from typing import Literal, Optional
 
 from pydantic import Field
-from schema.schemas import AgentError, Agent2Input, Assessment, Item, Question
+from schema.schemas import Agent2Input, Assessment, Item, Question
 
-from app.agents.agent2.agent import DocType, Judgment, LlmAgent2, _LlmOut, _Usage
+from app.agents.agent2.agent import DocType, Judgment, LlmAgent2, _LlmOut, _searching, _Usage
 from app.agents.agent2.prompts import AGENT_SYSTEM, FINAL_SYSTEM
-from app.agents.base import AgentFailure
 from app.kb.loader import sections
 from app.tools.doc_tools import get_section, search_docs, verify_quote
 from app.tools.errors import ToolInputError
@@ -84,7 +83,7 @@ class ToolAgent2(LlmAgent2):
 
         usage.trace(item.item_id, [h["action"] for h in history], [self._step_brief(h) for h in history])
         usage.note(item.item_id, label=judgment.label)
-        judgment = self._hold_issue_report(item, judgment, bool(inp.answers))
+        judgment = self._hold_issue_report(item, judgment, self._answered(item, inp.answers))
         return (self._to_assessment(item, judgment, seen),
                 self._to_question(item, judgment, ctx.case_id), hints)
 
@@ -94,14 +93,8 @@ class ToolAgent2(LlmAgent2):
             if step.action == "search_docs":
                 if not step.query:
                     return {"error": "query 필요"}
-                try:
-                    res = search_docs(step.query, baseline_id, top_k=5,
-                                      filters={"doc_types": step.doc_types} if step.doc_types else None)
-                except ToolInputError:
-                    raise
-                except Exception as e:
-                    raise AgentFailure(AgentError(code="RETRIEVAL_UNAVAILABLE", message=type(e).__name__,
-                                                  stage="agent2", retryable=True))
+                res = _searching(lambda: search_docs(step.query, baseline_id, top_k=5,
+                                                     filters={"doc_types": step.doc_types} if step.doc_types else None))
                 for r in res:
                     self._see(seen, (r["doc_id"], r["section_id"]))
                 return {"results": [{"doc_id": r["doc_id"], "section_id": r["section_id"],
