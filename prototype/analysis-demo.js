@@ -10,9 +10,10 @@ const MODELS = {gpt:{label:'GPT',model:'gpt-6-luna'},local:{label:'로컬 LLM',m
 export function analysisSnapshot(s) {
   const context={project_id:'P-COM-101',case_id:s.id,request_revision:1,baseline_id:'P-COM-101:BL-2',baseline_as_of:'2026-10-05',analysis_id:`UI-${s.id}`};
   const meta=stage=>({result_id:`ui-${stage}-${s.id}`,model:`화면 시연 · ${MODELS[s.provider||'gpt'].label}`,agent_version:'frontend-preview',debug:{}});
-  const items=(s.items||[]).map((text,i)=>({item_id:`${s.id}-${i+1}`,case_id:s.id,display_no:`R${i+1}`,item_type:'function',intent:'change_request',text,spans:[]}));
+  const real=s.realA1?.items?.length?s.realA1:null;
+  const items=real?real.items:(s.items||[]).map((text,i)=>({item_id:`${s.id}-${i+1}`,case_id:s.id,display_no:`R${i+1}`,item_type:'function',intent:'change_request',text,spans:[]}));
   const source={context,message_text:s.text,received_at:s.created,sender_name:'직접 입력',sender_role:'PM',channel:'manual',items,constraints:[],answers:[]};
-  const a1={context,status:'READY',items,questions:[],meta:meta('a1')};
+  const a1=real?{...real,context:real.context||context,meta:real.meta||meta('a1')}:{context,status:'READY',items,questions:[],meta:meta('a1')};
   const a2={context,status:'READY_FOR_REVIEW',assessments:items.map(i=>({item_id:i.item_id,label:'out_of_scope',rationale:'화면 흐름 확인을 위한 범위 밖 가상 예시입니다. 실제 계약 문서를 검색한 결과가 아닙니다.',evidence_level:'none',evidence:[],missing_info:[],uncertainties:['실제 근거 문서 미연결']})),questions:[],meta:meta('a2')};
   const lines=[['FE','화면 변경 · 고정 예시',3],['BE','내부 API 변경 · 고정 예시',3],['QA','동작 확인 · 고정 예시',0.5]].map(([role,task,md])=>({role,task,md,item_ids:items.map(i=>i.item_id),assumption:s.answer||'미확정'}));
   const input={...source,rate_card_id:'',a2_result:a2,pm_review:{status:'PENDING',items:[]}};

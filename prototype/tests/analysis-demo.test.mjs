@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../analysis-demo.js',import.meta.url),'utf8');
-const {createAnalysisDemo}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const {createAnalysisDemo,analysisSnapshot}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 
 function setup(store=new Map()) {
   const records=[],queue=[],visits=[];
@@ -64,4 +64,18 @@ test('selected local model is recorded independently for each run',()=>{
   assert.equal(h.demo.current().provider,'local');
   assert.match(h.demo.page(),/로컬 LLM 선택/);
   assert.match(h.demo.page(),/실제 AI 호출 없음/);
+});
+
+test('snapshot keeps real Agent 1 item types, spans and questions',()=>{
+  const items=[
+    {item_id:'C-1',case_id:'C',display_no:'R1',item_type:'deadline',intent:'constraint',text:'기존 오픈 일정 유지',spans:[{start:0,end:3,text:'기존 '}]},
+    {item_id:'C-2',case_id:'C',display_no:'R2',item_type:'question',intent:'estimate_request',text:'견적 요청',spans:[]}
+  ];
+  const questions=[{question_id:'Q1',text:'확인'}];
+  const snap=analysisSnapshot({id:'C',text:'원문',created:'2026-11-05',provider:'gpt',step:2,items:items.map(i=>i.text),realA1:{status:'READY',items,questions}});
+  assert.deepEqual(snap.a1.items.map(i=>i.item_type),['deadline','question']);
+  assert.equal(snap.a1.items[0].spans.length,1);
+  assert.deepEqual(snap.a1.questions,questions);
+  const fallback=analysisSnapshot({id:'C',text:'원문',created:'x',step:2,items:['a']});
+  assert.equal(fallback.a1.items[0].item_type,'function');
 });
