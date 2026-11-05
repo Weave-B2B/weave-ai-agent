@@ -21,6 +21,7 @@ class DraftItem(_DraftModel):
     text: str = Field(min_length=1)
     quotes: list[str] = Field(default_factory=list)
     inferred: bool = False
+    conditional_followup: str | None = None
 
 
 class DraftQuestion(_DraftModel):

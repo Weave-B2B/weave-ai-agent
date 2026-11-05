@@ -62,6 +62,13 @@ CONFIRMATION_MARKERS = (
     "확인하려고요",
 )
 
+CONDITIONAL_FOLLOWUP_MARKERS = (
+    "포함인지 확인",
+    "안 되면 추가",
+    "범위 밖이면 추가",
+    "없으면 추가",
+)
+
 
 def is_confirmation_request(text: str) -> bool:
     """Recognize questions asking to confirm existing behavior or scope."""
@@ -69,21 +76,34 @@ def is_confirmation_request(text: str) -> bool:
 
 
 def normalize_confirmation_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1Draft:
-    """Normalize explicit confirmation questions instead of treating them as feature changes."""
+    """Normalize only confirmation evidence instead of converting every item in a mixed email."""
     if not is_confirmation_request(inp.message_text):
         return draft.model_copy(deep=True)
 
     normalized = draft.model_copy(deep=True)
-    source = inp.message_text
-
     for item in normalized.items:
         if item.intent in {"defect", "issue_report"}:
             continue
-        if item.item_type == "function" or (item.item_type == "question" and item.intent != "estimate_request"):
+        if item.intent == "estimate_request":
+            continue
+
+        evidence_parts = [item.text, *item.quotes]
+        evidence = " ".join(part for part in evidence_parts if part)
+        item_is_confirmation = is_confirmation_request(evidence)
+
+        if not item_is_confirmation and len(normalized.items) == 1:
+            item_is_confirmation = True
+
+        if item_is_confirmation and (
+            item.item_type == "function"
+            or (item.item_type == "question" and item.intent != "estimate_request")
+        ):
             item.item_type = "question"
             item.intent = "confirmation"
-            if "가격" in source and "브랜드" in source:
-                item.text = "검색 시 가격 범위(1만~3만원)·브랜드 필터 동시 적용 가능 여부 확인"
+            quote_text = item.quotes[0] if item.quotes else evidence
+            item.text = f"{quote_text.strip()} 적용 가능 여부 확인" if quote_text.strip() else "범위 포함 여부 확인"
+            if any(marker in inp.message_text for marker in CONDITIONAL_FOLLOWUP_MARKERS):
+                item.conditional_followup = inp.message_text.strip()
 
     filtered_questions = []
     for question in normalized.questions:
@@ -262,6 +282,17 @@ def assemble(
                 source="ai",
                 feature_candidates=feature_candidates,
                 inferred=inferred,
+                conditional_followup=(
+                    draft_item.conditional_followup
+                    or next(
+                        (
+                            quote
+                            for quote in draft_item.quotes
+                            if any(marker in quote for marker in CONDITIONAL_FOLLOWUP_MARKERS)
+                        ),
+                        None,
+                    )
+                ),
             )
         )
 

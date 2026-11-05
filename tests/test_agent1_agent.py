@@ -265,7 +265,7 @@ def _draft_from_gold(gold: dict) -> dict:
     }
 
 
-def test_engine_start_uses_llm_agent1_then_waits_for_pm_items(chain) -> None:
+def test_engine_start_uses_llm_agent1_then_reaches_final_pm_review(chain) -> None:
     row = next(
         row
         for row in split_rows("agent1", "gold")
@@ -291,6 +291,6 @@ def test_engine_start_uses_llm_agent1_then_waits_for_pm_items(chain) -> None:
 
     record = engine.start(inp, "RC-SYNTH-2026H2-v1")
 
-    assert record.state.stage == "pm_items"
+    assert record.state.stage == "pm_review"
     assert record.a1 is not None
     assert len(llm.calls) == 1
