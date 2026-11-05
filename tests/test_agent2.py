@@ -175,3 +175,52 @@ def test_issue_report_hold_keeps_llm_question():
     mine = QuestionDraft(text="p95 측정 결과를 주세요", reason="r", field="p95", target="client", blocking=False)
     item, j, _ = _issue_report_judgment(ISSUE_CASE, question=mine)
     assert LlmAgent2._hold_issue_report(item, j, has_answers=False).question.text == "p95 측정 결과를 주세요"
+
+
+def _confirmation(label: str, answer: str | None = "기능명세 3.2에 포함되어 있습니다."):
+    from schema.schemas import Item
+    a = GOLD["CR-A-001"]["assessments"][0]
+    keys = [(e["doc_id"], e["section_id"]) for e in a["evidence"]]
+    raw = {**INPUTS["CR-A-001"]["items"][0], "intent": "confirmation"}
+    j = Judgment(sufficient=True, next_queries=[], label=label,
+                 evidence=[Cite(doc_id=e["doc_id"], section_id=e["section_id"], quote=e["quote"], role=e["role"],
+                                match_type=e["match_type"]) for e in a["evidence"]],
+                 rationale="r", evidence_level="strong", missing_info=[], uncertainties=[], approved_change_ref=None,
+                 question=None, answer=answer)
+    return Item.model_validate(raw), j, keys
+
+
+def test_confirmation_answer_is_kept_with_a_judgment():
+    item, j, keys = _confirmation("in_scope")
+    assert LlmAgent2._to_assessment(item, j, keys).confirmation_answer == j.answer
+
+
+def test_confirmation_answer_is_dropped_when_held_or_not_confirmation():
+    item, j, keys = _confirmation("unclear")
+    assert LlmAgent2._to_assessment(item, j, keys).confirmation_answer is None
+    item, j, keys = _confirmation("in_scope")
+    change = item.model_copy(update={"intent": "change_request"})
+    assert LlmAgent2._to_assessment(change, j, keys).confirmation_answer is None
+
+
+def test_guard_drops_confirmation_answer_when_evidence_fails():
+    from app.agents.agent2.guards import apply_guards
+    out, _ = _run("CR-A-001", quote_override="문서에 없는 문장")
+    data = out.model_dump()
+    for a in data["assessments"]:
+        a.update(label="in_scope", evidence_level="strong", confirmation_answer="포함되어 있습니다.",
+                 evidence=[{**e, "quote": "문서에 없는 문장"} for e in GOLD["CR-A-001"]["assessments"][0]["evidence"]]
+                 if not a["evidence"] else a["evidence"])
+    guarded = apply_guards(type(out).model_validate(data))
+    assert all(a.label == "unclear" and a.confirmation_answer is None for a in guarded.assessments)
+
+
+def test_conditional_followup_reaches_the_model():
+    raw = {**INPUTS["CR-A-001"], "items": [{**INPUTS["CR-A-001"]["items"][0], "intent": "confirmation",
+                                            "conditional_followup": "범위 밖이면 추가 희망"}]}
+    llm = GoldLLM(GOLD["CR-A-001"])
+    seen = []
+    orig = llm._parsed
+    llm._parsed = lambda user, schema: (seen.append(user), orig(user, schema))[1]
+    LlmAgent2(llm).run(Agent2Input.model_validate(raw))
+    assert any("범위 밖이면 추가 희망" in u for u in seen)

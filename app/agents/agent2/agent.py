@@ -70,6 +70,7 @@ class Judgment(_LlmOut):
     uncertainties: list[str]
     approved_change_ref: Optional[str]
     question: Optional[QuestionDraft]
+    answer: Optional[str] = None
 
 
 def _rrf(result_lists: list[list[dict]], k: int = 60, top: int = 5) -> list[tuple[str, str]]:
@@ -219,7 +220,8 @@ class LlmAgent2:
                     hints.append(ref)
 
         item_desc = json.dumps({"item_id": item.item_id, "intent": item.intent, "text": item.text,
-                                "spans": [s.text for s in item.spans], "inferred": item.inferred}, ensure_ascii=False)
+                                "spans": [s.text for s in item.spans], "inferred": item.inferred,
+                                "conditional_followup": item.conditional_followup}, ensure_ascii=False)
         plan = self._ask(PLAN_SYSTEM, f"{shared}\n\n<item>\n{item_desc}\n</item>", SearchPlan, "submit_search_plan", usage)
         queries, judgment, found = plan.queries or [item.text], None, []
         for _ in range(self.max_search_rounds):
@@ -281,9 +283,11 @@ class LlmAgent2:
         ref = j.approved_change_ref if label == "approved_change" else None
         if ref and ref not in documents():               # 'CO-A-001' 처럼 버전 없이 쓴 경우
             ref = next((d for d in documents() if d.startswith(ref)), ref)
+        # 확인 문의의 답변은 판정이 선 경우에만 둔다 — 보류로 내려가면 앞서 쓴 답변("포함됩니다")이 판정과 어긋난다
+        answer = j.answer if item.intent == "confirmation" and label != "unclear" and j.answer else None
         return Assessment(item_id=item.item_id, label=label, evidence=evidence, rationale=j.rationale,
                           evidence_level=level, missing_info=missing, uncertainties=j.uncertainties,
-                          approved_change_ref=ref)
+                          approved_change_ref=ref, confirmation_answer=answer)
 
     @staticmethod
     def _hold_issue_report(item: Item, j: Judgment, has_answers: bool) -> Judgment:

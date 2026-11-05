@@ -222,6 +222,8 @@ class Assessment(_M):
     missing_info: list[str] = []
     uncertainties: list[str] = []
     approved_change_ref: Optional[str] = Field(None, description="approved_change일 때 변경합의서 ID — 재청구 금지")
+    confirmation_answer: Optional[str] = Field(
+        None, description="intent=confirmation 문의에 대한 답변 요약. label이 판정이며, unclear면 없음")
     gold_ref: Optional[dict | str] = Field(None, description="데이터셋 전용 — PD 원본 참조")
 
 
