@@ -76,6 +76,39 @@ test('snapshot keeps real Agent 1 item types, spans and questions',()=>{
   assert.deepEqual(snap.a1.items.map(i=>i.item_type),['deadline','question']);
   assert.equal(snap.a1.items[0].spans.length,1);
   assert.deepEqual(snap.a1.questions,questions);
+  const realA2={status:'READY_FOR_REVIEW',assessments:[{item_id:'C-1',label:'in_scope',rationale:'계약 근거',evidence_level:'explicit',evidence:[{doc_id:'D1'}]}],questions:[]};
+  const withA2=analysisSnapshot({id:'C',text:'원문',created:'x',step:3,items:['a'],realA1:{status:'READY',items,questions},realA2});
+  assert.equal(withA2.a2.assessments[0].label,'in_scope');
+  assert.equal(withA2.input.a2_result.assessments[0].evidence.length,1);
   const fallback=analysisSnapshot({id:'C',text:'원문',created:'x',step:2,items:['a']});
   assert.equal(fallback.a1.items[0].item_type,'function');
+});
+
+test('real flow runs Agent 2 right after Agent 1, then asks PM to confirm judgments',async()=>{
+  const items=[
+    {item_id:'X-1',case_id:'X',display_no:'R1',item_type:'function',intent:'change_request',text:'리뷰 기능',spans:[]},
+    {item_id:'X-2',case_id:'X',display_no:'R2',item_type:'deadline',intent:'constraint',text:'기존 오픈 일정 유지',spans:[]}
+  ];
+  const a2={status:'READY_FOR_REVIEW',assessments:[{item_id:'X-1',label:'out_of_scope',rationale:'제외 기능',evidence:[{doc_id:'FSP-A-001-v1.0',section_id:'F-11'}]}],questions:[],meta:{result_id:'a2-1'}};
+  const calls=[];
+  globalThis.fetch=async(url,opts)=>{const body=JSON.parse(opts.body);calls.push(body.kind);
+    if (body.kind==='items') return {ok:true,json:async()=>({state:{state_revision:3,stage:'pm_review'},a2})};
+    return {ok:true,json:async()=>({state:{state_revision:4},a3:{status:'NOT_REQUIRED',estimates:[]}})};};
+  const store=new Map(),records=[];
+  let demo;
+  const analysisApi={start:async()=>({analysis_id:'A',case_id:'X',structured_request:{structured:{items,questions:[]}},
+    schedule_reference:{item_ids:['X-2'],as_of:'2026-10-05',contract_end:'2026-11-24',contract_end_ref:'CO-A-001-v1.0:CO-02',applied_change_orders:['CO-A-001-v1.0'],milestones:[],note:'기준 안내'},
+    workflow:{state_revision:2,stage:'pm_items'}})};
+  demo=createAnalysisDemo({records,storage:{getItem:k=>store.get(k),setItem:(k,v)=>store.set(k,v)},render:()=>{},navigate:()=>{},openAnalysis:id=>demo.enter(id),schedule:()=>{},analysisApi});
+  const click=action=>demo.click({closest:s=>s==='[data-demo-action]'?{dataset:{demoAction:action}}:null});
+  demo.input({id:'analysis-request',value:'요청'});
+  click('start'); await new Promise(r=>setTimeout(r,10));
+  assert.deepEqual(calls,['items']);
+  const page=demo.page();
+  assert.match(page,/범위 판정 결과를 확인해 주세요/);
+  assert.match(page,/2026-11-24/);
+  assert.match(page,/FSP-A-001-v1.0 F-11/);
+  demo.change({name:'analysis-pm-choice',value:'범위 판정 결과 확인 완료, 영향 산정 진행'});
+  click('answer'); await new Promise(r=>setTimeout(r,10));
+  assert.deepEqual(calls,['items','pm_review']);
 });

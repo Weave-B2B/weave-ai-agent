@@ -5,11 +5,14 @@ from app.dto.analysis import (
     AnalysisResultDTO,
     ContractRequestDTO,
     CostEstimationDTO,
+    ScheduleReferenceDTO,
     ScopeAnalysisDTO,
     StructuredRequestDTO,
 )
 from app.orchestration.engine import Engine, InvalidInput, InvalidTransition, VersionConflict
 from app.orchestration.state_store import CaseRecord
+from app.tools.errors import ToolInputError
+from app.tools.get_schedule import get_schedule
 from schema.schemas import Agent1Input
 
 
@@ -102,5 +105,27 @@ class AnalysisService:
             structured_request=structured,
             scope_analysis=scope,
             cost_estimation=cost,
+            schedule_reference=self._schedule_reference(rec),
             workflow=rec.state,
+        )
+
+    def _schedule_reference(self, rec: CaseRecord) -> ScheduleReferenceDTO | None:
+        """기한·제약 항목이 있으면 판정 없이 계약 문서상의 현재 일정을 함께 돌려준다."""
+        items = rec.items if rec.items is not None else (rec.a1.items if rec.a1 else [])
+        item_ids = [i.item_id for i in items if i.item_type in ("deadline", "constraint")]
+        if not item_ids:
+            return None
+        ctx = rec.inp.context
+        try:
+            found = get_schedule(ctx.project_id, ctx.baseline_as_of)
+        except ToolInputError:
+            return None
+        return ScheduleReferenceDTO(
+            item_ids=item_ids,
+            as_of=found["as_of"],
+            contract_end=found["contract_end"],
+            contract_end_ref=found["contract_end_ref"],
+            applied_change_orders=found["applied_change_orders"],
+            milestones=found["milestones"],
+            note="계약 문서에는 '오픈일'이 따로 없어 계약 종료(최종 인수)일을 기존 일정의 기준으로 표시합니다.",
         )

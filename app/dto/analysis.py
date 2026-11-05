@@ -38,6 +38,18 @@ class CostEstimationDTO(StrictDTO):
     cost: Agent3Output
 
 
+class ScheduleReferenceDTO(StrictDTO):
+    """일정·기한 조건 항목이 있을 때 계약 문서 기준의 현재 일정을 보여 주는 결정적 참고 정보."""
+
+    item_ids: list[str]
+    as_of: Optional[str] = None
+    contract_end: str
+    contract_end_ref: str
+    applied_change_orders: list[str]
+    milestones: list[dict]
+    note: str
+
+
 class AnalysisResultDTO(StrictDTO):
     analysis_id: str
     case_id: str
@@ -45,4 +57,5 @@ class AnalysisResultDTO(StrictDTO):
     structured_request: Optional[StructuredRequestDTO] = None
     scope_analysis: Optional[ScopeAnalysisDTO] = None
     cost_estimation: Optional[CostEstimationDTO] = None
+    schedule_reference: Optional[ScheduleReferenceDTO] = None
     workflow: WorkflowState

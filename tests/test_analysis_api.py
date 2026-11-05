@@ -128,3 +128,17 @@ def test_request_analysis_tab_connects_custom_case_workflow(client):
         },
     )
     assert reviewed.status_code == 200
+
+
+def test_analysis_schedule_reference_only_for_deadline_items(client, chain):
+    with_deadline = next(r for r in chain if any(i["item_type"] in ("deadline", "constraint") for i in r["agent1_gold"]["items"]))
+    without = next(r for r in chain if not any(i["item_type"] in ("deadline", "constraint") for i in r["agent1_gold"]["items"]))
+
+    body = client.post("/api/v1/analyses", json={"input": with_deadline["agent1_input"], "rate_card_id": RC}).json()
+    ref = body["schedule_reference"]
+    ctx = with_deadline["agent1_input"]["context"]
+    assert ref is not None and ref["item_ids"] and ref["contract_end"] and ref["contract_end_ref"]
+    assert ref["as_of"] == ctx["baseline_as_of"]
+
+    body = client.post("/api/v1/analyses", json={"input": without["agent1_input"], "rate_card_id": RC}).json()
+    assert body["schedule_reference"] is None
