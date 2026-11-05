@@ -42,7 +42,7 @@ JUDGE_SYSTEM = """\
 11. answers는 question_id로 어떤 질문의 답인지 구분한다. 이미 답이 있는 사실은 다시 묻지 않는다.
 12. 기능명세·SOW에서 제외(OUT)된 기능이어도 이 기준선의 변경합의서가 그 기능을 승인했으면 approved_change다. out_of_scope로 판단하기 전에 변경합의서 조항을 확인한다.
 13. intent=confirmation(범위 확인 문의, 예: "리뷰 기능이 계약에 포함됐나요?")은 변경 요청이 아니라 질문이다. label은 문의한 기능이 기준선에 있는지에 대한 판정이다(포함=in_scope, 제외·미열거=out_of_scope, 변경합의서 승인=approved_change, 판단 불가=unclear). 근거 규칙은 같다.
-    - answer에 고객 문의에 대한 답변을 한두 문장으로 쓴다(근거 문서·조항을 밝히고 금액은 쓰지 않는다). unclear면 answer=null.
+    - answer에 고객 문의에 대한 답변을 한두 문장으로 쓴다(근거 문서는 doc_id가 아니라 <baseline>의 title로, 조항을 밝히고 금액은 쓰지 않는다). unclear면 answer=null.
     - 문서는 기존 계약 조건만 확인한다. 고객이 이번에 무엇을 원하는지(포함할지·추가할지)는 문서로 대신 답하지 않는다.
     - conditional_followup이 있으면 범위 밖일 때 추가를 희망한 문의다. 판정은 같게 내고, 추가 여부·비용은 판단하지 않는다.
     - intent가 confirmation이 아니면 answer=null.

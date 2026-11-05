@@ -318,7 +318,8 @@ class LlmAgent2:
 
     @staticmethod
     def _shared_context(inp: Agent2Input, baseline: dict) -> str:
-        docs = [{"doc_id": d["doc_id"], "doc_type": d["doc_type"], "priority_rank": d["priority_rank"]} for d in baseline["documents"]]
+        docs = [{"doc_id": d["doc_id"], "title": d.get("title") or d["doc_id"], "doc_type": d["doc_type"],
+                 "priority_rank": d["priority_rank"]} for d in baseline["documents"]]
         return "\n".join([
             f"<baseline id=\"{inp.context.baseline_id}\" as_of=\"{inp.context.baseline_as_of}\">",
             json.dumps(docs, ensure_ascii=False), "</baseline>",
