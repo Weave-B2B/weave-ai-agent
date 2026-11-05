@@ -105,7 +105,7 @@ class ItemSummary(StrictModel):
     approved_change_ref: Optional[str] = None
     confirmation_answer: Optional[str] = None
     conditional_followup: bool = False
-    estimable: bool = Field(description="잠정 산정 조건(범위 밖 + 검증 근거 + 블로킹 질문 없음) 충족")
+    estimable: bool = Field(description="잠정 산정 조건(범위 밖 + 검증 근거 + 블로킹 질문 없음, 확인 문의는 조건부 후속 요청 필요) 충족")
 
 
 class ToolResult(StrictModel):
@@ -274,7 +274,9 @@ class Agent2OrchestratorAdapter:
                              confirmation_answer=assessed[i].confirmation_answer,
                              conditional_followup=bool(by_id[i].conditional_followup),
                              estimable=assessed[i].label == "out_of_scope" and any(e.verified for e in assessed[i].evidence)
-                             and i not in blocked_items)
+                             and i not in blocked_items
+                             # 묻기만 한 확인 문의는 범위 밖이어도 견적 대상이 아니다 — 원문의 조건부 추가 요청이 있을 때만 (Agent 1 계약)
+                             and (by_id[i].intent != "confirmation" or bool(by_id[i].conditional_followup)))
                  for i in requested]
         blocked = any(n.blocking for n in needs)
         return ToolResult(operation_id=operation_id, status="needs_input" if blocked else "ready",

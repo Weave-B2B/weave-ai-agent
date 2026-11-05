@@ -158,3 +158,23 @@ def test_split_question_routes_back_to_agent1():
     r = Agent2OrchestratorAdapter._result("op-2", ACTION.validate_python(_call(_ids("CR-A-001"))), port.snapshot, out, [])
     assert r.status == "needs_input" and r.needs[0].kind == "resplit" and r.needs[0].target == "agent1"
     assert r.items[0].estimable is False
+
+
+def _confirmation_result(followup):
+    from app.agents.agent2.orchestrator_adapter import ACTION
+    port, agent, adapter = _setup("CR-A-002")                        # confirmation 항목
+    adapter.execute("CR-A-002", 0, "op-1", _call(_ids("CR-A-002")))
+    out = port.snapshot.a2_result
+    a = out.assessments[0].model_copy(update={"label": "out_of_scope"})
+    for e in a.evidence:
+        e.verified = True
+    snap = port.snapshot.model_copy(update={"items": [port.snapshot.items[0].model_copy(update={"conditional_followup": followup})]})
+    return Agent2OrchestratorAdapter._result("op-2", ACTION.validate_python(_call(_ids("CR-A-002"))), snap,
+                                             out.model_copy(update={"assessments": [a]}), [])
+
+
+def test_plain_confirmation_is_not_estimable_even_if_out_of_scope():
+    r = _confirmation_result(None)
+    assert r.items[0].label == "out_of_scope" and r.items[0].estimable is False
+    r = _confirmation_result("범위 밖이면 추가 희망")
+    assert r.items[0].estimable is True

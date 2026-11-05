@@ -60,6 +60,7 @@ Agent 2는 항목별로 독립 판단하므로 Agent 3과 달리 세션이 없�
 | `unclear` | 근거·사실 부족 | 제외. 조사·질문 대상 |
 
 - **산정 가능(`estimable`)** = `out_of_scope` + 인용 검증된 근거 1개 이상 + 해당 항목에 열린 블로킹 질문 없음. (#22 잠정 산정 조건)
+  - `confirmation` 항목은 `conditional_followup`이 있을 때만 산정 가능. 묻기만 한 문의는 범위 밖이어도 견적을 만들지 않는다.
 - 범위 밖 판단 전 기준선의 변경합의서마다 승인 대상을 확인한다. 확인 없이 단계 상한에 걸린 `out_of_scope`는 `unclear`로 내린다.
 - `confirmation` 항목: label이 문의한 기능의 포함 여부 판정이고 `confirmation_answer`에 고객 답변 요약을 담는다. `unclear`면 답변 없음. 고객이 이번에 무엇을 원하는지는 문서로 대신 답하지 않는다.
 - `conditional_followup`이 있는 확인 항목이 `estimable`이면 호스트가 잠정 변경 대상으로 전환할 수 있다(Agent 1 계약). Agent 2는 전환하지 않는다.
