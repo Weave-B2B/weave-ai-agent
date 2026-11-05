@@ -33,6 +33,24 @@ class _Base:
 
 class FixtureAgent1(_Base):
     def run(self, inp: Agent1Input) -> Agent1Output:
+        if inp.context.case_id not in self.chain:
+            sentences = [line.strip() for line in inp.message_text.replace("\n", " ").split("。") if line.strip()]
+            if not sentences:
+                sentences = [inp.message_text.strip()] if inp.message_text.strip() else []
+            from schema.schemas import Item
+            items = [
+                Item(
+                    item_id=f"{inp.context.case_id}-{index}",
+                    case_id=inp.context.case_id,
+                    display_no=f"R{index}",
+                    item_type="function",
+                    intent="change_request",
+                    text=sentence,
+                    spans=[],
+                )
+                for index, sentence in enumerate(sentences, 1)
+            ]
+            return Agent1Output(context=inp.context, status="READY", items=items)
         return Agent1Output.model_validate(self.chain[inp.context.case_id]["agent1_gold"]).model_copy(update={"context": inp.context})
 
     def analyze_answer(self, inp: AnswerAnalysisInput) -> AnswerAnalysisOutput:
@@ -44,11 +62,27 @@ class FixtureAgent2(_Base):
     def run(self, inp: Agent2Input) -> Agent2Output:
         from app.tools.doc_tools import require_active_baseline
         require_active_baseline(inp.context.baseline_id or "")
+        if inp.context.case_id not in self.chain:
+            from schema.schemas import Assessment
+            assessments = [
+                Assessment(
+                    item_id=item.item_id,
+                    label="unclear",
+                    evidence=[],
+                    rationale="Fixture 모드에서는 실제 계약 근거를 검색하지 않습니다. PM 검토가 필요합니다.",
+                    evidence_level="interpretation_needed",
+                    missing_info=["추가 계약 근거 또는 승인된 범위 기준이 필요합니다"],
+                )
+                for item in inp.items
+            ]
+            return Agent2Output(context=inp.context, status="READY_FOR_REVIEW", assessments=assessments)
         return Agent2Output.model_validate(self.chain[inp.context.case_id]["agent2_gold"]).model_copy(update={"context": inp.context})
 
 
 class FixtureAgent3(_Base):
     def run(self, inp: Agent3Input) -> Agent3Output:
+        if inp.context.case_id not in self.chain:
+            return Agent3Output(context=inp.context, status="NOT_REQUIRED", estimates=[], review_required=True)
         return Agent3Output.model_validate(self.chain[inp.context.case_id]["agent3_gold"]).model_copy(update={"context": inp.context})
 
 

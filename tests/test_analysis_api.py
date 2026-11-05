@@ -65,3 +65,66 @@ def test_analysis_status_and_get_through_pm_review(client, chain):
 def test_analysis_not_found_and_malformed_request(client):
     assert client.get("/api/v1/analyses/analysis-missing/status").status_code == 404
     assert client.post("/api/v1/analyses", json={"input": {}, "rate_card_id": RC}).status_code == 422
+
+
+def test_request_analysis_tab_connects_custom_case_workflow(client):
+    inp = {
+        "context": {
+            "project_id": "P-COM-101",
+            "case_id": "CR-UI-TEST-001",
+            "request_revision": 1,
+            "baseline_id": "P-COM-101:BL-2",
+            "baseline_as_of": "2026-10-05",
+            "analysis_id": "UI-CR-UI-TEST-001",
+        },
+        "received_at": "2026-11-05T15:40:00+09:00",
+        "sender_role": "PM",
+        "sender_name": "프로토타입",
+        "channel": "manual",
+        "channel_src": "PROTOTYPE",
+        "subject": "요청분석",
+        "message_text": "상품 상세페이지에 별점 기능을 추가해 주세요.",
+        "answers": [],
+    }
+
+    created = client.post("/api/v1/analyses", json={"input": inp, "rate_card_id": RC})
+    assert created.status_code == 200
+    body = created.json()
+    assert body["structured_request"]["structured"]["status"] == "READY"
+    assert body["structured_request"]["structured"]["items"]
+    assert body["workflow"]["stage"] == "pm_items"
+
+    items = body["structured_request"]["structured"]["items"]
+    confirmed = client.post(
+        f"/cases/{body['case_id']}/resume",
+        json={"kind": "items", "state_revision": body["workflow"]["state_revision"], "items": items},
+    )
+    assert confirmed.status_code == 200
+    confirmed_body = confirmed.json()
+    assert confirmed_body["a2"]["status"] == "READY_FOR_REVIEW"
+
+    assessment = confirmed_body["a2"]["assessments"][0]
+    reviewed = client.post(
+        f"/cases/{body['case_id']}/resume",
+        json={
+            "kind": "pm_review",
+            "state_revision": confirmed_body["state"]["state_revision"],
+            "review": {
+                "review_id": "PMR-UI-TEST-001",
+                "review_revision": 1,
+                "target_result_id": confirmed_body["a2"]["meta"]["result_id"],
+                "reviewer": "prototype-pm",
+                "reviewed_at": "2026-11-05T15:45:00+09:00",
+                "status": "REVIEWED",
+                "items": [{
+                    "item_id": assessment["item_id"],
+                    "ai_label": assessment["label"],
+                    "pm_label": assessment["label"],
+                    "estimate": False,
+                    "reason": "",
+                    "evidence_refs": [],
+                }],
+            },
+        },
+    )
+    assert reviewed.status_code == 200

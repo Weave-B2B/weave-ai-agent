@@ -13,6 +13,27 @@ function detailMessage(detail) {
   return "요청을 처리하지 못했습니다.";
 }
 
+export class AnalysisApi {
+  async start(input, rateCardId) {
+    return this.request("", { method: "POST", body: JSON.stringify({ input, rate_card_id: rateCardId }) });
+  }
+  async get(analysisId) {
+    return this.request(`/${encodeURIComponent(analysisId)}`);
+  }
+  async status(analysisId) {
+    return this.request(`/${encodeURIComponent(analysisId)}/status`);
+  }
+  async request(path, options = {}) {
+    const response = await fetch(`/api/v1/analyses${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...options.headers },
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new ApiError(response.status, detailMessage(body?.detail));
+    return body;
+  }
+}
+
 export class Agent3Api {
   lab = false;
   async request(path, options = {}) {

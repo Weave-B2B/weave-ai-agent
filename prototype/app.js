@@ -1,4 +1,4 @@
-import { Agent1Api, Agent2Api, Agent3Api, ApiError, KbApi, MockPreview } from "./api.js?v=kb-new-project-1";
+import { Agent1Api, Agent2Api, Agent3Api, AnalysisApi, ApiError, KbApi, MockPreview } from "./api.js?v=orchestration-1";
 import { records, sampleItems, scenarioInput } from "./fixtures.js?v=common-rate-2";
 import { createAnalysisDemo, analysisSnapshot } from "./analysis-demo.js";
 
@@ -6,6 +6,7 @@ const root = document.querySelector("#app");
 const api = new Agent3Api();
 const agent2 = new Agent2Api();
 const agent1 = new Agent1Api();
+const analysisApi = new AnalysisApi();
 const kbApi = new KbApi();
 const STORAGE = "weave-prototype-agent3-session-v1";
 const PHASE = { FRONTEND_PREVIEW: "가상 결과 · 읽기 전용", APPROVED: "PM 승인 완료 · 협의안 생성 대기", WAITING_IMPACT_APPROVAL: "PM 산정 검토 대기", WAITING_INPUT: "추가 정보 필요", WAITING_UPSTREAM_REVIEW: "상위 PM 검토 필요", DRAFT_READY: "내부 협의안 초안 준비", NOT_REQUIRED: "산정 대상 없음", FAILED: "산정 실패" };
@@ -17,7 +18,7 @@ const defaultModels = { gemini: "gemini-2.5-flash-lite", openai: "gpt-6-luna", o
 const defaultModel = provider => defaultModels[provider] || "";
 const draftLab = { provider: "openai", model: "gpt-6-luna", region: "ap-northeast-2" };
 const lab = { enabled: false, provider: "openai", model: "gpt-6-luna", base_url: "http://127.0.0.1:11434/v1", region: "ap-northeast-2", fakeText: "" };
-const analysisDemo = createAnalysisDemo({ records, storage: sessionStorage, render, navigate, openAnalysis: id => { location.hash = id ? `#/analysis/${encodeURIComponent(id)}` : '#/analysis'; } });
+const analysisDemo = createAnalysisDemo({ records, storage: sessionStorage, render, navigate, openAnalysis: id => { location.hash = id ? `#/analysis/${encodeURIComponent(id)}` : '#/analysis'; }, analysisApi });
 const e = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const itemTypeLabel = value => ({ function: "기능", question: "확인", constraint: "제약", deadline: "기한", dependency: "의존성" }[value] || value || "항목");
 const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "—";
@@ -104,7 +105,7 @@ function sidebar() {
   return `<aside class="sidebar" aria-label="주 메뉴"><div class="brand"><span class="brand-mark">S</span><span class="brand-name">Scopeline</span><span class="mini-tag">MVP</span></div><div class="workspace"><span class="workspace-mark">한</span><div class="workspace-copy">한빛디지털<small>수행사 워크스페이스</small></div>${icon("b05aa")}</div><div class="nav-section">업무</div>${nav.map(([label, file, count]) => { const action = label === "요청 분석" ? "analysis" : label === "변경 요청" ? "list" : label === "프로젝트" && lab.enabled ? "projects" : null; const current = action && (action === "analysis" ? state.page === "analysis" : action === "projects" ? state.page === "projects" : !["projects","analysis"].includes(state.page)); return `<button class="nav ${current ? "active" : ""}" ${action ? `data-action="${action}" ${current ? 'aria-current="page"' : ""}` : 'disabled title="이번 구현 범위에 포함되지 않습니다"'}>${icon(file)}<span class="nav-label">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</button>`; }).join("")}<div class="nav-section">관리</div><button class="nav" disabled title="이번 구현 범위 밖">${icon("ed47e")}<span class="nav-label">설정</span></button><div class="sidebar-bottom"><div class="disclaimer"><strong>${icon("6bb27")}AI는 제안까지만</strong>범위 확정·가격·승인·고객 발송은 담당자가 결정합니다.</div><div class="profile"><span class="avatar large">김</span><div class="profile-copy">김서윤<small>로컬 확인 · 테스트 PM</small></div></div></div></aside>`;
 }
 function topbar() {
-  const path = state.page === "analysis" ? "요청 분석 / 통합 화면 테스트" : state.page === "projects" ? `프로젝트 / ${kb.projectId || "목록"} / 기준 문서` : state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
+  const path = state.page === "analysis" ? "요청 분석 / Agent Orchestration" : state.page === "projects" ? `프로젝트 / ${kb.projectId || "목록"} / 기준 문서` : state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
   return `<header class="topbar"><span class="breadcrumb">${e(path)}</span><label class="top-search">${icon("776e1")}<input id="global-search" placeholder="CR ID, 프로젝트, 문서 검색" aria-label="전체 요청 검색"></label><button class="icon-button" data-action="help" aria-label="로컬 확인 안내">${icon("c360b")}</button><button class="icon-button" data-action="help" aria-label="도움말">${icon("a340e")}</button><span class="top-separator"></span><span class="avatar large">김</span></header>`;
 }
 function filteredRecords() {
