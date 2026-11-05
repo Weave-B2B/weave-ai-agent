@@ -10,7 +10,7 @@ from schema.schemas import Agent2Input
 from app.agents.agent2.agent import Cite, Judgment
 from app.agents.agent2.tool_agent import AgentStep, ToolAgent2
 from app.agents.base import AgentFailure
-from app.kb.loader import sections
+from app.kb.loader import baselines, sections
 from app.llm.client import LlmResult, Usage
 from test_agent2 import GOLD, INPUTS
 
@@ -36,6 +36,7 @@ class ScriptLLM:
         self.qs = {i: q for q in gold["questions"] for i in q["item_ids"]}
         self.script = script or self.default
         self.n: dict[str, int] = {}
+        self.baseline_docs = set(baselines()[gold["context"]["baseline_id"]]["document_ids"])
         self.calls: list[tuple[str, str]] = []
         self._lock = threading.Lock()
 
@@ -43,6 +44,12 @@ class ScriptLLM:
         a = self.by_item[item_id]
         reads = [AgentStep(thought="원문 확인", action="get_section", doc_id=e["doc_id"], section_id=e["section_id"])
                  for e in a["evidence"]]
+        if a["label"] == "out_of_scope":                 # 범위 밖이면 기준선의 변경합의서도 확인한다 (코드가 강제)
+            cited = {(e["doc_id"], e["section_id"]) for e in a["evidence"]}
+            orders = sorted({k[0] for k, s in sections().items() if s["doc_type"] == "change_order" and k[0] in self.baseline_docs})
+            reads += [AgentStep(thought="변경합의서 확인", action="get_section", doc_id=d,
+                                section_id=next(k[1] for k in sections() if k[0] == d)) for d in orders
+                      if not any(c[0] == d for c in cited)]
         steps = [AgentStep(thought="관련 조항 검색", action="search_docs", query=a["rationale"][:20])] + reads
         if n < len(steps):
             return steps[n]
@@ -290,6 +297,19 @@ def test_forced_out_of_scope_without_change_order_is_held():
     assert agent._hold_unchecked_out_of_scope(j, read, allowed).label == "out_of_scope"
     in_scope = Judgment.model_construct(label="in_scope", missing_info=[])
     assert agent._hold_unchecked_out_of_scope(in_scope, {}, allowed).label == "in_scope"
+
+
+def test_resubmitting_after_pushback_does_not_bypass_change_order_check():
+    # 되돌림 후 변경합의서를 읽지 않고 그대로 다시 제출하면 보류로 내린다 (되돌림은 한 번뿐이라 코드가 마지막에 다시 확인)
+    a = GOLD["CR-A-001"]["assessments"][0]
+    out_j = _judgment({**a, "label": "out_of_scope", "approved_change_ref": None}, None)
+
+    def stubborn(item_id, n):
+        return AgentStep(thought="범위 밖", action="submit_judgment", judgment=out_j)
+    out, llm = _run("CR-A-001", stubborn)
+    steps = out.meta.debug["steps"]["CR-A-001-1"]
+    assert any(s.get("rejected") for s in steps)
+    assert out.assessments[0].label == "unclear" and any("변경합의서" in m for m in out.assessments[0].missing_info)
 
 
 def test_steps_trace_records_queries_and_hits():

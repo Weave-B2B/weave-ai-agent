@@ -60,12 +60,11 @@ class ToolAgent2(LlmAgent2):
         def observe(steps_left: int) -> str:
             return self._observation(shared, item_desc, index, read, history, steps_left)
 
-        pushed_back = checked = False
+        pushed_back = False
         for n in range(self.max_steps):
             step = self._ask(AGENT_SYSTEM, observe(self.max_steps - n), AgentStep, "choose_next_action", usage)
             if step.action == "submit_judgment" and step.judgment is not None:
-                checked = pushed_back or n < self.max_steps - 1
-                gaps = [] if pushed_back or not checked else self._precheck(item, hints, seen, read, allowed, step.judgment)
+                gaps = [] if pushed_back or n == self.max_steps - 1 else self._precheck(item, hints, seen, read, allowed, step.judgment)
                 if gaps:                                 # 제출 전 점검 — 한 번만 되돌려 빠진 조사를 하게 한다
                     pushed_back = True
                     history.append({"action": "submit_judgment", "result": {"rejected": "제출 전 확인 필요", "gaps": gaps}})
@@ -80,8 +79,8 @@ class ToolAgent2(LlmAgent2):
                             "result": obs})
         if judgment is None:                             # 상한 도달 — 본 것만으로 판단을 강제한다
             judgment = self._ask(FINAL_SYSTEM, observe(0), Judgment, "submit_judgment", usage)
-        if not checked:
-            judgment = self._hold_unchecked_out_of_scope(judgment, read, allowed)
+        # 되돌림은 한 번뿐이라 그대로 다시 제출하거나 상한까지 미루면 점검을 피할 수 있다 — 최종 판단에서 항상 다시 확인한다
+        judgment = self._hold_unchecked_out_of_scope(judgment, read, allowed)
 
         usage.trace(item.item_id, [h["action"] for h in history], [self._step_brief(h) for h in history])
         usage.note(item.item_id, label=judgment.label)
@@ -170,7 +169,7 @@ class ToolAgent2(LlmAgent2):
 
     @staticmethod
     def _hold_unchecked_out_of_scope(j: Judgment, read: dict, allowed: set[str]) -> Judgment:
-        """제출 전 점검을 거치지 못한 판단(단계 상한 강제 판단·마지막 단계 제출)도 변경합의서 확인 없이는 범위 밖으로 확정하지 않는다."""
+        """변경합의서를 읽지 않은 범위 밖 판단은 경로(되돌림 후 재제출·단계 상한 강제 판단·마지막 단계 제출)와 상관없이 보류로 내린다."""
         if j.label != "out_of_scope":
             return j
         unread = ToolAgent2._unread_change_orders(read, allowed)
