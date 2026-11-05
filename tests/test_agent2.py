@@ -224,3 +224,15 @@ def test_conditional_followup_reaches_the_model():
     llm._parsed = lambda user, schema: (seen.append(user), orig(user, schema))[1]
     LlmAgent2(llm).run(Agent2Input.model_validate(raw))
     assert any("범위 밖이면 추가 희망" in u for u in seen)
+
+
+def test_question_id_differs_by_content_and_answers_but_is_stable():
+    from schema.schemas import Answer, Question
+    q = Question(question_id="", case_id="C", stage="agent2", item_ids=["C-1"], field="facts", text="재현 조건은?",
+                 reason="r", target="client")
+    other = q.model_copy(update={"text": "로그를 주실 수 있나요?"})
+    ans = [Answer(answer_id="A1", question_id="x", text="t", answered_by="pm", answered_at="2026-11-05T10:00:00+09:00")]
+    qid = LlmAgent2._question_id
+    assert qid("C", q, []) == qid("C", q, []) and qid("C", q, []).startswith("C-A2Q-")
+    assert qid("C", q, []) != qid("C", other, [])                      # 재실행 때 새 질문이 이전 질문 ID로 덮이지 않는다
+    assert qid("C", q, []) != qid("C", q, ans)                         # 답변 후 다시 물으면 새 질문

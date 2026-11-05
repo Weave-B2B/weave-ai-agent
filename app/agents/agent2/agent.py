@@ -6,6 +6,7 @@
 """
 import concurrent.futures as cf
 import contextvars
+import hashlib
 import json
 import random
 import threading
@@ -179,7 +180,7 @@ class LlmAgent2:
             assessments.append(a)
             hints[a.item_id] = h
             if q is not None:
-                questions.append(q.model_copy(update={"question_id": f"{ctx.case_id}-A2Q{len(questions) + 1}"}))
+                questions.append(q.model_copy(update={"question_id": self._question_id(ctx.case_id, q, inp.answers)}))
         status = "NEEDS_INPUT" if any(q.blocking for q in questions) else "READY_FOR_REVIEW"
         out = Agent2Output(
             context=ctx, status=status, assessments=assessments, questions=questions,
@@ -315,6 +316,15 @@ class LlmAgent2:
         return Question(question_id="", case_id=case_id, stage="agent2", item_ids=[item.item_id], field=q.field,
                         text=q.text, reason=q.reason, basis_refs=[f"{e.doc_id}:{e.section_id}" for e in j.evidence],
                         target=q.target, blocking=q.blocking)
+
+    @staticmethod
+    def _question_id(case_id: str, q: Question, answers: list) -> str:
+        """재실행해도 다른 질문이 같은 ID를 받지 않게 내용으로 만든다. 엔진은 질문 ID로 질문을 모으므로(setdefault)
+        순번(A2Q1·A2Q2)을 쓰면 답변 후 다시 나온 새 질문이 이전 질문으로 덮인다.
+        같은 입력의 같은 질문은 같은 ID — 답변이 새로 붙으면 다시 물어도 새 질문이다."""
+        key = json.dumps({"items": q.item_ids, "field": q.field, "text": q.text,
+                          "answers": sorted(a.answer_id for a in answers)}, ensure_ascii=False, sort_keys=True)
+        return f"{case_id}-A2Q-{hashlib.sha256(key.encode()).hexdigest()[:10]}"
 
     @staticmethod
     def _shared_context(inp: Agent2Input, baseline: dict) -> str:
