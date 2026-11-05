@@ -118,7 +118,7 @@ def test_confirmation_request_is_not_normalized_as_change_request() -> None:
     assert len(output.items) == 1
     assert output.items[0].item_type == "question"
     assert output.items[0].intent == "confirmation"
-    assert output.items[0].text == "검색 시 가격 범위(1만~3만원)·브랜드 필터 동시 적용 가능 여부 확인"
+    assert output.items[0].text == "상품 검색할 때 가격을 1만원~3만원으로 적용 가능 여부 확인"
     assert output.questions == []
 
 

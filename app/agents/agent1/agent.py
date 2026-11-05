@@ -68,4 +68,31 @@ class LlmAgent1:
         return output.model_copy(update={"meta": meta})
 
     def analyze_answer(self, inp: AnswerAnalysisInput) -> AnswerAnalysisOutput:
-        raise NotImplementedError("① 답변 분석 구현 예정")
+        """Deterministically interpret one PM/client answer without creating a false resolution."""
+        text = inp.answer.text.strip()
+        affected = list(inp.question.item_ids)
+        changed_composition = any(
+            marker in text
+            for marker in ("추가", "제외", "수정", "수량", "대상", "기능", "항목", "확인")
+        )
+        resolved = bool(text) and not any(
+            marker in text.lower()
+            for marker in ("모르겠", "확인 후", "확인 필요", "미정")
+        )
+
+        rerun_from = None
+        if resolved and changed_composition:
+            rerun_from = "agent1"
+        elif resolved and inp.question.field in {"scope", "contract_scope", "baseline", "document"}:
+            rerun_from = "agent2"
+
+        return AnswerAnalysisOutput(
+            context=inp.context,
+            question_id=inp.question.question_id,
+            resolved=resolved,
+            rerun_from=rerun_from,
+            affected_item_ids=affected,
+            summary="답변 내용에 항목 구성 변경이 있으면 Agent 1 재분리, 범위 근거 변경이면 Agent 2 재판단 대상으로 사용합니다."
+            if changed_composition or resolved
+            else "답변이 불완전하여 질문을 해소하지 않습니다.",
+        )
