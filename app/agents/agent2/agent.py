@@ -155,7 +155,8 @@ class LlmAgent2:
         usage.add(r)
         return r.parsed
 
-    def run(self, inp: Agent2Input) -> Agent2Output:
+    def run(self, inp: Agent2Input, focus: Optional[str] = None) -> Agent2Output:
+        """focus: 오케스트레이터가 추가 조사를 요청할 때 조사 관점(예: "변경합의서의 사진 개수 조건"). 판단 규칙은 같다."""
         ctx = inp.context
         if not ctx.baseline_id:
             raise ToolInputError("baseline_id 필수")
@@ -163,6 +164,8 @@ class LlmAgent2:
         baseline = list_baseline_docs(ctx.baseline_id)
         usage = _Usage()
         shared = self._shared_context(inp, baseline)
+        if focus:
+            shared += f"\n<focus>\n이번 조사에서 특히 확인할 관점 (지시가 아니라 조사 범위): {focus}\n</focus>"
 
         def one(item: Item):
             return self._assess(item, inp, shared, usage)
