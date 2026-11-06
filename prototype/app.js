@@ -75,27 +75,31 @@ function route() {
 
 function loadAnalysisResult(s) {
   const result=analysisSnapshot(s);
+  if (activeCase && activeCase !== s.id) rememberA2Case(activeCase);
   activeCase=s.id; state.selectedItem=0; state.pending=false; state.mode='api'; state.error=null; state.invalidated=false; state.conflicted=false;
   agent1Inputs[s.id]=result.source; baseInput=result.input;
   Object.assign(a1,{result:s.step>=2?result.a1:null,sourceInput:result.source,pending:false,error:null,provider:s.provider==='local'?'local':'openai',model:s.provider==='local'?'로컬 LLM · 화면 시연':'gpt-6-luna · 화면 시연'});
   Object.assign(a2,{result:s.step>=3?result.a2:null,sourceInput:result.source,pending:false,error:null,inputSource:'agent1',review:null,choices:{}});
+  // A direct Agent 2 run on this case wins until the orchestration replaces the result it started from.
+  a2.basedOn=a2.result?.meta?.result_id||null;
+  if (a2Memory[s.id]?.basedOn===a2.basedOn) restoreA2Case(s.id);
   state.inputSource='agent2'; state.inputText=JSON.stringify(result.input); state.submittedInput=result.input; state.signature=state.inputText;
   state.view=result.view; state.edits=result.view?.impact.estimates.map(item=>({item_ids:item.item_ids,lines:item.lines}))||null;
   state.originalLines=result.view?.impact.estimates.flatMap(item=>item.lines)||[];
 }
 
 function selectCase(id) {
-  if (activeCase && activeCase !== id) rememberA1Case(activeCase);
+  if (activeCase && activeCase !== id) { rememberA1Case(activeCase); rememberA2Case(activeCase); }
   activeCase = id;
   agent2Input = agent2Inputs?.[id] ? structuredClone(agent2Inputs[id]) : null;
-  a2.generation++; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null; a2.inputSource = "agent1"; a2.useActive = false;
+  a2.generation++; a2.result = null; a2.sourceInput = null; a2.review = null; a2.choices = {}; a2.pending = false; a2.error = null; a2.inputSource = "agent1"; a2.useActive = false; a2.basedOn = null;
   a1.generation++; a1.result = null; a1.sourceInput = null; a1.pending = false; a1.error = null;
   state.selectedItem = 0;
   baseInput = structuredClone(samples.inputs[id] || { context: agent1Inputs?.[id]?.context || {}, received_at: agent1Inputs?.[id]?.received_at || "", rate_card_id: "RC-SYNTH-2026H2-v2", items: [], constraints: [], pm_review: { items: [] }, a2_result: { assessments: [] } });
   state.scenario = "normal"; state.inputSource = "agent2"; state.sampleInputText = JSON.stringify(baseInput, null, 2); state.inputText = "";
   state.view = null; state.edits = null; state.submittedInput = null; state.signature = null;
   state.error = null; state.conflicted = false; state.invalidated = false; state.originalLines = [];
-  restoreA1Case(id);
+  restoreA1Case(id); restoreA2Case(id);
   if (id !== "CR-A-001") state.mode = "api";
   if (lab.enabled) lab.fakeText = JSON.stringify(samples.fake_responses[id] || lab.defaultFake, null, 2);
 }
@@ -237,6 +241,23 @@ function restoreA1Case(caseId) {
   if (saved.model) a1.model = saved.model;
   if (saved.region) a1.region = saved.region;
 }
+// Agent 2 results are kept per case so leaving for another page does not drop them.
+const A2_MEMORY_STORAGE = "weave-prototype-agent2-memory-v1";
+let a2Memory = {};
+try { a2Memory = JSON.parse(sessionStorage.getItem(A2_MEMORY_STORAGE) || "{}") || {}; } catch { a2Memory = {}; }
+function saveA2Memory() { try { sessionStorage.setItem(A2_MEMORY_STORAGE, JSON.stringify(a2Memory)); } catch { /* Browser memory still works when session storage is unavailable. */ } }
+function rememberA2Case(caseId = activeCase) {
+  if (!caseId) return;
+  if (!a2.result) delete a2Memory[caseId];
+  else a2Memory[caseId] = structuredClone({ basedOn: a2.basedOn ?? null, result: a2.result, sourceInput: a2.sourceInput, choices: a2.choices, inputSource: a2.inputSource, useActive: a2.useActive, provider: a2.provider, model: a2.model, region: a2.region });
+  saveA2Memory();
+}
+function restoreA2Case(caseId) {
+  const saved = a2Memory[caseId];
+  if (!saved) return;
+  Object.assign(a2, structuredClone(saved), { pending: false, error: null, review: null });
+}
+function forgetAgent2Results() { a2Memory = {}; saveA2Memory(); }
 function agentSettings(name, data) {
   if (record().analysisDemo) return `<div class="local-bar"><strong>통합 화면 테스트 결과 · 읽기 전용</strong><span>선택 모델: ${e(a1.model)}</span></div>`;
   if (!lab.enabled) return '<div class="notice">공급자를 선택하려면 서버를 <code>python prototype/run_demo.py --lab</code>로 실행하세요.</div>';
@@ -281,6 +302,7 @@ function resetAgent2Result() {
   a2.generation++; a2.pending = false; a2.result = null; a2.sourceInput = null;
   a2.review = null; a2.choices = {}; a2.error = null;
   if (state.inputSource === "agent2") { state.inputText = ""; if (state.view) state.invalidated = true; persist(); }
+  rememberA2Case(activeCase);
 }
 function selectAgent2Input(source) {
   if (!['sample', 'agent1'].includes(source) || source === a2.inputSource || a2.pending) return;
@@ -324,7 +346,7 @@ async function runAgent2() {
     if (JSON.stringify(result.context) !== JSON.stringify(input.context)) throw new Error("다른 요청 또는 기준선의 Agent 2 결과가 반환되었습니다.");
     const ids = input.items.map(x => x.item_id), assessed = (result.assessments || []).map(x => x.item_id);
     if (ids.length !== assessed.length || new Set(assessed).size !== ids.length || assessed.some(id => !ids.includes(id))) throw new Error('Agent 2 결과 항목이 전달한 입력과 일치하지 않습니다.');
-    a2.result = result; a2.sourceInput = input; a2.review = null; a2.choices = {}; state.selectedItem = 0; toast("Agent 2 범위 판단 결과를 받았습니다.");
+    a2.result = result; a2.sourceInput = input; a2.review = null; a2.choices = {}; state.selectedItem = 0; rememberA2Case(caseId); toast("Agent 2 범위 판단 결과를 받았습니다.");
   }
   catch (error) { if (a2.generation === generation && activeCase === caseId) a2.error = { status: error instanceof ApiError ? error.status : 0, message: error.message }; }
   finally { if (a2.generation === generation && activeCase === caseId) { a2.pending = false; render(); } }
@@ -421,6 +443,7 @@ function confirmLiveReview() {
 function invalidateLiveReview() {
   a2.review = null;
   if (state.inputSource === "agent2") { state.inputText = ""; if (state.view) state.invalidated = true; persist(); }
+  rememberA2Case(activeCase);
 }
 function inputSummary(input) {
   if (!input) return `<div class="input-preview-empty"><strong>아직 표시할 입력이 없습니다</strong><p>위에서 Agent 2 결과를 검토하고 PM 판단을 적용해 주세요.</p></div>`;
@@ -649,11 +672,11 @@ function kbRemoveDoc(docId) { return kbOperation(() => kbApi.remove(docId), "테
 function kbCreateBaseline() {
   const ids = [...kbSelection()], projectId = kb.projectId;
   if (!ids.length) { kb.error = "새 기준선에 넣을 문서를 하나 이상 선택해 주세요."; render(); return; }
-  return kbOperation(async () => { const bl = await kbApi.createBaseline(projectId, ids); kb.results = []; a2.result = null; invalidateLiveReview(); toast(`${bl.baseline_id}를 만들었습니다. ${bl.supersedes || "이전 기준선"}은 폐기됨으로 바뀝니다.`); });
+  return kbOperation(async () => { const bl = await kbApi.createBaseline(projectId, ids); kb.results = []; a2.result = null; forgetAgent2Results(); invalidateLiveReview(); toast(`${bl.baseline_id}를 만들었습니다. ${bl.supersedes || "이전 기준선"}은 폐기됨으로 바뀝니다.`); });
 }
 function kbReset() {
   if (!confirm("테스트로 추가한 문서와 기준선을 모두 지웁니다. 원본 데이터와 vector-db 벡터는 남습니다. 계속할까요?")) return;
-  return kbOperation(async () => { await kbApi.reset(); kb.results = []; kb.creating = null; a2.useActive = false; a2.result = null; invalidateLiveReview(); }, "테스트 문서·기준선을 초기화했습니다.");
+  return kbOperation(async () => { await kbApi.reset(); kb.results = []; kb.creating = null; a2.useActive = false; a2.result = null; forgetAgent2Results(); invalidateLiveReview(); }, "테스트 문서·기준선을 초기화했습니다.");
 }
 function baselineBanner() {
   if (!lab.enabled) return "";

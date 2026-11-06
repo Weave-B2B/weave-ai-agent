@@ -219,19 +219,16 @@ class Agent2OrchestratorAdapter:
 
     @staticmethod
     def _merge(snapshot, prev: Optional[Agent2Output], fresh: Agent2Output, processed: list[str], operation_id: str):
-        """다시 판단한 항목만 바꾸고 나머지 항목의 판단·질문은 그대로 둔다. 질문 ID는 이전 것과 겹치지 않게 다시 붙인다."""
+        """다시 판단한 항목만 바꾸고 나머지 항목의 판단·질문은 그대로 둔다.
+        질문 ID는 Agent 2가 항목·내용으로 만든 값을 그대로 쓴다 — 항목별로 달라 겹치지 않고, 답변을 항목에 연결하는 데 쓰인다."""
         case_id, done = snapshot.context.case_id, set(processed)
         kept_a = [a for a in (prev.assessments if prev else []) if a.item_id not in done]
         kept_q = [q for q in (prev.questions if prev else []) if not set(q.item_ids) <= done]
         dropped = [q for q in (prev.questions if prev else []) if set(q.item_ids) <= done]
         used = {q.question_id for q in kept_q}
-        new_q, n = [], len(prev.questions) if prev else 0
-        for q in fresh.questions:
-            n += 1
-            while f"{case_id}-A2Q{n}" in used:
-                n += 1
-            new_q.append(q.model_copy(update={"question_id": f"{case_id}-A2Q{n}"}))
-        # 같은 항목에 같은 질문이 다시 나오면 이전 질문이 아직 열린 것 — 해소되지 않음(superseded)으로 구분한다
+        new_q = [q for q in fresh.questions if q.question_id not in used]
+        # 같은 ID로 다시 나온 질문은 그대로 열린 것. 같은 항목·필드를 다른 문구로 다시 물으면 해소되지 않음(superseded)으로 구분한다
+        dropped = [q for q in dropped if q.question_id not in {n.question_id for n in new_q}]
         still = {(tuple(q.item_ids), q.field) for q in new_q}
         resolved = [q.question_id for q in dropped if (tuple(q.item_ids), q.field) not in still]
         superseded = [q.question_id for q in dropped if (tuple(q.item_ids), q.field) in still]

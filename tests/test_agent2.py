@@ -224,3 +224,49 @@ def test_conditional_followup_reaches_the_model():
     llm._parsed = lambda user, schema: (seen.append(user), orig(user, schema))[1]
     LlmAgent2(llm).run(Agent2Input.model_validate(raw))
     assert any("범위 밖이면 추가 희망" in u for u in seen)
+
+
+def test_question_id_differs_by_content_and_answers_but_is_stable():
+    from schema.schemas import Answer, Question
+    q = Question(question_id="", case_id="C", stage="agent2", item_ids=["C-1"], field="facts", text="재현 조건은?",
+                 reason="r", target="client")
+    other = q.model_copy(update={"text": "로그를 주실 수 있나요?"})
+    ans = [Answer(answer_id="A1", question_id="x", text="t", answered_by="pm", answered_at="2026-11-05T10:00:00+09:00")]
+    qid = LlmAgent2._question_id
+    assert qid("C", q, []) == qid("C", q, []) and qid("C", q, []).startswith("C-1-A2Q-")
+    assert qid("C", q, []) != qid("C", other, [])                      # 재실행 때 새 질문이 이전 질문 ID로 덮이지 않는다
+    assert qid("C", q, []) != qid("C", q, ans)                         # 답변 후 다시 물으면 새 질문
+
+
+def test_issue_report_hold_ignores_answers_to_other_items_questions():
+    """원인 불명 제보는 다른 항목의 Agent 2 질문에 답이 와도 확정하지 않는다."""
+    from schema.schemas import Answer
+    item, j, keys = _issue_report_judgment(ISSUE_CASE)
+    ans = lambda qid: [Answer(answer_id="A1", question_id=qid, text="t", answered_by="client",
+                              answered_at="2026-11-05T10:00:00+09:00")]
+    assert not LlmAgent2._answered(item, ans(f"{item.item_id}0-A2Q-abc"))   # 다른 항목(ID 앞부분만 같은)
+    assert not LlmAgent2._answered(item, ans("OTHER-1-A2Q-abc"))
+    assert LlmAgent2._answered(item, ans(f"{item.item_id}-A2Q-abc"))
+    assert LlmAgent2._answered(item, ans(f"{ISSUE_CASE}-Q1"))                 # Agent 1 질문 답변은 관련 있을 수 있음
+    held = LlmAgent2._hold_issue_report(item, j, LlmAgent2._answered(item, ans("OTHER-1-A2Q-abc")))
+    assert held.label == "unclear"
+
+
+@pytest.mark.parametrize("exc", [KeyError("bug"), __import__("app.embed", fromlist=["x"]).EmbedConfigError("no key")])
+def test_config_errors_and_bugs_are_not_retrieval_outages(monkeypatch, exc):
+    import app.agents.agent2.agent as mod
+
+    def boom(*a, **kw):
+        raise exc
+    monkeypatch.setattr(mod, "search_docs", boom)
+    with pytest.raises(type(exc)):
+        _run("CR-A-001")
+
+
+def test_change_order_ref_without_version_matches_only_that_document(monkeypatch):
+    import app.agents.agent2.agent as mod
+    docs = {"CO-A-0010-v1.0": {}, "CO-A-001-v1.0": {}}
+    monkeypatch.setattr(mod, "documents", lambda: docs)
+    item, j, keys = _confirmation("approved_change")
+    j = j.model_copy(update={"approved_change_ref": "CO-A-001"})
+    assert LlmAgent2._to_assessment(item, j, keys).approved_change_ref == "CO-A-001-v1.0"
