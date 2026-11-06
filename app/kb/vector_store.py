@@ -162,6 +162,15 @@ class PgVectorStore:
             (self.model_id, chunk_ids))
         return {r[0]: r[1:] for r in rows}
 
+    def delete_documents(self, document_version_ids: list[str]) -> int:
+        """문서 버전의 벡터를 모든 임베딩 프로필에서 지운다. 로컬 테스트 문서 정리용."""
+        if not document_version_ids:
+            return 0
+        with self._lock, self._conn.transaction():
+            cur = self._conn.execute("DELETE FROM public.chunk_embedding WHERE document_version_id = ANY(%s::uuid[])",
+                                     (sorted(document_version_ids),))
+            return cur.rowcount
+
     def insert(self, rows: list[tuple]) -> None:
         """(chunk_id, document_version_id, project_id, vector, text_hash, extraction_version). 이미 있으면 건드리지 않는다."""
         with self._lock, self._conn.transaction():

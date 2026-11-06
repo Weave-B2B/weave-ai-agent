@@ -171,3 +171,46 @@ def test_new_project_is_draft_until_first_baseline_with_contract_or_sow(lab):
     # 이후 기준선은 변경합의서를 넣을 수 있고 기준일은 오늘이다
     assert lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["s"], "as_of": "2026-09-02"}).status_code == 422
     assert lab.post(f"{base}/P-NEW-1/baselines", json={"document_ids": ["s", "q", "co"]}).json()["supersedes"] == "P-NEW-1:BL-1"
+
+
+def test_delete_lab_baseline_restores_the_one_it_replaced(lab):
+    docs = loader.baselines()["P-COM-101:BL-2"]["document_ids"]
+    for _ in range(2):
+        assert lab.post("/prototype-lab/kb/projects/P-COM-101/baselines", json={"document_ids": docs}).status_code == 200
+    url = "/prototype-lab/kb/baselines/{}".format
+    assert lab.delete(url("P-COM-101:BL-2")).status_code == 404            # 원본 기준선은 지우지 않는다
+    assert lab.delete(url("P-COM-101:BL-3")).status_code == 409            # 나중 기준선이 대체한 기준선
+    assert lab.delete(url("P-COM-101:BL-4")).json() == {"removed": "P-COM-101:BL-4", "active_baseline_id": "P-COM-101:BL-3", "removed_documents": []}
+    assert loader.superseded_by("P-COM-101:BL-2") == "P-COM-101:BL-3"
+    assert lab.delete(url("P-COM-101:BL-3")).json()["active_baseline_id"] == "P-COM-101:BL-2"
+    assert loader.superseded_by("P-COM-101:BL-2") is None
+    project = next(p for p in lab.get("/prototype-lab/kb/projects").json()["projects"] if p["project_id"] == "P-COM-101")
+    assert project["active_baseline_id"] == "P-COM-101:BL-2"
+    again = lab.post("/prototype-lab/kb/projects/P-COM-101/baselines", json={"document_ids": docs}).json()
+    assert again["baseline_id"] == "P-COM-101:BL-5"                       # 지운 번호는 다시 쓰지 않는다
+
+
+def test_delete_lab_baseline_also_removes_documents_only_it_used(lab):
+    from prototype import kb_routes
+    data, objects = kb_routes._load(), kb_routes._root() / "objects"
+    for doc_id in ("SOW-LAB-1", "SOW-LAB-2"):
+        data["documents"].append({**loader.documents()["SOW-A-001-v1.0"], "doc_id": doc_id, "title": doc_id, "index_request_id": f"RQ-{doc_id}"})
+        (objects / "lab-source").mkdir(parents=True, exist_ok=True)
+        (objects / "lab-source" / f"{doc_id}.pdf").write_bytes(b"%PDF")
+        (objects / "lab-result" / "indexing" / f"RQ-{doc_id}").mkdir(parents=True)
+        (objects / "lab-result" / "indexing" / f"RQ-{doc_id}" / "manifest.json").write_text("{}")
+        data["sections"].append({**next(v for k, v in loader.sections().items() if k[0] == "SOW-A-001-v1.0"), "doc_id": doc_id})
+        data["pages"][doc_id] = ["본문"]
+    kb_routes._save(data)
+    docs = loader.baselines()["P-COM-101:BL-2"]["document_ids"]
+    lab.post("/prototype-lab/kb/projects/P-COM-101/baselines", json={"document_ids": docs + ["SOW-LAB-1"]})
+    lab.post("/prototype-lab/kb/projects/P-COM-101/baselines", json={"document_ids": docs + ["SOW-LAB-1", "SOW-LAB-2"]})
+    url = "/prototype-lab/kb/baselines/{}".format
+    assert lab.delete(url("P-COM-101:BL-4")).json()["removed_documents"] == ["SOW-LAB-2"]   # BL-3이 쓰는 문서는 남긴다
+    assert "SOW-LAB-2" not in loader.documents() and "SOW-LAB-1" in loader.documents()
+    assert not (objects / "lab-source" / "SOW-LAB-2.pdf").exists() and not (objects / "lab-result" / "indexing" / "RQ-SOW-LAB-2").exists()
+    assert (objects / "lab-source" / "SOW-LAB-1.pdf").exists()
+    assert lab.delete(url("P-COM-101:BL-3")).json()["removed_documents"] == ["SOW-LAB-1"]
+    assert not {"SOW-LAB-1", "SOW-LAB-2"} & set(loader.documents()) and not loader.doc_text("SOW-LAB-1")
+    assert "SOW-A-001-v1.0" in loader.documents()                                           # 원본 문서는 그대로
+    assert not (objects / "lab-source" / "SOW-LAB-1.pdf").exists() and not (objects / "lab-result" / "indexing" / "RQ-SOW-LAB-1").exists()

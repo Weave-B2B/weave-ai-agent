@@ -10,7 +10,7 @@ import shutil
 from datetime import date
 from pathlib import Path
 from threading import RLock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -79,6 +79,57 @@ def _vectors():
     if vb is None or not isinstance(vb[1], PgVectorStore):
         raise HTTPException(409, "vector-db 연결이 필요합니다. .env에 VECTOR_STORE=pgvector, VECTOR_DB_URL, 임베딩 키를 설정해 주세요.")
     return vb
+
+
+def _drop_docs(data: dict, doc_ids: set[str]) -> list[Path]:
+    """테스트 문서를 목록·조항·원문에서 빼고, 함께 지울 업로드 원본·색인 결과 경로를 돌려준다."""
+    objects = _root() / "objects"
+    files = []
+    for d in data["documents"]:
+        if d["doc_id"] in doc_ids:
+            files.append(objects / SOURCE_BUCKET / f"{d['doc_id']}.pdf")
+            if d.get("index_request_id"):   # 이전에 올린 문서는 색인 요청 ID가 없어 원본만 지운다
+                files.append(objects / RESULT_BUCKET / "indexing" / d["index_request_id"])
+    data["documents"] = [d for d in data["documents"] if d["doc_id"] not in doc_ids]
+    data["sections"] = [s for s in data["sections"] if s["doc_id"] not in doc_ids]
+    for doc_id in doc_ids:
+        data["pages"].pop(doc_id, None)
+    return files
+
+
+def _delete_files(paths: list[Path]) -> None:
+    for p in paths:
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
+        else:
+            p.unlink(missing_ok=True)
+
+
+def _delete_vectors(doc_ids: set[str]) -> None:
+    """테스트 문서의 벡터를 vector-db에서 지운다. 업로드 문서 ID가 곧 벡터의 document_version_id다.
+    vector-db를 쓰지 않거나 연결되지 않으면 건너뛴다. 남은 벡터는 기준선 문서로 걸러져 검색에 섞이지 않는다."""
+    from app.core.config import settings
+    ids = [d for d in doc_ids if _is_uuid(d)]   # 원본 데이터 문서 ID는 UUID가 아니다
+    if not ids or settings.vector_store != "pgvector" or not settings.vector_db_url:
+        return
+    try:
+        store = PgVectorStore(settings.vector_db_url, "", 0)
+    except Exception:
+        return
+    try:
+        store.delete_documents(ids)
+    except Exception:
+        pass
+    finally:
+        store._conn.close()
+
+
+def _is_uuid(s: str) -> bool:
+    try:
+        UUID(s)
+        return True
+    except ValueError:
+        return False
 
 
 def _active(project_id: str) -> str | None:
@@ -168,7 +219,7 @@ def upload(project_id: str, body: UploadDocument, request: Request):
     doc = {"doc_id": doc_id, "project_id": project_id, "doc_type": body.doc_type, "version": "lab",
            "effective_date": today, "approval_state": "approved", "priority_rank": DOC_TYPES[body.doc_type],
            "source_file": f"lab:{Path(body.filename).name}", "pages": len(pages), "section_count": manifest["chunkCount"],
-           "title": Path(body.filename).stem}
+           "title": Path(body.filename).stem, "index_request_id": str(req.request_id)}
     secs = [{"doc_id": doc_id, "section_id": c["sectionId"], "project_id": project_id, "doc_type": body.doc_type,
              "doc_version": "lab", "approval_state": "approved", "effective_date": today, "priority_rank": doc["priority_rank"],
              "heading": c["heading"], "text": c["text"], "page": c["pageStart"], "line_start": c["lineStart"],
@@ -188,7 +239,7 @@ def upload(project_id: str, body: UploadDocument, request: Request):
 
 @router.delete("/documents/{doc_id}")
 def remove(doc_id: str, request: Request):
-    """기준선에 넣기 전의 테스트 문서만 목록에서 뺀다. vector-db의 벡터는 남긴다 (같은 ID면 다시 쓰임)."""
+    """기준선에 넣기 전의 테스트 문서만 뺀다. 업로드 원본·색인 결과 파일과 vector-db 벡터도 지운다."""
     from prototype.lab import local_only
     local_only(request)
     with lock:
@@ -197,10 +248,10 @@ def remove(doc_id: str, request: Request):
             raise HTTPException(404, "테스트로 추가한 문서만 뺄 수 있습니다.")
         if any(doc_id in b["document_ids"] for b in baselines().values()):
             raise HTTPException(409, "기준선에 포함된 문서는 뺄 수 없습니다. 테스트 데이터 초기화를 사용해 주세요.")
-        data["documents"] = [d for d in data["documents"] if d["doc_id"] != doc_id]
-        data["sections"] = [s for s in data["sections"] if s["doc_id"] != doc_id]
-        data["pages"].pop(doc_id, None)
+        files = _drop_docs(data, {doc_id})
         _save(data)
+        _delete_files(files)
+        _delete_vectors({doc_id})
     return {"removed": doc_id}
 
 
@@ -226,16 +277,41 @@ def create_baseline(project_id: str, body: CreateBaseline, request: Request):
                 raise HTTPException(422, "변경합의서는 첫 기준선에 넣을 수 없습니다. 프로젝트를 만든 뒤 새 기준선으로 추가해 주세요.")
         elif body.as_of:
             raise HTTPException(422, "기준일은 첫 기준선에서만 지정할 수 있습니다.")
-        n = max((int(k.rsplit("BL-", 1)[1]) for k, b in baselines().items()
-                 if b["project_id"] == project_id and k.rsplit("BL-", 1)[-1].isdigit()), default=0) + 1
+        data = _load()
+        n = max([int(k.rsplit("BL-", 1)[1]) for k, b in baselines().items()
+                 if b["project_id"] == project_id and k.rsplit("BL-", 1)[-1].isdigit()]
+                + [data.setdefault("baseline_seq", {}).get(project_id, 0)]) + 1
         new_id = f"{project_id}:BL-{n}"
         prev = baselines().get(current, {})
         baseline = {"project_id": project_id, "as_of": (body.as_of or date.today()).isoformat(), "document_ids": docs,
                     "priority": prev.get("priority", ["CO", "CTR", "SOW", "FSP", "QUO"]), "supersedes": current}
-        data = _load()
         data["baselines"][new_id] = baseline
+        data["baseline_seq"][project_id] = n
         _save(data)
     return {"baseline_id": new_id, **baseline}
+
+
+@router.delete("/baselines/{baseline_id}")
+def delete_baseline(baseline_id: str, request: Request):
+    """테스트로 만든 현재 기준선만 지운다. 지우면 이 기준선이 대체했던 기준선이 다시 현재가 된다.
+    이 기준선에만 들어 있던 테스트 문서와 그 업로드 파일·벡터도 함께 지운다 (문서 빼기와 같음).
+    지운 번호는 다시 쓰지 않는다: 같은 ID가 다른 문서 묶음을 가리키면 이전 판단과 섞인다."""
+    from prototype.lab import local_only
+    local_only(request)
+    with lock:
+        data = _load()
+        if baseline_id not in data["baselines"]:
+            raise HTTPException(404, "테스트로 만든 기준선만 지울 수 있습니다.")
+        if superseded_by(baseline_id):
+            raise HTTPException(409, "현재 기준선만 지울 수 있습니다. 나중에 만든 기준선부터 지워 주세요.")
+        removed = data["baselines"].pop(baseline_id)
+        still_used = {d for k, b in baselines().items() if k != baseline_id for d in b["document_ids"]}
+        docs = {d["doc_id"] for d in data["documents"]} & set(removed["document_ids"]) - still_used
+        files = _drop_docs(data, docs)
+        _save(data)
+        _delete_files(files)
+        _delete_vectors(docs)
+    return {"removed": baseline_id, "active_baseline_id": removed.get("supersedes"), "removed_documents": sorted(docs)}
 
 
 @router.get("/documents/{doc_id}/lines")
@@ -260,10 +336,11 @@ def document_lines(doc_id: str, request: Request, page: int, start: int, end: in
 
 @router.post("/reset")
 def reset(request: Request):
-    """테스트 문서·기준선을 지운다. 원본 data/kb와 vector-db 벡터는 그대로다."""
+    """테스트 문서·기준선과 그 벡터를 지운다. 원본 data/kb와 원본 문서 벡터는 그대로다."""
     from prototype.lab import local_only
     local_only(request)
     with lock:
+        _delete_vectors({d["doc_id"] for d in _load()["documents"]})
         if _root().is_dir():
             shutil.rmtree(_root())
         clear_caches()
