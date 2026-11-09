@@ -43,7 +43,8 @@ async function boot(options = {}) {
       return { ok: true, json: async () => structuredClone(value) };
     },
   });
-  const transport = new vm.SyntheticModule(['Agent1Api', 'Agent2Api', 'Agent3Api', 'ApiError', 'KbApi', 'MockPreview'], function () {
+  const transport = new vm.SyntheticModule(['Agent1Api', 'Agent2Api', 'Agent3Api', 'AnalysisApi', 'ApiError', 'KbApi', 'MockPreview'], function () {
+    this.setExport('AnalysisApi', class {});
     this.setExport('Agent1Api', class { run(body, config) { return callbacks.agent1?.(body, config); } });
     this.setExport('Agent2Api', class { assess(body, config) {
       if (callbacks.assess) return callbacks.assess(body, config);
@@ -61,7 +62,7 @@ async function boot(options = {}) {
   });
   await module.link(specifier => {
     if (specifier.split('?')[0] === './api.js') return transport;
-    if (specifier === './analysis-demo.js') return analysisModule;
+    if (specifier.startsWith('./analysis-demo.js')) return analysisModule;
     if (specifier.split('?')[0] === './fixtures.js') return fixtures;
     if (specifier === './data/request-samples.js') return requestSamples;
     throw new Error(`Unexpected module: ${specifier}`);

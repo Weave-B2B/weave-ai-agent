@@ -76,6 +76,7 @@ test('snapshot keeps real Agent 1 item types, spans and questions',()=>{
   assert.deepEqual(snap.a1.items.map(i=>i.item_type),['deadline','question']);
   assert.equal(snap.a1.items[0].spans.length,1);
   assert.deepEqual(snap.a1.questions,questions);
+  assert.equal(snap.input.constraints[0].text,'기존 오픈 일정 유지');
   const realA2={status:'READY_FOR_REVIEW',assessments:[{item_id:'C-1',label:'in_scope',rationale:'계약 근거',evidence_level:'explicit',evidence:[{doc_id:'D1'}]}],questions:[]};
   const withA2=analysisSnapshot({id:'C',text:'원문',created:'x',step:3,items:['a'],realA1:{status:'READY',items,questions},realA2});
   assert.equal(withA2.a2.assessments[0].label,'in_scope');
@@ -116,4 +117,43 @@ test('real flow runs Agent 2 right after Agent 1, then asks PM to confirm judgme
   demo.change({name:'analysis-pm-choice',value:'범위 판정 결과 확인 완료, 영향 산정 진행'});
   click('answer'); await new Promise(r=>setTimeout(r,10));
   assert.deepEqual(calls,['items','pm_review']);
+  click('final'); demo.change({name:'analysis-pm-choice',value:'approve'}); click('answer');
+  assert.equal(records.length,1); assert.equal(records[0].md,'산정 대상 없음'); assert.equal(records[0].price,'—');
+});
+
+test('real NOT_REQUIRED never falls back to simulated estimate or document and registers safely',()=>{
+  const session={id:'CR-UI-REAL1',text:'기존 범위 확인',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'analysis-1',realA3:{status:'NOT_REQUIRED',estimates:[],questions:[]},realA2:{assessments:[{label:'in_scope'}]}};
+  const snap=analysisSnapshot(session);
+  assert.equal(snap.view.phase,'NOT_REQUIRED');
+  assert.equal(snap.view.impact.estimates.length,0);
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  assert.equal(h.records[0].md,'산정 대상 없음');
+  assert.equal(h.records[0].price,'—');
+  assert.equal(h.records[0].scope,'범위 내');
+  assert.match(h.demo.resultPreview(session.id,'draft'),/아직 연결되지 않았습니다/);
+  assert.doesNotMatch(h.demo.resultPreview(session.id,'draft'),/4,250,000/);
+});
+
+test('real amounts aggregate without turning null into zero, including zero amounts',()=>{
+  const session={id:'CR-UI-REAL2',text:'다중 항목',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'analysis-2',realA3:{status:'IMPACT_DRAFT_READY',estimates:[{totals:{md:0,price:0,cost:0}},{totals:{md:2,price:null,cost:20}}]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  assert.equal(h.records[0].md,'2 MD');
+  assert.equal(h.records[0].price,'미산정');
+  session.realA3.estimates.pop();
+  const zero=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  assert.equal(zero.records[0].md,'0 MD');
+  assert.equal(zero.records[0].price,'0원');
+});
+
+test('unfinished real execution cannot fabricate a legacy preview',()=>{
+  const snap=analysisSnapshot({id:'CR-UI-REAL3',text:'요청',created:'2026-11-09',events:[],step:6,analysisId:'a',realA3:null});
+  assert.equal(snap.view,null);
+});
+
+test('additional information needed cannot be marked as finally approved',()=>{
+  const session={id:'CR-UI-NEEDS',text:'추가 확인',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'analysis-3',realA3:{status:'NEEDS_INPUT',estimates:[],questions:[]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  h.demo.enter(session.id); h.click('final'); h.choice('approve'); h.click('answer');
+  assert.notEqual(h.demo.current().approved,true);
+  assert.match(h.demo.page(),/추가 확인이 필요한 산정 결과/);
 });
