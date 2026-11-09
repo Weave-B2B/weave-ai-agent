@@ -178,3 +178,16 @@ def test_plain_confirmation_is_not_estimable_even_if_out_of_scope():
     assert r.items[0].label == "out_of_scope" and r.items[0].estimable is False
     r = _confirmation_result("범위 밖이면 추가 희망")
     assert r.items[0].estimable is True
+
+
+def test_agent3_evidence_need_can_be_passed_to_agent2_adapter_without_direct_agent_call():
+    from app.agents.agent3.contracts import Agent3Need
+    from app.orchestration.evidence_handoff import propose_scope_research
+    port, agent, adapter = _setup("CR-A-001")
+    ids = _ids("CR-A-001")
+    need = Agent3Need(kind="more_evidence", item_ids=ids, topic="변경합의서 범위 확인", source="agent3")
+    proposed = propose_scope_research(need, set(ids))
+    result = adapter.execute("CR-A-001", 0, "research-1", proposed.model_dump())
+    assert agent.calls == [(ids, "변경합의서 범위 확인")]
+    assert result.status in ("ready", "needs_input")
+    assert port.snapshot.a2_result is not None

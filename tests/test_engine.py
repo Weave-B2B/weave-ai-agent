@@ -177,8 +177,12 @@ def test_answer_rerun_from_agent2_invalidates_a2_review_a3(chain):
 def test_answer_without_rerun_keeps_everything(chain):
     eng, row, rec, qid, ans = _answered_case(chain, None)
     before = rec.a3.meta.result_id if rec.a3 else None
+    stage = rec.questions[qid].stage
     rec = eng.answer_question(row["case_id"], qid, ans, rec.state.state_revision)
-    assert (rec.a3.meta.result_id if rec.a3 else None) == before and rec.state.stale_result_ids == []
+    if stage == "agent3" and before:
+        assert rec.a3.meta.result_id != before and before in rec.state.stale_result_ids
+    else:
+        assert (rec.a3.meta.result_id if rec.a3 else None) == before and rec.state.stale_result_ids == []
     assert qid not in rec.state.open_question_ids
 
 
@@ -291,3 +295,65 @@ def test_auto_confirm_items_skips_pm_items_gate(chain):
     assert rec.state.stage != "pm_items" and rec.items is not None
     assert rec.items == rec.a1.items
     assert rec.a2 is not None
+
+
+def test_agent3_resolved_answer_reestimates_and_preserves_old_result(chain):
+    from schema.schemas import Question
+    row = next(r for r in chain if r["agent3_gold"]["status"] == "IMPACT_DRAFT_READY")
+    chain_d = {r["case_id"]: r for r in chain}
+    eng, agent3 = make(chain=chain_d, a1=AnswerAnalysis(chain_d, None, resolved=True))
+    rec = drive(eng, row)
+    question = Question(question_id="A3-Q", case_id=row["case_id"], stage="agent3", item_ids=[rec.items[0].item_id],
+                        text="저장 방식을 알려주세요", reason="규모 확인", target="pm", blocking=True)
+    rec.a3 = rec.a3.model_copy(update={"status": "NEEDS_INPUT", "questions": [question]})
+    rec.state.status, rec.state.stage = "WAITING_INPUT", "agent3"
+    eng._sync_questions(rec)
+    old_id = rec.a3.meta.result_id
+    answer = Answer(answer_id="ANS-A3", question_id=question.question_id, text="기존 저장 기능 재사용", answered_by="pm", answered_at="2026-11-09T00:00:00Z")
+    rec = eng.answer_question(row["case_id"], question.question_id, answer, rec.state.state_revision)
+    assert rec.questions[question.question_id].status == "resolved"
+    assert old_id in rec.state.stale_result_ids and old_id in rec.archive
+    assert rec.a3.meta.result_id != old_id
+    assert agent3.calls[-1].answers[-1].answer_id == answer.answer_id
+
+
+def test_agent3_repeated_question_is_not_hidden_by_old_resolved_id(chain):
+    from schema.schemas import Question
+    row = next(r for r in chain if r["agent3_gold"]["status"] == "IMPACT_DRAFT_READY")
+    chain_d = {r["case_id"]: r for r in chain}
+    eng, agent3 = make(chain=chain_d, a1=AnswerAnalysis(chain_d, None, resolved=True))
+    rec = drive(eng, row)
+    question = Question(question_id="A3-Q", case_id=row["case_id"], stage="agent3", item_ids=[rec.items[0].item_id],
+                        text="저장 방식을 알려주세요", reason="규모 확인", target="pm", blocking=True)
+    rec.a3 = rec.a3.model_copy(update={"status": "NEEDS_INPUT", "questions": [question]})
+    rec.state.status, rec.state.stage = "WAITING_INPUT", "agent3"
+    eng._sync_questions(rec)
+    initial_run = agent3.run
+    def repeat(inp):
+        out = initial_run(inp)
+        return out.model_copy(update={"status": "NEEDS_INPUT", "questions": [question.model_copy(deep=True)]})
+    agent3.run = repeat
+    answer = Answer(answer_id="ANS-A3", question_id=question.question_id, text="기존 기능 사용", answered_by="pm", answered_at="2026-11-09T00:00:00Z")
+    rec = eng.answer_question(row["case_id"], question.question_id, answer, rec.state.state_revision)
+    assert rec.state.status == "WAITING_INPUT"
+    assert rec.questions["A3-Q"].status == "resolved"
+    assert any(q.question_id != "A3-Q" and q.status == "open" for q in rec.questions.values())
+
+
+def test_agent3_unresolved_answer_does_not_trigger_reestimate(chain):
+    from schema.schemas import Question
+    row = next(r for r in chain if r["agent3_gold"]["status"] == "IMPACT_DRAFT_READY")
+    chain_d = {r["case_id"]: r for r in chain}
+    eng, agent3 = make(chain=chain_d, a1=AnswerAnalysis(chain_d, None, resolved=False))
+    rec = drive(eng, row)
+    question = Question(question_id="A3-PENDING", case_id=row["case_id"], stage="agent3", item_ids=[rec.items[0].item_id],
+                        text="저장 방식을 알려주세요", reason="규모 확인", target="pm", blocking=True)
+    rec.a3 = rec.a3.model_copy(update={"status": "NEEDS_INPUT", "questions": [question]})
+    rec.state.status, rec.state.stage = "WAITING_INPUT", "agent3"
+    eng._sync_questions(rec)
+    before, count = rec.a3.meta.result_id, len(agent3.calls)
+    answer = Answer(answer_id="ANS-PENDING", question_id=question.question_id, text="모르겠습니다", answered_by="pm", answered_at="2026-11-09T00:00:00Z")
+    rec = eng.answer_question(row["case_id"], question.question_id, answer, rec.state.state_revision)
+    assert rec.questions[question.question_id].status == "answered"
+    assert rec.a3.meta.result_id == before and len(agent3.calls) == count
+    assert rec.state.status == "WAITING_INPUT"

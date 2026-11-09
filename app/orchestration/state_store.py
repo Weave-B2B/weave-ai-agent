@@ -19,6 +19,7 @@ class CaseRecord:
     a2: Optional[Agent2Output] = None
     pm_review: Optional[PMReview] = None
     a3: Optional[Agent3Output] = None
+    email_draft: Optional[dict] = None
     answers: list[Answer] = field(default_factory=list)
     questions: dict[str, Question] = field(default_factory=dict)
     auto_confirm_items: bool = False          # True면 ① 항목을 PM 확인 없이 그대로 확정
@@ -28,7 +29,7 @@ class CaseRecord:
         d = lambda m: m.model_dump(mode="json") if m is not None else None
         return {"state": d(self.state), "a1": d(self.a1), "items": [d(i) for i in self.items] if self.items else None,
                 "a2": d(self.a2), "pm_review": d(self.pm_review), "a3": d(self.a3),
-                "questions": [d(q) for q in self.questions.values()], "answers": [d(a) for a in self.answers]}
+                "questions": [d(q) for q in self.questions.values()], "answers": [d(a) for a in self.answers], "email_draft": self.email_draft}
 
 
 class StateStore(Protocol):

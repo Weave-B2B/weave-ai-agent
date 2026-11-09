@@ -24,7 +24,7 @@ export function analysisSnapshot(s) {
   const lines=[['FE','화면 변경 · 고정 예시',3],['BE','내부 API 변경 · 고정 예시',3],['QA','동작 확인 · 고정 예시',0.5]].map(([role,task,md])=>({role,task,md,item_ids:items.map(i=>i.item_id),assumption:s.answer||'미확정'}));
   const input={...source,rate_card_id:'',a2_result:a2,pm_review:{status:'PENDING',items:[]}};
   const a3=s.realA3?{...s.realA3,context:s.realA3.context||context,meta:s.realA3.meta||meta('a3')}:null;
-  const view=a3?{session_id:`ui-${s.id}`,state_revision:1,phase:a3.status==='NOT_REQUIRED'?'NOT_REQUIRED':'ORCHESTRATION',approval:null,history:[],impact:a3,draft:s.realA3.draft||null,draft_model:a3.meta.model}:!realRun(s)&&s.step>=6?{session_id:`ui-${s.id}`,state_revision:1,phase:'FRONTEND_PREVIEW',approval:null,demo_review:!!s.approved,history:[],impact:{context,meta:meta('a3'),questions:[],estimates:[{item_ids:items.map(i=>i.item_id),status:'draft',lines,totals:{md:6.5,cost:null,price:4250000},rate_card_id:'',schedule:{business_days:null,reason:'화면 시연용이며 실제 일정은 미산정'}}]},draft:s.ready?{email_subject:'[화면 시연] 변경 요청 협의 초안',email_body:`안녕하세요. 요청 사항에 대한 검토용 초안입니다.\n\n${s.text}\n\n확인 조건: ${s.answer}\n\n공수·금액은 고정 화면 시연값이며 실제 견적이 아닙니다. 고객 협의와 일정 확인이 필요합니다.`}:null,draft_model:meta('a3').model}:null;
+  const view=a3?{session_id:`ui-${s.id}`,state_revision:1,phase:a3.status==='NOT_REQUIRED'?'NOT_REQUIRED':'ORCHESTRATION',approval:null,history:[],impact:a3,draft:s.emailDraft?{email_subject:s.emailDraft.subject,email_body:s.emailDraft.body}:s.realA3.draft||null,draft_model:s.emailDraft?.model||a3.meta.model}:!realRun(s)&&s.step>=6?{session_id:`ui-${s.id}`,state_revision:1,phase:'FRONTEND_PREVIEW',approval:null,demo_review:!!s.approved,history:[],impact:{context,meta:meta('a3'),questions:[],estimates:[{item_ids:items.map(i=>i.item_id),status:'draft',lines,totals:{md:6.5,cost:null,price:4250000},rate_card_id:'',schedule:{business_days:null,reason:'화면 시연용이며 실제 일정은 미산정'}}]},draft:s.ready?{email_subject:'[화면 시연] 변경 요청 협의 초안',email_body:`안녕하세요. 요청 사항에 대한 검토용 초안입니다.\n\n${s.text}\n\n확인 조건: ${s.answer}\n\n공수·금액은 고정 화면 시연값이며 실제 견적이 아닙니다. 고객 협의와 일정 확인이 필요합니다.`}:null,draft_model:meta('a3').model}:null;
   return {source,input,a1,a2,view};
 }
 
@@ -32,6 +32,8 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
   let sessions = [], currentId = null, text = '', modal = null, selected = '', other = '', error = '', provider='gpt';
   try { const saved = JSON.parse(storage.getItem(KEY) || '[]'); if (Array.isArray(saved)) sessions = saved.filter(s => s?.id?.startsWith('CR-UI-') && typeof s.text === 'string' && Array.isArray(s.events)); } catch { /* optional browser storage */ }
   const current = () => sessions.find(s => s.id === currentId);
+  const pendingQuestion = s => (s?.realQuestions || s?.realA3?.questions || []).find(q => q.stage === 'agent3' && q.field !== 'more_evidence' && q.blocking && ['open','answered'].includes(q.status));
+  const pendingEvidence = s => (s?.realQuestions || s?.realA3?.questions || []).find(q => q.stage === 'agent3' && q.field === 'more_evidence' && q.blocking && ['open','answered'].includes(q.status));
   sessions.forEach(s => { s.running=false; }); // Refresh restores records, never fabricates a running timer.
   const save = () => { try { storage.setItem(KEY, JSON.stringify(sessions)); } catch { /* current page remains usable */ } };
   const byId = id => sessions.find(s => s.id === id);
@@ -45,7 +47,30 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
   }
   sessions.forEach(addRecord);
   function event(s, agent, title, body, tab) { s.events.push({agent,title,body,tab,time:new Date().toISOString()}); save(); }
-  function show(kind) { modal=kind; selected=''; other=''; error=''; render(); }
+  async function restoreCase(id) {
+    if (!analysisApi || !id || byId(id)) return;
+    try {
+      const result=await analysisApi.get(`UI-${id}`);
+      if (result.case_id !== id || result.analysis_id !== `UI-${id}` || result.contract_request?.input?.context?.case_id !== id) throw new Error('분석 식별자가 일치하지 않습니다.');
+      const response=await fetch(`/cases/${encodeURIComponent(id)}/state`);
+      if (!response.ok) throw new Error('실행 상태를 불러오지 못했습니다.');
+      const live=await response.json();
+      if (live.state?.context?.analysis_id !== result.analysis_id) throw new Error('분석 버전이 변경됐습니다.');
+      if (byId(id)) return;
+      const inp=result.contract_request.input;
+      const a1=live.a1||null, a2=live.a2||null, a3=live.a3||null;
+      const events=[];
+      if (a1) events.push({agent:'Agent 1',title:'기존 요청 분석 결과를 불러왔습니다',body:`${a1.items.length}개 항목`,tab:'original'});
+      if (a2) events.push({agent:'Agent 2',title:'기존 범위 검토 결과를 불러왔습니다',body:`${a2.assessments.length}개 항목`,tab:'scope'});
+      if (a3) events.push({agent:'Agent 3',title:'기존 영향 산정 결과를 불러왔습니다',body:'서버에 남아 있는 결과입니다.',tab:'impact'});
+      const s={id,text:inp.message_text,provider:'gpt',created:inp.received_at,events,analysisId:result.analysis_id,caseId:id,
+        stateRevision:live.state.state_revision,workflowStage:live.state.stage,workflowStatus:live.state.status,
+        realA1:a1,realA2:a2,realA3:a3,realQuestions:live.questions||[],emailDraft:live.email_draft||null,
+        items:(a1?.items||[]).map(item=>item.text),step:a3?6:a2?3:a1?2:0,ready:!!a3,running:false,approved:false,answer:''};
+      sessions.unshift(s); addRecord(s); save(); if(currentId===id) render();
+    } catch(err) { if(currentId===id) { currentId=null; error=err.message||'기존 분석을 불러오지 못했습니다.'; render(); } }
+  }
+  function show(kind) { modal=kind; selected=kind==='agent3-question'?'other':''; other=''; error=''; render(); }
   async function start() {
     if (!text.trim()) { error='고객 요청 내용을 먼저 입력해 주세요.'; render(); return; }
     if (current()?.running) return;
@@ -128,12 +153,44 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
     },650);
     save(); render();
   }
+  async function generateEmail(s) {
+    if (!s?.caseId || !s.realA3?.meta?.result_id || s.running) return;
+    s.running=true; s.draftError=''; render();
+    try {
+      const response=await fetch(`/cases/${encodeURIComponent(s.caseId)}/email-draft`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state_revision:s.stateRevision,target_result_id:s.realA3.meta.result_id})});
+      const data=await response.json().catch(()=>null);
+      if (!response.ok) throw new Error(typeof data?.detail==='string'?data.detail:data?.detail?.message||'메일 초안 생성에 실패했습니다.');
+      s.emailDraft=data.draft; s.stateRevision=data.state_revision; s.running=false;
+      event(s,'Agent 3','고객 협의 메일 초안을 작성했습니다','고객 발송 전 PM 확인이 필요합니다.','draft');
+      save(); render();
+    } catch(err) { s.running=false; s.draftError=err.message||'메일 초안 생성에 실패했습니다.'; save(); render(); }
+  }
   async function answer() {
-    const s=current(); if (!s) return;
+    const s=current(); if (!s || !modal || s.running) return;
     if (!selected || (selected==='other'&&!other.trim())) { error='선택하거나 기타 내용을 입력해 주세요.'; render(); return; }
     const value=selected==='other'?other.trim():selected;
+    if (modal==='agent3-question') {
+      const q=pendingQuestion(s); if (!q) { error='확인할 질문이 없습니다. 현재 결과를 다시 확인해 주세요.'; render(); return; }
+      s.running=true; error=''; render();
+      try {
+        const response=await fetch(`/cases/${encodeURIComponent(s.caseId)}/questions/${encodeURIComponent(q.question_id)}/answer`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state_revision:s.stateRevision,answer:{answer_id:`ANS-${crypto.randomUUID()}`,question_id:q.question_id,text:value,answered_by:'pm',answered_at:new Date().toISOString(),verified:false}})});
+        const data=await response.json().catch(()=>null);
+        if (!response.ok) throw new Error(typeof data?.detail==='string'?data.detail:'답변 저장에 실패했습니다. 현재 상태를 확인해 주세요.');
+        s.stateRevision=data.state.state_revision; s.workflowStage=data.state.stage; s.workflowStatus=data.state.status;
+        s.realQuestions=data.questions||[]; s.emailDraft=null; s.realA1=data.a1||s.realA1; s.realA2=data.a2||s.realA2; s.realA3=data.a3||null;
+        if (s.realA3) { const totals=totalsFor(s); s.md=totals?.md??null; s.price=totals?.price??null; s.step=6; }
+        s.ready=!!s.realA3; s.running=false; modal=null; other='';
+        event(s,'PM','질문에 답변했습니다',value);
+        if (data.state.status==='FAILED') event(s,'매니저','재실행에 실패했습니다',data.state.error?.message||'실행 오류를 확인해 주세요.');
+        else if (pendingQuestion(s)) event(s,'Agent 3','추가 확인이 필요합니다',pendingQuestion(s).text,'impact');
+        else if (s.realA3) event(s,'Agent 3','답변을 반영한 결과를 확인해 주세요','최신 산정 결과입니다.','impact');
+        else event(s,'매니저','상위 단계 확인이 필요합니다','변경된 결과를 확인한 뒤 다시 진행해 주세요.');
+        save(); render(); if (currentId===s.id && !pendingEvidence(s) && pendingQuestion(s)) show('agent3-question'); return;
+      } catch (err) { s.running=false; error=err.message||'답변 전달에 실패했습니다.'; save(); render(); return; }
+    }
     if (modal==='final') {
       if (selected==='approve' && s.realA3 && !['IMPACT_DRAFT_READY','NOT_REQUIRED'].includes(s.realA3.status)) { error='추가 확인이 필요한 산정 결과입니다. 확인을 완료한 후 다시 검토해 주세요.'; render(); return; }
+      if (selected==='approve' && realRun(s) && !s.emailDraft) { modal=null; await generateEmail(s); return; }
       modal=null;
       if (selected==='approve') { s.approved=true; s.hold=false; event(s,'PM','최종 검토를 완료했습니다','화면 테스트에서 확인한 결과입니다. 고객 합의·발송은 하지 않았습니다.','draft'); addRecord(s); }
       else if (selected==='hold') { s.approved=false; s.hold=true; event(s,'PM','검토를 보류했습니다','현재 결과와 이력을 보존합니다.'); addRecord(s); }
@@ -161,7 +218,7 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
           status:'REVIEWED',
           items:reviewItems
         }});
-        s.realA3=reviewed.a3||null;
+        s.realA3=reviewed.a3||null; s.emailDraft=null; s.realQuestions=reviewed.questions||reviewed.a3?.questions||[]; s.workflowStage=reviewed.state.stage; s.workflowStatus=reviewed.state.status;
         if (reviewed.a3) {
           event(s,'Agent 3','영향 산정 결과를 준비했습니다',reviewed.a3.status==='NOT_REQUIRED'?'산정 대상 항목이 없습니다.':reviewed.a3.estimates?.length?'공수·비용 산정 결과를 확인해 주세요.':'산정 결과가 없거나 추가 확인이 필요합니다.','impact');
           s.step=6; s.ready=true;
@@ -171,7 +228,7 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
         } else {
           s.step=3; s.ready=false;
         }
-        s.running=false; modal=null; save(); render(); return;
+        s.running=false; modal=null; save(); render(); if (currentId===s.id && !pendingEvidence(s) && pendingQuestion(s)) show('agent3-question'); return;
       } catch (err) {
         s.running=false; error=err.message||'Workflow 재개에 실패했습니다.';
         event(s,'매니저','Workflow 재개 실패',error); save(); render(); return;
@@ -198,7 +255,11 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
       const lines=(s.realA3.estimates.flatMap(row=>row.lines||[])).map(l=>`<tr><td>${esc(l.task)}</td><td>${esc(l.role)}</td><td>${esc(l.md)}</td></tr>`).join('');
       return `<h2>영향 산정 결과</h2><div class="analysis-numbers"><div><small>총 공수</small><strong>${t.md ?? '미산정'} <small>MD</small></strong></div><div><small>예상 직접원가 · 내부 확인용</small><strong>${typeof t.cost==='number'?won(t.cost):'미산정'}</strong></div><div><small>고객 제안가 · VAT 별도</small><strong>${t.price!=null?won(t.price):'미산정'}</strong></div></div><p class="caption">단가표 ${rate}${margin!==null?` · 예상 마진 ${margin}%`:''}</p>${lines?`<table class="rate-card-table"><thead><tr><th>작업</th><th>직군</th><th>MD</th></tr></thead><tbody>${lines}</tbody></table>`:''}<p class="caption">Orchestration Agent 3 결과입니다.</p>`;
     }
-    if (realRun(s)) return '<h2>문서 초안</h2><div class="notice">통합 실행에서 생성된 문서 초안이 아직 연결되지 않았습니다.</div>';
+    if (realRun(s)) {
+      const draft=s.emailDraft;
+      if (draft) return `<h2>고객 협의 메일 초안</h2><p class="caption">고객 협의 전 초안 · ${esc(draft.model||'모델 미확인')} · 자동 발송 없음</p><div class="analysis-document"><h3>제목: ${esc(draft.subject)}</h3><p class="analysis-original">${esc(draft.body)}</p></div><button class="button" data-demo-action="generate-email" ${s.running?'disabled':''}>메일 초안 다시 생성</button>${s.draftError?`<p class="analysis-error" role="alert">${esc(s.draftError)}</p>`:''}`;
+      return `<h2>고객 협의 메일 초안</h2><div class="notice">${s.running?'메일 초안을 작성하고 있습니다.':'산정 결과를 바탕으로 고객에게 전달할 메일 초안을 생성합니다.'}</div>${s.draftError?`<p class="analysis-error" role="alert">${esc(s.draftError)}</p>`:''}<div class="form-actions"><button class="button" data-demo-action="generate-email" ${s.running||pendingQuestion(s)||pendingEvidence(s)?'disabled':''}>메일 초안 생성</button></div>`;
+    }
     return `<h2>변경합의서 초안</h2><p class="caption">고객 협의 전 · 화면 시연용 · ${s.approved?'PM 확인됨':'PM 미확인'}</p><div class="analysis-document"><h3>변경 범위 협의서</h3><p>프로젝트: 모노마켓 · 화면 테스트</p><h3>1. 고객 요청</h3><p>${esc(s.text)}</p><h3>2. 검토 조건</h3><p>${esc(s.answer||'추가 확인 필요')}</p><h3>3. 공수 및 금액</h3><p>예상 공수 6.5 MD / 제안 금액 4,250,000원 (VAT 별도)<br>고정된 시연값이며 실제 산정 결과가 아닙니다.</p><h3>4. 일정 및 확인 사항</h3><p>일정 영향·적용일·검수 기준은 미정입니다. 양측의 협의와 서명 전에는 확정되지 않습니다.</p></div><details><summary>고객 전달용 메일 초안 보기</summary><p class="analysis-original">안녕하세요. 요청 주신 변경 사항에 대한 검토 초안을 전달드립니다.\n\n${esc(s.text)}\n\n세부 범위와 일정은 협의가 필요합니다. 첨부 초안을 검토해 주세요.\n※ 화면 시연용 예시이며 실제 발송하지 않았습니다.</p></details>`;
   }
   const TYPE_LABELS={function:'기능',question:'확인',constraint:'제약',deadline:'기한',dependency:'의존성'};
@@ -217,20 +278,24 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
     const s=current(); if (!modal||!s) return '';
     const final=modal==='final';
     const review=modal==='review';
-    const choices=final?[['approve','현재 초안으로 확인 완료'],['hold','보류하고 나중에 확인'],['other','수정 요청 직접 입력']]:review?[['범위 판정 결과 확인 완료, 영향 산정 진행','확인하고 영향 산정 진행'],['hold','보류하고 나중에 확인'],['other','수정·추가 조건 직접 입력']]:[['기존 기능을 재사용하는 가정으로 초안 작성','기존 기능 재사용으로 진행'],['추가 정보 확인 후 진행','추가 정보를 확인한 뒤 진행'],['other','기타 · 직접 입력']];
-    return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">${final?'최종 결과를 확인해 주세요':review?'범위 판정 결과를 확인해 주세요':'진행 조건을 확인해 주세요'}</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div><p>${final?'범위 판단·산정·문서 초안을 한 번에 확인합니다. 실제 고객 발송 전 PM 검토입니다.':review?'Agent 2가 계약 문서를 근거로 판정한 결과입니다. 확인하면 Agent 3 영향 산정을 이어서 실행합니다.':'확인 내용을 선택한 뒤 Agent 2 범위 검토와 Agent 3 영향 산정을 이어서 실행합니다.'}</p>${review?scopeSummary(s):''}${final&&totalsFor(s)?`<div class="notice">예상 공수 ${esc(totalsFor(s).md ?? '미산정')} MD · 판매가 ${won(totalsFor(s).price)}</div>`:''}<fieldset class="analysis-choices"><legend class="caption">${final?'검토 결과':review?'확인 방법':'진행 방법'} 선택</legend>${choices.map(([v,l])=>`<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected===v?'checked':''}><span>${l}</span></label>`).join('')}</fieldset><label class="field">기타 내용<textarea id="analysis-pm-other" placeholder="추가 조건이나 수정할 내용을 입력하세요." ${selected!=='other'?'disabled':''}>${esc(other)}</textarea></label>${error?`<p class="analysis-error" role="alert">${esc(error)}</p>`:''}<div class="form-actions"><button class="button primary" data-demo-action="answer">${final?'검토 결과 반영':'답변하고 계속'}</button></div></dialog>`;
+    if (modal==='agent3-question') {
+      const q=pendingQuestion(s);
+      return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">추가 확인이 필요합니다</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div><p>${esc(q?.text||'질문을 불러오지 못했습니다.')}</p><p class="caption">${esc(q?.reason||'')}</p><label class="field">답변<textarea id="analysis-pm-other" placeholder="확인한 내용을 입력해 주세요.">${esc(other)}</textarea></label>${error?`<p class="analysis-error" role="alert">${esc(error)}</p>`:''}<div class="form-actions"><button class="button primary" data-demo-action="answer" ${s.running?'disabled':''}>답변하고 계속</button></div></dialog>`;
+    }
+    const choices=final?[['approve','결과 확인 완료'],['hold','보류하고 나중에 확인'],['other','수정 요청 직접 입력']]:review?[['범위 판정 결과 확인 완료, 영향 산정 진행','확인하고 영향 산정 진행'],['hold','보류하고 나중에 확인'],['other','수정·추가 조건 직접 입력']]:[['기존 기능을 재사용하는 가정으로 초안 작성','기존 기능 재사용으로 진행'],['추가 정보 확인 후 진행','추가 정보를 확인한 뒤 진행'],['other','기타 · 직접 입력']];
+    return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">${final?'최종 결과를 확인해 주세요':review?'범위 판정 결과를 확인해 주세요':'진행 조건을 확인해 주세요'}</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div><p>${final?(realRun(s)?(s.emailDraft?'범위 판단·산정과 메일 초안을 확인합니다. 고객 발송 전 검토입니다.':'확인을 선택하면 먼저 고객 협의 메일 초안을 생성합니다. 초안을 검토한 뒤 다시 확인해 주세요.'):'범위 판단·산정·문서 초안을 한 번에 확인합니다. 실제 고객 발송 전 PM 검토입니다.'):review?'Agent 2가 계약 문서를 근거로 판정한 결과입니다. 확인하면 Agent 3 영향 산정을 이어서 실행합니다.':'확인 내용을 선택한 뒤 Agent 2 범위 검토와 Agent 3 영향 산정을 이어서 실행합니다.'}</p>${review?scopeSummary(s):''}${final&&totalsFor(s)?`<div class="notice">예상 공수 ${esc(totalsFor(s).md ?? '미산정')} MD · 판매가 ${won(totalsFor(s).price)}</div>`:''}<fieldset class="analysis-choices"><legend class="caption">${final?'검토 결과':review?'확인 방법':'진행 방법'} 선택</legend>${choices.map(([v,l])=>`<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected===v?'checked':''}><span>${l}</span></label>`).join('')}</fieldset>${selected==='other'?`<label class="field">기타 내용<textarea id="analysis-pm-other" placeholder="추가 조건이나 수정할 내용을 입력하세요.">${esc(other)}</textarea></label><div class="form-actions"><button class="button primary" data-demo-action="answer">입력 내용 반영</button></div>`:''}${error?`<p class="analysis-error" role="alert">${esc(error)}</p>`:''}</dialog>`;
   }
   function page() {
     const s=current();
     const heading=`<div class="page-heading"><div><p class="analysis-eyebrow">MULTI-AGENT WORKSPACE <span>실행 연동</span></p><h1>고객 요청, 여기서 시작하세요</h1><p class="subtitle">요청을 붙여넣으면 Agent 1, Agent 2, Agent 3 Workflow가 순서대로 실행됩니다.</p></div><button class="button" data-demo-action="new" ${s?.running?'disabled':''}>+ 새 요청</button></div>`;
     if (!s) return heading+`<section class="analysis-compose card"><div class="card-heading"><h2>고객 요청사항</h2><span class="mini-tag">모노마켓 · 테스트 프로젝트</span></div><label class="field"><span class="sr-only">고객 요청 원문</span><textarea id="analysis-request" placeholder="고객이 보낸 메일이나 메시지를 그대로 붙여넣으세요.\n\n기능 추가, 일정 조건, 견적 요청이 함께 있어도 괜찮아요." maxlength="12000">${esc(text)}</textarea></label><div class="analysis-compose-footer"><label class="analysis-model-picker">모델 <select id="analysis-model" aria-label="분석 모델"><option value="gpt" ${provider==='gpt'?'selected':''}>GPT · gpt-6-luna</option><option value="local" ${provider==='local'?'selected':''}>로컬 LLM</option></select></label><button class="button plain" data-demo-action="sample">예시 요청 넣기</button><button class="button primary" data-demo-action="start">요청 분석 시작 →</button></div>${error?`<p class="analysis-error" role="alert">${esc(error)}</p>`:''}</section><div class="analysis-intro">${[['01','필요한 에이전트가 분석','요청 정리와 문서 조사, 영향 산정의 진행 과정을 확인합니다.'],['02','필요한 순간에만 질문','PM 확인 후 범위 검토와 영향 산정을 이어서 실행합니다.'],['03','결과와 기록을 한곳에','Workflow 결과와 단계별 기록을 한 화면에서 확인합니다.']].map(([n,h,p])=>`<div><span>${n}</span><h3>${h}</h3><p>${p}</p></div>`).join('')}</div><p class="analysis-demo-note">실제 분석 API와 Orchestration Engine을 호출합니다.</p>${sessions.length?`<section class="card"><h2>이전 요청 분석</h2>${sessions.map(x=>`<button class="analysis-history" data-demo-open="${esc(x.id)}"><strong>${esc(x.text.slice(0,55))}</strong><span>${x.ready?'결과 준비':'진행 기록'} ↗</span></button>`).join('')}</section>`:''}`;
-    return heading+`<div class="analysis-run-heading"><span class="mini-tag">${esc(s.id)}</span><strong>${s.running?'진행 중':s.hold?'보류':s.approved?'PM 확인 완료':s.ready?'최종 검토 대기':'PM 답변 대기'}</strong><span class="caption">${esc(MODELS[s.provider||'gpt'].label)} 선택 · Orchestration 실행</span></div><div class="analysis-workspace"><section class="card analysis-feed"><div class="card-heading"><h2>진행 기록</h2><span class="caption">기록을 누르면 해당 결과로 이동합니다</span></div><div class="analysis-request-bubble"><small>고객 요청</small><p>${esc(s.text)}</p></div><div class="analysis-events" aria-live="polite">${s.events.map(x=>`<article class="analysis-event"><span class="analysis-agent">${esc(x.agent)}</span>${x.tab?`<button class="analysis-event-link" data-demo-tab="${x.tab}" data-demo-id="${esc(s.id)}">${esc(x.title)} <span>결과 보기 ↗</span></button>`:`<h3>${esc(x.title)}</h3>`}<p>${esc(x.body)}</p></article>`).join('')}</div>${s.running?'<p class="loading-line" role="status"><span class="inline-spinner"></span>다음 작업을 준비하고 있습니다…</p>':!s.ready?'<button class="button primary" data-demo-action="question">진행 조건 확인하기</button>':`<div class="form-actions"><button class="button primary" data-demo-action="final">${s.approved?'최종 결과 다시 확인':'최종 검토하기'}</button><button class="button" data-demo-action="list">변경 요청 목록</button></div>`}</section><aside class="analysis-result"><section class="card"><h2>단계별 결과</h2><p class="caption">완료된 작업의 결과를 열어볼 수 있습니다.</p><div class="analysis-stages">${stageLinks(s)}</div></section>${s.ready?`<section class="card">${preview(s)}<p class="analysis-demo-note">${realRun(s)?'통합 실행 결과를 표시합니다. 문서 초안 연결은 아직 완료되지 않았습니다.':'화면 시연용 가상 결과입니다.'}</p></section>`:`<section class="card analysis-result-empty"><span>◎</span><h3>결과가 이곳에 쌓입니다</h3><p>PM 확인 후 영향 산정과 문서 초안 미리보기가 이어집니다.</p></section>`}</aside></div>${dialog()}`;
+    return heading+`<div class="analysis-run-heading"><span class="mini-tag">${esc(s.id)}</span><strong>${s.running?'진행 중':s.hold?'보류':s.approved?'PM 확인 완료':pendingEvidence(s)?'추가 근거 조사 필요':pendingQuestion(s)?'추가 확인 필요':s.ready?'최종 검토 대기':'PM 답변 대기'}</strong><span class="caption">${esc(MODELS[s.provider||'gpt'].label)} 선택 · Orchestration 실행</span></div><div class="analysis-workspace"><section class="card analysis-feed"><div class="card-heading"><h2>진행 기록</h2><span class="caption">기록을 누르면 해당 결과로 이동합니다</span></div><div class="analysis-request-bubble"><small>고객 요청</small><p>${esc(s.text)}</p></div><div class="analysis-events" aria-live="polite">${s.events.map(x=>`<article class="analysis-event"><span class="analysis-agent">${esc(x.agent)}</span>${x.tab?`<button class="analysis-event-link" data-demo-tab="${x.tab}" data-demo-id="${esc(s.id)}">${esc(x.title)} <span>결과 보기 ↗</span></button>`:`<h3>${esc(x.title)}</h3>`}<p>${esc(x.body)}</p></article>`).join('')}</div>${s.running?'<p class="loading-line" role="status"><span class="inline-spinner"></span>다음 작업을 준비하고 있습니다…</p>':pendingEvidence(s)?`<div class="notice">추가 문서 조사 필요: ${esc(pendingEvidence(s).text)}. Agent 2 재조사 자동 연결은 아직 준비 중입니다.</div>`:pendingQuestion(s)?'<button class="button primary" data-demo-action="agent3-question">추가 질문에 답변하기</button>':!s.ready?'<button class="button primary" data-demo-action="question">진행 조건 확인하기</button>':`<div class="form-actions"><button class="button primary" data-demo-action="final">${s.approved?'최종 결과 다시 확인':'최종 검토하기'}</button><button class="button" data-demo-action="list">변경 요청 목록</button></div>`}</section><aside class="analysis-result"><section class="card"><h2>단계별 결과</h2><p class="caption">완료된 작업의 결과를 열어볼 수 있습니다.</p><div class="analysis-stages">${stageLinks(s)}</div></section>${s.ready?`<section class="card">${preview(s)}<p class="analysis-demo-note">${realRun(s)?'메일 초안은 고객 발송 전 PM 검토가 필요합니다.':'화면 시연용 가상 결과입니다.'}</p></section>`:`<section class="card analysis-result-empty"><span>◎</span><h3>결과가 이곳에 쌓입니다</h3><p>PM 확인 후 영향 산정과 문서 초안 미리보기가 이어집니다.</p></section>`}</aside></div>${dialog()}`;
   }
   return {page,byId,current,resultPreview(id,tab) { const s=byId(id); return s?preview(s,tab):''; },
-    enter(id) { currentId=byId(id)?id:null; modal=null; error=''; },
+    enter(id) { currentId=byId(id)?id:null; modal=null; error=''; if (id && !currentId && analysisApi) { currentId=id; restoreCase(id); } },
     syncDialog() { if (modal) document.querySelector('#analysis-pm-dialog')?.showModal?.(); },
     input(target) { if (target.id==='analysis-request') text=target.value; if (target.id==='analysis-pm-other') other=target.value; },
-    change(target) { if (target.id==='analysis-model' && MODELS[target.value]) { provider=target.value; render(); } if (target.name==='analysis-pm-choice') { selected=target.value; error=''; render(); } },
+    change(target) { if (target.id==='analysis-model' && MODELS[target.value]) { provider=target.value; render(); } if (target.name==='analysis-pm-choice') { if (!modal || current()?.running) return; selected=target.value; error=''; if (selected==='other') render(); else return answer(); } },
     cancel() { modal=null; error=''; },
     click(target) {
       const tab=target.closest('[data-demo-tab]'); if (tab) { navigate(tab.dataset.demoId,tab.dataset.demoTab); return true; }
@@ -240,6 +305,8 @@ export function createAnalysisDemo({records, storage, render, navigate, openAnal
       if (action==='sample') { text=SAMPLE; render(); }
       if (action==='new'&&!current()?.running) { text=''; openAnalysis(); }
       if (action==='question') { if (current()?.analysisId) show(current().realA2?'review':'question'); else if (current()?.step!==3) { current().running=true; advance(current()); } else show('question'); }
+      if (action==='generate-email') generateEmail(current());
+      if (action==='agent3-question') show('agent3-question');
       if (action==='final') show('final');
       if (action==='close-dialog') { modal=null; error=''; render(); }
       if (action==='answer') answer();
