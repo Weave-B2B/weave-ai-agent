@@ -49,3 +49,8 @@ class AnswerRequest(_Req):
 
 class RetryRequest(_Req):
     state_revision: int
+
+
+class EmailDraftRequest(_Req):
+    state_revision: int
+    target_result_id: str = Field(min_length=1)

@@ -129,6 +129,9 @@ class Engine:
             rec.questions[question_id] = rec.questions[question_id].model_copy(update={"status": "resolved"})
         if res.rerun_from:
             self._invalidate_from(rec, res.rerun_from)
+        elif res.resolved and q.stage == "agent3":
+            # A resolved Agent 3 answer must be consumed by a fresh estimate.
+            self._invalidate_from(rec, "agent3")
         self._advance(rec)
         return rec
 
@@ -212,6 +215,11 @@ class Engine:
                 out = self._run("agent3", rec, lambda: finalize_estimates(self.agents.agent3.run(a3_in), rec.rate_card_id), ups)
                 if out is None:
                     return
+            # On re-estimation, newly asked questions need fresh IDs. Otherwise
+            # an earlier resolved question with the same ordinal can hide them.
+            if any(q.stage == "agent3" for q in rec.questions.values()):
+                for q in out.questions:
+                    q.question_id = f"{q.question_id}-{out.meta.result_id}"
             rec.a3, s.a3_result_id = out, out.meta.result_id
             self._sync_questions(rec)
 
@@ -276,6 +284,8 @@ class Engine:
 
     def _stale(self, rec: CaseRecord, targets: list[str]) -> None:
         """무효화된 결과는 삭제하지 않고 stale_result_ids·archive에 보존한다."""
+        if any(t in targets for t in ("a1", "a2", "a3", "pm_review")):
+            rec.email_draft = None
         for t in targets:
             obj = {"a1": rec.a1, "a2": rec.a2, "a3": rec.a3, "pm_review": rec.pm_review}[t]
             if obj is None:

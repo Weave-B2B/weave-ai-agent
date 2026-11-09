@@ -115,9 +115,9 @@ test('real flow runs Agent 2 right after Agent 1, then asks PM to confirm judgme
   assert.match(page,/2026-11-24/);
   assert.match(page,/FSP-A-001-v1.0 F-11/);
   demo.change({name:'analysis-pm-choice',value:'범위 판정 결과 확인 완료, 영향 산정 진행'});
-  click('answer'); await new Promise(r=>setTimeout(r,10));
+  await new Promise(r=>setTimeout(r,10));
   assert.deepEqual(calls,['items','pm_review']);
-  click('final'); demo.change({name:'analysis-pm-choice',value:'approve'}); click('answer');
+  demo.current().emailDraft={subject:'초안',body:'본문'}; click('final'); demo.change({name:'analysis-pm-choice',value:'approve'});
   assert.equal(records.length,1); assert.equal(records[0].md,'산정 대상 없음'); assert.equal(records[0].price,'—');
 });
 
@@ -130,7 +130,7 @@ test('real NOT_REQUIRED never falls back to simulated estimate or document and r
   assert.equal(h.records[0].md,'산정 대상 없음');
   assert.equal(h.records[0].price,'—');
   assert.equal(h.records[0].scope,'범위 내');
-  assert.match(h.demo.resultPreview(session.id,'draft'),/아직 연결되지 않았습니다/);
+  assert.match(h.demo.resultPreview(session.id,'draft'),/메일 초안 생성/);
   assert.doesNotMatch(h.demo.resultPreview(session.id,'draft'),/4,250,000/);
 });
 
@@ -156,4 +156,82 @@ test('additional information needed cannot be marked as finally approved',()=>{
   h.demo.enter(session.id); h.click('final'); h.choice('approve'); h.click('answer');
   assert.notEqual(h.demo.current().approved,true);
   assert.match(h.demo.page(),/추가 확인이 필요한 산정 결과/);
+});
+
+test('final choices apply immediately and custom text is shown only for direct input',()=>{
+  const session={id:'CR-UI-CHOICE',text:'테스트',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'analysis-choice',realA3:{status:'NOT_REQUIRED',estimates:[],questions:[]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  h.demo.enter(session.id); h.click('final');
+  assert.doesNotMatch(h.demo.page(),/id="analysis-pm-other"/);
+  h.choice('other');
+  assert.match(h.demo.page(),/id="analysis-pm-other"/);
+  assert.match(h.demo.page(),/입력 내용 반영/);
+  h.input('analysis-pm-other','확인 후 수정'); h.click('answer');
+  assert.equal(h.demo.current().hold,true);
+  assert.ok(h.demo.current().events.some(event=>event.body==='확인 후 수정'));
+  h.demo.current().emailDraft={subject:'초안',body:'본문'}; h.click('final'); h.choice('approve');
+  assert.equal(h.demo.current().approved,true);
+  assert.equal(h.records.length,1);
+});
+
+test('Agent 3 blocking question submits answer and displays the updated result',async t=>{
+  const q={question_id:'Q-1',stage:'agent3',text:'저장 방식은?',reason:'확인 필요',target:'pm',blocking:true,status:'open'};
+  const session={id:'CR-UI-QUESTION',caseId:'C1',stateRevision:7,text:'요청',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'A1',realA3:{status:'NEEDS_INPUT',estimates:[],questions:[q]},realQuestions:[q]};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]])); h.demo.enter(session.id);
+  const original=globalThis.fetch; t.after(()=>{globalThis.fetch=original;});
+  let request;
+  globalThis.fetch=async(url,opts)=>{request={url,body:JSON.parse(opts.body)};return {ok:true,json:async()=>({state:{state_revision:10,status:'WAITING_PM_REVIEW',stage:'lead_review'},questions:[{...q,status:'resolved'}],a3:{status:'IMPACT_DRAFT_READY',estimates:[],questions:[]}})};};
+  assert.match(h.demo.page(),/추가 질문에 답변하기/);
+  h.click('agent3-question'); assert.match(h.demo.page(),/저장 방식은/);
+  h.input('analysis-pm-other','기존 저장 기능 사용'); h.click('answer');
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(request.url,'/cases/C1/questions/Q-1/answer');
+  assert.equal(request.body.state_revision,7); assert.equal(request.body.answer.text,'기존 저장 기능 사용');
+  assert.equal(h.demo.current().stateRevision,10); assert.equal(h.demo.current().realA3.status,'IMPACT_DRAFT_READY');
+  assert.match(h.demo.page(),/최종 검토하기/);
+});
+
+test('failed question submission keeps the answer visible for retry',async t=>{
+  const q={question_id:'Q-2',stage:'agent3',text:'확인?',reason:'필수',target:'pm',blocking:true,status:'open'};
+  const session={id:'CR-UI-FAIL',caseId:'C2',stateRevision:1,text:'요청',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'A2',realA3:{status:'NEEDS_INPUT',estimates:[],questions:[q]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]])); h.demo.enter(session.id);
+  const original=globalThis.fetch; t.after(()=>{globalThis.fetch=original;});
+  globalThis.fetch=async()=>({ok:false,json:async()=>({detail:'현재 상태가 변경됐습니다'})});
+  h.click('agent3-question'); h.input('analysis-pm-other','보존할 답변'); h.click('answer');
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.match(h.demo.page(),/보존할 답변/); assert.match(h.demo.page(),/현재 상태가 변경됐습니다/);
+  assert.equal(h.demo.current().stateRevision,1);
+});
+
+test('contract evidence need is not presented as a PM question',()=>{
+  const q={question_id:'Q-E',stage:'agent3',field:'more_evidence',text:'변경합의서를 조사하세요',target:'pm',blocking:true,status:'open'};
+  const session={id:'CR-UI-EVIDENCE',caseId:'C3',stateRevision:1,text:'요청',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'A3',realA3:{status:'NEEDS_INPUT',estimates:[],questions:[q]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]])); h.demo.enter(session.id);
+  assert.match(h.demo.page(),/추가 문서 조사 필요/);
+  assert.match(h.demo.page(),/Agent 2 재조사 자동 연결은 아직 준비 중/);
+  assert.doesNotMatch(h.demo.page(),/추가 질문에 답변하기/);
+});
+
+test('mail draft is generated from the latest server result before final confirmation',async t=>{
+  const session={id:'CR-UI-MAIL',caseId:'C-MAIL',stateRevision:4,text:'요청',created:'2026-11-09',events:[],step:6,ready:true,analysisId:'A-MAIL',realA3:{meta:{result_id:'A3-1'},status:'IMPACT_DRAFT_READY',estimates:[],questions:[]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]])); h.demo.enter(session.id);
+  const previous=globalThis.fetch; t.after(()=>{globalThis.fetch=previous;}); let calls=0;
+  globalThis.fetch=async(url,opts)=>{calls++; assert.equal(url,'/cases/C-MAIL/email-draft'); const body=JSON.parse(opts.body); assert.deepEqual(body,{state_revision:4,target_result_id:'A3-1'}); return {ok:true,json:async()=>({state_revision:5,draft:{subject:'협의 안내',body:'고객용 메일',model:'test-model'}})};};
+  h.click('final'); h.choice('approve'); await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(calls,1); assert.notEqual(h.demo.current().approved,true);
+  assert.equal(h.demo.current().stateRevision,5); assert.match(h.demo.page(),/고객용 메일/);
+  h.click('final'); h.choice('approve'); assert.equal(h.demo.current().approved,true);
+});
+
+test('restoring a case loads real server data and does not invent final approval',async t=>{
+  const sessionId='CR-UI-RESTORE';
+  const snapshot={analysis_id:`UI-${sessionId}`,case_id:sessionId,contract_request:{input:{context:{case_id:sessionId},message_text:'복원 요청',received_at:'2026-11-09'}}};
+  const live={state:{context:{analysis_id:`UI-${sessionId}`},state_revision:8,status:'WAITING_PM_REVIEW',stage:'lead_review'},a1:{items:[]},a2:{assessments:[]},a3:{status:'NOT_REQUIRED',estimates:[],questions:[]},questions:[]};
+  const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;}); globalThis.fetch=async()=>({ok:true,json:async()=>live});
+  const storage=new Map(), records=[];
+  const demo=createAnalysisDemo({records,storage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},render:()=>{},navigate:()=>{},openAnalysis:()=>{},analysisApi:{get:async()=>snapshot}});
+  demo.enter(sessionId); await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(demo.current().text,'복원 요청'); assert.equal(demo.current().stateRevision,8);
+  assert.equal(demo.current().approved,false); assert.equal(records.length,1);
+  assert.match(demo.page(),/메일 초안 생성/);
 });

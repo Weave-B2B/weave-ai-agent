@@ -1,6 +1,6 @@
 import { Agent1Api, Agent2Api, Agent3Api, AnalysisApi, ApiError, KbApi, MockPreview } from "./api.js?v=orchestration-1";
 import { records, sampleItems, scenarioInput } from "./fixtures.js?v=common-rate-2";
-import { createAnalysisDemo, analysisSnapshot } from "./analysis-demo.js?v=result-display-2";
+import { createAnalysisDemo, analysisSnapshot } from "./analysis-demo.js?v=integrated-email-1";
 
 const root = document.querySelector("#app");
 const api = new Agent3Api();

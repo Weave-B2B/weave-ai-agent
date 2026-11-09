@@ -11,7 +11,7 @@ from functools import lru_cache
 from fastapi import APIRouter, HTTPException
 
 from app.agents.registry import build_agents
-from app.api.models import AnswerRequest, ConfirmItems, LeadDecision, ResumeRequest, RetryRequest, RunRequest, SubmitPMReview
+from app.api.models import EmailDraftRequest, AnswerRequest, ConfirmItems, LeadDecision, ResumeRequest, RetryRequest, RunRequest, SubmitPMReview
 from app.orchestration.engine import Engine, InvalidInput, InvalidTransition, VersionConflict
 from app.orchestration.state_store import InMemoryStore
 
@@ -73,3 +73,18 @@ def answer(case_id: str, question_id: str, req: AnswerRequest):
 @router.post("/cases/{case_id}/retry")
 def retry(case_id: str, req: RetryRequest):
     return _guard(lambda: get_engine().retry(case_id, req.state_revision))
+
+
+@router.post("/cases/{case_id}/email-draft")
+def case_email_draft(case_id: str, req: EmailDraftRequest):
+    from app.api.agent3_routes import get_workflow
+    from app.agents.base import AgentFailure
+    from app.orchestration.email_draft import generate_email_draft
+    try:
+        return generate_email_draft(get_engine(), case_id, req.state_revision, req.target_result_id, get_workflow().draft_llm)
+    except (InvalidTransition, VersionConflict) as exc:
+        raise HTTPException(409, str(exc)) from None
+    except (InvalidInput, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from None
+    except AgentFailure as exc:
+        raise HTTPException(502, exc.error.model_dump(mode="json")) from None
