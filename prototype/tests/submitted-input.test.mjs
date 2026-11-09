@@ -29,7 +29,8 @@ async function boot(options = {}) {
     get(id) { return callbacks.get ? callbacks.get(id) : structuredClone(response); }
     review(id, body) { return callbacks.review(id, body); }
   }
-  const node = { innerHTML: '', addEventListener() {}, querySelector() { return null; }, textContent: '', hidden: true };
+  const handlers = {};
+  const node = { innerHTML: '', addEventListener(type, handler) { (handlers[type] ||= []).push(handler); }, querySelector(selector) { return options.elements?.[selector] || null; }, textContent: '', hidden: true };
   const context = vm.createContext({
     structuredClone, URL, console, setTimeout, clearTimeout, crypto: webcrypto,
     document: { activeElement: null, querySelector() { return node; } },
@@ -43,7 +44,8 @@ async function boot(options = {}) {
       return { ok: true, json: async () => structuredClone(value) };
     },
   });
-  const transport = new vm.SyntheticModule(['Agent1Api', 'Agent2Api', 'Agent3Api', 'ApiError', 'KbApi', 'MockPreview'], function () {
+  const transport = new vm.SyntheticModule(['Agent1Api', 'Agent2Api', 'Agent3Api', 'AnalysisApi', 'ApiError', 'KbApi', 'MockPreview'], function () {
+    this.setExport('AnalysisApi', class { start(body, rate) { if (callbacks.analysis) return callbacks.analysis(body, rate); throw new Error('Analysis API is not exercised in this test'); } });
     this.setExport('Agent1Api', class { run(body, config) { return callbacks.agent1?.(body, config); } });
     this.setExport('Agent2Api', class { assess(body, config) {
       if (callbacks.assess) return callbacks.assess(body, config);
@@ -56,7 +58,7 @@ async function boot(options = {}) {
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const analysisModule = new vm.SourceTextModule(analysisSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { analysisDemo, route, detail, state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage, startNewProject, npStart, npCreate, guessDocType }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { analysisDemo, route, detail, state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, approvalBlockReason, reviewFeedback, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage, startNewProject, npStart, npCreate, guessDocType }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -67,7 +69,7 @@ async function boot(options = {}) {
     throw new Error(`Unexpected module: ${specifier}`);
   });
   await module.evaluate();
-  return { ...module.namespace, store };
+  return { ...module.namespace, store, async fire(type, target) { for (const handler of handlers[type] || []) await handler({ target }); } };
 }
 
 function saved(store) { return JSON.parse(store.get(storageKey)); }
@@ -505,4 +507,131 @@ test('upload guesses document type from the file name and blocks unknown types',
   assert.match(page, /data-action="kb-upload" disabled/);
   app.kb.files[1].docType = 'quote';
   assert.doesNotMatch(app.projectsPage(), /data-action="kb-upload" disabled/);
+});
+
+
+test('schedule acknowledgement events enable approval and server approval exposes draft navigation', async t => {
+  const approve = { disabled: true }, feedback = { textContent: '' };
+  let calls = 0;
+  const app = await boot({ elements: { '[data-action="approve"]': approve, '#pm-review-feedback': feedback }, callbacks: {
+    review: (id, body) => { calls++; assert.equal(body.acknowledge_unknown_schedule, true); return { ...structuredClone(response), phase: 'APPROVED', approval: { approved: true } }; },
+  } });
+  t.after(app.cleanup);
+  app.switchInputSource('sample'); app.acceptView(structuredClone(response), input);
+  await app.fire('change', { id: 'ack-schedule', checked: false, dataset: {} });
+  assert.equal(approve.disabled, true); assert.match(feedback.textContent, /체크박스/);
+  await app.review(true); assert.equal(calls, 0);
+  await app.fire('input', { id: 'ack-schedule', checked: true, dataset: {} });
+  assert.equal(approve.disabled, false); assert.match(feedback.textContent, /승인할 준비/);
+  await app.fire('change', { id: 'ack-schedule', checked: false, dataset: {} });
+  assert.equal(approve.disabled, true);
+  await app.fire('change', { id: 'ack-schedule', checked: true, dataset: {} });
+  assert.equal(approve.disabled, false);
+  await app.review(true); assert.equal(calls, 1);
+  assert.match(app.detail(), /data-action="go-draft"/);
+});
+
+test('acknowledgement never bypasses stale input, unsaved edits or blocking questions', async t => {
+  const app = await boot(); t.after(app.cleanup);
+  app.switchInputSource('sample'); app.acceptView(structuredClone(response), input);
+  app.state.ack = true;
+  app.state.invalidated = true;
+  assert.equal(app.canApprove(), false); assert.match(app.approvalBlockReason(), /설정/);
+  app.state.invalidated = false; app.state.edits[0].lines[0].md += 0.5;
+  assert.equal(app.canApprove(), false); assert.match(app.approvalBlockReason(), /저장하지 않은/);
+  app.acceptView(structuredClone(response), input); app.state.ack = true;
+  app.state.view.impact.questions[0].blocking = true;
+  assert.equal(app.canApprove(), false); assert.match(app.approvalBlockReason(), /필수 확인/);
+});
+
+test('failed approval is visible beside PM controls and retains the estimate for retry', async t => {
+  const app = await boot({ callbacks: { review: () => { throw new ApiError(0, 'AI 서버에 연결할 수 없습니다.'); } } });
+  t.after(app.cleanup); app.switchInputSource('sample'); app.acceptView(structuredClone(response), input); app.state.ack = true;
+  await app.review(true);
+  assert.equal(app.state.view.phase, 'WAITING_IMPACT_APPROVAL');
+  assert.equal(app.state.ack, true); assert.equal(app.canApprove(), true);
+  assert.match(app.reviewFeedback(), /AI 서버에 연결할 수 없습니다/);
+  assert.match(app.detail(), /id="pm-review-feedback"[^>]*>[\s\S]*?AI 서버에 연결할 수 없습니다/);
+  assert.doesNotMatch(app.detail(), /data-action="go-draft"/);
+});
+
+// Independent QA: recovery guidance must match the conflict policy, and replies
+// belonging to a request we left must never replace the active request's view.
+test('QA: conflict feedback directs PM to re-estimate rather than refresh-only recovery', async t => {
+  const app = await boot({ callbacks: { review: () => { throw new ApiError(409, 'stale revision'); } } });
+  t.after(app.cleanup); app.switchInputSource('sample'); app.acceptView(structuredClone(response), input); app.state.ack = true;
+  await app.review(true);
+  assert.equal(app.state.conflicted, true);
+  assert.equal(app.canApprove(), false);
+  assert.match(app.approvalBlockReason(), /다시 산정|재산정/);
+});
+
+test('QA: missing server session clears approval and explains re-estimation', async t => {
+  const app = await boot({ callbacks: { review: () => { throw new ApiError(404, 'missing session'); } } });
+  t.after(app.cleanup); app.switchInputSource('sample'); app.acceptView(structuredClone(response), input); app.state.ack = true;
+  await app.review(true);
+  assert.equal(app.state.view, null);
+  assert.equal(app.canApprove(), false);
+  assert.match(app.reviewFeedback(), /다시 산정/);
+  assert.equal(app.store.has(storageKey), false);
+});
+
+test('QA: late PM approval response cannot populate a different request', async t => {
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const app = await boot({ callbacks: { review: () => pending } });
+  t.after(app.cleanup); app.switchInputSource('sample'); app.acceptView(structuredClone(response), input); app.state.ack = true;
+  const run = app.review(true);
+  app.state.id = 'CR-A-004'; app.selectCase('CR-A-004');
+  assert.equal(app.state.view, null);
+  finish({ ...structuredClone(response), phase: 'APPROVED', approval: { approved: true } });
+  await run;
+  assert.equal(app.state.id, 'CR-A-004');
+  assert.equal(app.state.view, null);
+});
+
+test('QA: late failed approval cannot put another request into conflict', async t => {
+  let fail;
+  const pending = new Promise((resolve, reject) => { fail = reject; });
+  const app = await boot({ callbacks: { review: () => pending } });
+  t.after(app.cleanup); app.switchInputSource('sample'); app.acceptView(structuredClone(response), input); app.state.ack = true;
+  const run = app.review(true);
+  app.state.id = 'CR-A-004'; app.selectCase('CR-A-004');
+  fail(new ApiError(409, 'old request stale'));
+  await run;
+  assert.equal(app.state.id, 'CR-A-004');
+  assert.equal(app.state.conflicted, false);
+  assert.equal(app.state.error, null);
+});
+
+test('QA: leaving and returning to a request does not revive its abandoned approval', async t => {
+  let finish;
+  const pending = new Promise(resolve => { finish = resolve; });
+  const app = await boot({ callbacks: { review: () => pending } });
+  t.after(app.cleanup); app.switchInputSource('sample'); app.acceptView(structuredClone(response), input); app.state.ack = true;
+  const run = app.review(true);
+  app.state.id = 'CR-A-004'; app.selectCase('CR-A-004');
+  assert.equal(app.state.pending, false);
+  app.state.id = 'CR-A-001'; app.selectCase('CR-A-001');
+  finish({ ...structuredClone(response), phase: 'APPROVED', approval: { approved: true } });
+  await run;
+  assert.equal(app.state.view, null);
+  assert.equal(app.state.pending, false);
+});
+
+test('QA: abandoned approval 404 cannot erase another request estimate', async t => {
+  let fail;
+  const pending = new Promise((resolve, reject) => { fail = reject; });
+  const app = await boot({ callbacks: { review: () => pending } });
+  t.after(app.cleanup); app.switchInputSource('sample'); app.acceptView(structuredClone(response), input); app.state.ack = true;
+  const run = app.review(true);
+  app.state.id = 'CR-A-004'; app.selectCase('CR-A-004'); app.switchInputSource('sample');
+  const nextView = structuredClone(response);
+  nextView.session_id = 'new-case-session'; nextView.impact.context = structuredClone(samples.inputs['CR-A-004'].context);
+  app.acceptView(nextView, samples.inputs['CR-A-004']);
+  fail(new ApiError(404, 'old session missing'));
+  await run;
+  assert.equal(app.state.view.session_id, 'new-case-session');
+  assert.equal(app.state.error, null);
+  assert.equal(JSON.parse(app.store.get(storageKey)).sessionId, 'new-case-session');
 });
