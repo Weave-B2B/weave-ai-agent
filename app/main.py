@@ -12,6 +12,8 @@ from app.api.agent1_routes import router as agent1_router
 from app.api.agent2_routes import router as agent2_router
 from app.api.agent3_routes import router as agent3_router
 from app.api.analysis_routes import router as analysis_router
+from app.api.execution_routes import router as execution_router
+from app.api.run_routes import router as run_router, register_error_handlers
 from app.llm.factory import build_llm
 from prototype.rate_routes import router as prototype_rate_router
 
@@ -34,6 +36,9 @@ app.include_router(agent1_router)
 app.include_router(agent2_router)
 app.include_router(agent3_router)
 app.include_router(analysis_router)
+app.include_router(execution_router)
+app.include_router(run_router)
+register_error_handlers(app)
 app.include_router(prototype_rate_router)
 
 # The developer-only API is enabled only by the explicit local prototype runner.
