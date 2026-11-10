@@ -7,7 +7,7 @@
   - **[제안]** 설계상 제안(합의 전까지 확정 아님)
   - **[미확인]** 읽지 못했거나 코드에 없어 알 수 없음
 - 이 문서는 코드 변경 없이 작성했다. `FakeRunStateClient`는 계약의 기대 동작을 고정하는 테스트 도구이며 Backend 구현의 증거가 아니다.
-- 관련 문서: [dto-revision-plan.md](./dto-revision-plan.md)
+- 관련 문서: [dto-integrated-design.md](./dto-integrated-design.md)
 
 ---
 

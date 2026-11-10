@@ -16,6 +16,7 @@ from schema.schemas import (
 from app.agents.agent2.guards import apply_guards
 from app.agents.agent3.guards import finalize_estimates
 from app.agents.base import AgentFailure, AgentSet
+from app.orchestration.payload import to_commit_payload
 from app.orchestration.ids import new_result_id, now_iso
 from app.orchestration.preflight import preflight_a3
 from app.orchestration.run_state import (
@@ -185,8 +186,9 @@ class OrchestrationRuntime:
         # 같은 operation_id 재전송이 같은 요청이 되도록 result_id는 operation_id에서 정해지고 created_at은 건드리지 않는다
         new_id = f"{agent}-{output.context.case_id}-edit-{uuid.uuid5(uuid.NAMESPACE_URL, f'{run_id}/{operation_id}').hex[:8]}"
         upstream = [snap.agents[p].current_result_id for p in AGENT_PREREQUISITES[agent]]
-        payload = output.model_copy(update={"meta": output.meta.model_copy(update={
-            "result_id": new_id, "upstream_result_ids": upstream})}).model_dump(mode="json")
+        edited = output.model_copy(update={"meta": output.meta.model_copy(update={
+            "result_id": new_id, "upstream_result_ids": upstream})})
+        payload = to_commit_payload(edited)
         return self._persist(self.state.record_edit, RecordEditRequest(
             run_id=run_id, expected_state_revision=expected_state_revision, operation_id=operation_id, agent_type=agent,
             target_result_id=target_result_id, new_result_id=new_id, edited_by=edited_by, edited_payload=payload, reason=reason))
@@ -291,7 +293,7 @@ class OrchestrationRuntime:
             payload = {"error": error.model_dump(mode="json")}
             exec_status, run_status = "FAILED", "FAILED"
         else:
-            payload = output.model_dump(mode="json")
+            payload = to_commit_payload(output)
             exec_status = "COMPLETED"
             done = agent == "agent3" and output.status in ("IMPACT_DRAFT_READY", "NOT_REQUIRED")
             run_status = "COMPLETED" if done else "RUNNING"

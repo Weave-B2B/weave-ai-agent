@@ -137,3 +137,38 @@ def test_edit_errors(client):
     rev = client.get(base, headers=H).json()["state_revision"]
     stale = {**body, "expected_state_revision": rev, "target_result_id": "old-id", "edited_payload": payload}
     assert client.post(f"{base}/agents/agent1/edits", headers=H, json=stale).status_code == 409   # 현재 결과가 아님
+
+
+def _leaks(o):
+    """운영 payload에 남으면 안 되는 평가 전용·debug 값을 찾는다."""
+    found = []
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k in ("gold_origin", "gold_ref") and v is not None:
+                found.append(k)
+            if k == "debug" and v:
+                found.append(k)
+            found += _leaks(v)
+    elif isinstance(o, list):
+        for v in o:
+            found += _leaks(v)
+    return found
+
+
+def test_committed_payloads_carry_no_eval_only_or_debug_fields(client):
+    run_id = _create(client)["run_id"]
+    base = f"/api/v2/runs/{run_id}"
+    client.post(f"{base}/orchestrations", headers=H)
+    state = client.get(base, headers=H).json()
+    ids = [a["current_result_id"] for a in state["agents"].values() if a["current_result_id"]]
+    assert len(ids) == 2
+    for rid in ids:
+        assert _leaks(client.get(f"{base}/results/{rid}", headers=H).json()["result_payload"]) == []
+
+    a1 = client.get(f"{base}/results/{state['agents']['agent1']['current_result_id']}", headers=H).json()["result_payload"]
+    a1["meta"]["debug"] = {"x": 1}
+    a1["items"][0]["gold_origin"] = "eval-only"
+    receipt = client.post(f"{base}/agents/agent1/edits", headers=H, json={
+        "expected_state_revision": state["state_revision"], "operation_id": "e1",
+        "target_result_id": state["agents"]["agent1"]["current_result_id"], "edited_payload": a1}).json()
+    assert _leaks(client.get(f"{base}/results/{receipt['result_id']}", headers=H).json()["result_payload"]) == []
