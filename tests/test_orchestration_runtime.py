@@ -236,3 +236,86 @@ def test_missing_review_requests_pm_review_without_running_a3(env):
     run_to_review(env)
     assert "agent3" not in env.log
     assert env.fake.get_state(RUN).pending_review.target_result_id == env.fake.get_state(RUN).agents["agent2"].current_result_id
+
+
+def test_needs_input_waits_as_input_not_pm_review(env):
+    inner = env.ags["agent1"].inner
+    original = inner.run
+    inner.run = lambda inp: original(inp).model_copy(update={"status": "NEEDS_INPUT"})
+    res = env.rt.run(RUN)
+    s = env.fake.get_state(RUN)
+    assert res.outcome == "WAITING_FOR_REVIEW" and env.log == ["agent1"]
+    assert s.status == "WAITING_INPUT" and s.pending_review.kind == "INPUT"
+    assert s.agents["agent1"].status == "COMPLETED"
+
+
+# ---------------------------------------------------------------- resume (resolve_review 경유 재개)
+def test_resume_approved_resolves_via_backend_and_continues_to_a3(env):
+    run_to_review(env)
+    env.prov.reviewed = True                      # PM 검토 결과는 Provider(Backend 저장분)가 제공한다고 가정
+    res = env.rt.resume(RUN, "pm-1", "APPROVED", "ok")
+    assert env.log == ["agent1", "agent2", "agent3"]
+    assert (res.outcome, res.run_status) == ("COMPLETED", "COMPLETED")
+    history = [h["event"] for h in env.fake.history(RUN)]
+    assert "review_resolved" in history
+
+
+def test_resume_without_review_data_waits_again_not_runs_a3(env):
+    run_to_review(env)
+    res = env.rt.resume(RUN, "pm-1", "APPROVED")     # Provider가 PM 검토 결과를 아직 주지 않음
+    assert env.log == ["agent1", "agent2"] and res.outcome == "WAITING_FOR_REVIEW"
+
+
+def test_resume_rejected_resolves_and_stops_without_running(env):
+    run_to_review(env)
+    res = env.rt.resume(RUN, "pm-1", "REJECTED", "다시")
+    assert (res.outcome, res.stop_reason, res.run_status) == ("STOPPED", "REVIEW_REJECTED", "RUNNING")
+    assert env.log == ["agent1", "agent2"] and env.fake.get_state(RUN).pending_review is None
+
+
+def test_resume_not_waiting_is_noop(env):
+    res = env.rt.resume(RUN, "pm-1", "APPROVED")
+    assert (res.outcome, res.stop_reason) == ("STOPPED", "NOT_WAITING_FOR_REVIEW") and env.log == []
+
+
+def test_resume_input_wait_is_not_resolved(env):
+    env.fake.start_agent(StartAgentRequest(run_id=RUN, agent_type="agent1", expected_state_revision=0, operation_id="s1"))
+    env.fake.request_review(RequestReviewRequest(run_id=RUN, expected_state_revision=1, operation_id="r1",
+                                                 agent_type="agent1", reason="입력", kind="INPUT"))
+    res = env.rt.resume(RUN, "pm-1", "APPROVED")
+    assert (res.outcome, res.stop_reason, res.run_status) == ("STOPPED", "INPUT_RESUME_UNSUPPORTED", "WAITING_INPUT")
+    assert env.fake.get_state(RUN).pending_review.kind == "INPUT"
+
+
+def _all_done_waiting_on_a3_review(env):
+    f, n = env.fake, itertools.count(1)
+    for agent, rid, up in (("agent1", "r1", []), ("agent2", "r2", ["r1"]), ("agent3", "r3", ["r2"])):
+        rev = f.get_state(RUN).state_revision
+        f.start_agent(StartAgentRequest(run_id=RUN, agent_type=agent, expected_state_revision=rev, operation_id=f"s{next(n)}"))
+        f.commit_result(CommitResultRequest(run_id=RUN, expected_state_revision=rev + 1, operation_id=f"c{next(n)}",
+                                            agent_type=agent, result_id=rid, upstream_result_ids=up, result_payload={}))
+    rev = f.get_state(RUN).state_revision
+    f.request_review(RequestReviewRequest(run_id=RUN, expected_state_revision=rev, operation_id="rv", agent_type="agent3",
+                                          target_result_id="r3", reason="agent3 검토 필요"))
+
+
+def test_resume_approving_last_agent_review_completes_run_without_rerun(env):
+    _all_done_waiting_on_a3_review(env)
+    res = env.rt.resume(RUN, "pm-1", "APPROVED")
+    assert (res.outcome, res.run_status, res.executed, env.log) == ("COMPLETED", "COMPLETED", [], [])
+
+
+def test_resume_rejecting_last_agent_review_does_not_complete_run(env):
+    _all_done_waiting_on_a3_review(env)
+    res = env.rt.resume(RUN, "pm-1", "REJECTED")
+    assert (res.stop_reason, res.run_status) == ("REVIEW_REJECTED", "RUNNING")
+
+
+def test_fake_rejects_completed_resolve_when_not_all_agents_current(env):
+    run_to_review(env)
+    snap = env.fake.get_state(RUN)
+    from app.orchestration.run_state import InvalidStateTransition, ResolveReviewRequest
+    with pytest.raises(InvalidStateTransition):
+        env.fake.resolve_review(ResolveReviewRequest(
+            run_id=RUN, expected_state_revision=snap.state_revision, operation_id="x", resolved_by="pm",
+            decision="APPROVED", requested_run_status="COMPLETED"))

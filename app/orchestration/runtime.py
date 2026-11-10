@@ -20,7 +20,7 @@ from app.orchestration.ids import new_result_id, now_iso
 from app.orchestration.preflight import preflight_a3
 from app.orchestration.run_state import (
     AGENT_PREREQUISITES, CommitResultRequest, InvalidStateTransition, OperationConflict, PendingReview,
-    RequestReviewRequest, RunStateClient, RunStateSnapshot, StartAgentRequest, StatePersistenceError,
+    RequestReviewRequest, ResolveReviewRequest, ReviewDecision, ReviewKind, RunStateClient, RunStateSnapshot, StartAgentRequest, StatePersistenceError,
     StateRevisionConflict, _M,
 )
 from app.orchestration.workflow_rules import blocking_reason, is_waiting_for_user, next_agent, scope_items_of, constraints_of
@@ -30,7 +30,8 @@ MAX_ATTEMPTS = 3
 Outcome = Literal["COMPLETED", "WAITING_FOR_REVIEW", "FAILED", "STOPPED"]
 StopReason = Literal[
     "AGENT_RUNNING", "STATE_CHANGED", "START_REPLAYED", "START_REJECTED", "COMMIT_REJECTED", "COMMIT_FAILED",
-    "START_FAILED", "PREFLIGHT_BLOCKED", "NOTHING_TO_ANALYZE",
+    "START_FAILED", "PREFLIGHT_BLOCKED", "NOTHING_TO_ANALYZE", "NOT_WAITING_FOR_REVIEW", "INPUT_RESUME_UNSUPPORTED",
+    "REVIEW_REJECTED", "RESOLVE_FAILED",
 ]
 
 
@@ -124,6 +125,49 @@ class OrchestrationRuntime:
             outcome: Outcome = "FAILED" if stop.error else "STOPPED"
             return self._result(snap, outcome, executed, stop.reason, stop.error, stop.detail)
 
+    def resume(self, run_id: str, resolved_by: str, decision: ReviewDecision, comment: Optional[str] = None) -> RuntimeResult:
+        """PM 검토 대기를 해제하고(Backend resolve_review) 승인이면 이어서 실행한다.
+
+        - INPUT 대기는 사용자 입력 저장/조회 계약이 없어 해제하지 않고 중단한다.
+        - REJECTED는 대기만 해제하고 중단한다(결과 수정 → 재실행은 별도 경로).
+        - 마지막 Agent 검토 승인으로 전부 최신 COMPLETED면 Run을 COMPLETED로 해제한다.
+        """
+        try:
+            snap = self._get_state(run_id)
+            pending = snap.pending_review
+            if not is_waiting_for_user(snap) or pending is None:
+                raise _Stop("NOT_WAITING_FOR_REVIEW", "해제할 검토 대기가 없다")
+            if pending.kind == "INPUT":
+                raise _Stop("INPUT_RESUME_UNSUPPORTED", "사용자 입력 대기의 재개는 입력 계약 확정 전이라 지원하지 않는다")
+            all_current = all(a.status == "COMPLETED" and not a.stale for a in snap.agents.values())
+            target = "COMPLETED" if decision == "APPROVED" and pending.agent_type == "agent3" and all_current else "RUNNING"
+            self._resolve(snap, resolved_by, decision, comment, target)
+        except _Stop as stop:
+            return self._result(self._get_state(run_id), "STOPPED", [], stop.reason, None, stop.detail)
+        if decision == "REJECTED":
+            return self._result(self._get_state(run_id), "STOPPED", [], "REVIEW_REJECTED", None, comment)
+        return self.run(run_id)
+
+    def _resolve(self, snap: RunStateSnapshot, resolved_by: str, decision: ReviewDecision, comment, target) -> None:
+        revision, op = snap.state_revision, self._new_op()
+        for _ in range(self._max):
+            req = ResolveReviewRequest(run_id=snap.run_id, expected_state_revision=revision, operation_id=op,
+                                       resolved_by=resolved_by, decision=decision, comment=comment,
+                                       requested_run_status=target)
+            try:
+                self._persist(self.state.resolve_review, req)
+                return
+            except StatePersistenceError:
+                raise _Stop("RESOLVE_FAILED", "resolve_review 저장 실패가 반복됨")
+            except (InvalidStateTransition, OperationConflict) as e:
+                raise _Stop("COMMIT_REJECTED", str(e))
+            except StateRevisionConflict:
+                latest = self._get_state(snap.run_id)
+                if latest.pending_review is None:
+                    raise _Stop("STATE_CHANGED", "그 사이 대기가 이미 해제되었다")
+                revision, op = latest.state_revision, self._new_op()
+        raise _Stop("STATE_CHANGED", "resolve_review revision 충돌이 반복됨")
+
     # ------------------------------------------------------------------ 입력 구성
     def _review_needed(self, agent: Stage, snap: RunStateSnapshot, ri: RunInputs) -> Optional[tuple[Stage, str, str]]:
         """A3 시작 전 PM 검토가 없으면 (agent_type, target_result_id, reason). 검토 대기는 Agent 상태가 아니다."""
@@ -193,7 +237,8 @@ class OrchestrationRuntime:
             review = self._review_after(agent, output, result_id)
             if review is not None:
                 snap = self._get_state(run_id)
-                self._request_review(snap, agent, result_id, review)
+                kind = "INPUT" if output.status == "NEEDS_INPUT" else "PM_REVIEW"
+                self._request_review(snap, agent, result_id, review, kind)
         return (record,), error
 
     def _call_agent(self, agent: Stage, agent_in, ri: RunInputs):
@@ -207,7 +252,7 @@ class OrchestrationRuntime:
 
     @staticmethod
     def _review_after(agent: Stage, output, result_id: str) -> Optional[str]:
-        # 포트에는 WAITING_INPUT 전이가 없어 사용자 입력 필요도 검토 대기로 표현한다(Backend와 합의 필요)
+        # NEEDS_INPUT은 kind=INPUT(WAITING_INPUT)으로 요청하고, 그 외 검토는 PM_REVIEW로 요청한다
         if output.status == "NEEDS_INPUT":
             return f"{agent} 사용자 입력 필요"
         if agent == "agent3" and output.status == "WAITING_REVIEW":
@@ -265,11 +310,12 @@ class OrchestrationRuntime:
                 revision, op = snap.state_revision, self._new_op()
         raise _Stop("COMMIT_REJECTED", "revision 충돌이 반복됨")
 
-    def _request_review(self, snap: RunStateSnapshot, agent: Stage, target: Optional[str], reason: str) -> None:
+    def _request_review(self, snap: RunStateSnapshot, agent: Stage, target: Optional[str], reason: str,
+                        kind: ReviewKind = "PM_REVIEW") -> None:
         revision, op = snap.state_revision, self._new_op()
         for _ in range(self._max):
             req = RequestReviewRequest(run_id=snap.run_id, expected_state_revision=revision, operation_id=op,
-                                       agent_type=agent, target_result_id=target, reason=reason)
+                                       agent_type=agent, target_result_id=target, reason=reason, kind=kind)
             try:
                 self._persist(self.state.request_review, req)
                 return

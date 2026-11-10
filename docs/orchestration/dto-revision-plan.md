@@ -304,11 +304,26 @@ Planner-Worker 패턴은 채택하지 않는다(전체 작업 그래프·동적 
 - 테스트: Fake 9건(`tests/test_run_state_start_agent.py`) + Runtime 16건(`tests/test_orchestration_runtime.py`). 실제 LLM·Backend 호출 없음 — Fake 통과는 Backend 연동 검증이 아니다.
 - 미구현/한계: HTTP client, Backend API, Supervisor, 비동기 Job, RUNNING 복구(재시작 후 RUNNING이면 `AGENT_RUNNING`으로 멈춤), 재호출 시 replay된 start는 `START_REPLAYED`로 멈춤(보수적), stale 전파 정책, NEEDS_INPUT을 검토 대기로 표현(WAITING_INPUT 전이 없음), 리드 검토·PM 항목 확인 미모델링, PM 검토·rate_card 출처(Backend 합의 필요). 범위 필터 규칙은 `engine.py`와 중복(`workflow_rules.SCOPE_INTENTS`).
 
+### 3-1단계 — Protocol 확장 (D-5·D-9·D-1, Fake 위에서만 검증)
+
+- `record_edit`: 이력만 남기던 방식에서 **새 result revision 커밋**으로 변경. `RecordEditRequest`는 `new_result_id`·`edited_payload`·`reason` 추가, `changes` 제거. 반환은 `StateChangeReceipt`(새 `result_id`/`result_revision`).
+- `CommittedResult`에 `created_at`, `is_current` 추가. `request_review`·`PendingReview`에 `kind: PM_REVIEW|INPUT` 추가, `INPUT`은 `WAITING_INPUT`으로 전이. Runtime은 NEEDS_INPUT에 `INPUT`을 사용.
+- Fake: COMPLETED 커밋과 수정 시 결과가 있는 하위 Agent를 stale로 표시(D-4 제안 규칙). 계약 테스트 6건 추가(+Runtime 1건). Backend 구현은 여전히 없음.
+- 남은 항목: SKIPPED 전이, 대기 해제 계약(B4), result_id 재사용 정책의 commit 적용(D-6), Backend 구현.
+
 ### 설계 변경 — Planner-Worker → Supervisor 중심 (문서만 변경, 코드 변경 없음)
 
 - `PlanProposal`, task 그래프, `RunState.tasks`를 제거하고 `SupervisorDecision`과 Agent별 상태(`agents`) 중심 `RunState`로 대체했다.
 - 1·2단계 코드(v2 실행 API, `RunStateClient`, Fake)는 이 변경과 무관하게 유지된다. `RunStateSnapshot`은 이후 `agents` 구조로 확장했다(아래 2-1단계).
 - 위 설계는 모두 미구현이다.
+
+### 4단계 — Backend Run 상태 API (A1~A6 + Run 생성)
+
+- `weave-backend`에 `com.weave.run` 모듈 추가: 엔티티 4종(`analysis_run`, `analysis_run_agent`, `run_result`, `run_operation`), `RunStateService`, `InternalRunController`(`/internal/v1/runs`), `X-Internal-Token` 인터셉터, `RUN_*` 오류 코드. 상세는 `backend-api-contract.md` §14-1.
+- A5 `record_edit`(새 revision 커밋), A6 `request_review`, B4 `resolve_review`(대기 해제) 추가 구현. AI Protocol·Fake에도 `resolve_review`를 추가했다(Runtime 재개 로직은 미구현). `run_result`에 `edited_by`, `edited_from_result_id`, `edit_reason` 컬럼 추가(SQL 스크립트 반영).
+- 테스트: Backend 전체 337건 실패 0(`WEAVE_DB_TEST=true`, 스킵 0). AI 쪽 627 통과, 기존 실패 6건 그대로.
+- Fake보다 Backend가 엄격한 규칙(RUNNING 필수, result_id 재사용 거부, upstream 일치)은 Fake에 아직 반영하지 않았다.
+- 미구현: Runtime의 대기 재개 로직, INPUT 구조화 입력 저장, 입력 조회, RUNNING 복구, AI `HttpRunStateClient`, 동시성 경합 테스트.
 
 ### 구현 현황 (확정 아키텍처 기준)
 
@@ -316,7 +331,7 @@ Planner-Worker 패턴은 채택하지 않는다(전체 작업 그래프·동적 
 |---|---|
 | Agent 1·2 단일 실행 API(v2) | 완료(상태 비저장) |
 | Backend 상태 조회/결과 저장 계약 DTO + AI 측 client port + Fake | 완료(HTTP client는 미구현) |
-| Backend run/state/result API·영속 (`feat/#59`) | 미착수 |
+| Backend run/state/result API·영속 (`feat/#59`) | A1~A6 + Run 생성(B1) 구현·테스트 완료(4단계 기록 참고). B4 resolve_review 포함. `HttpRunStateClient`와 live 계약 테스트 통과(권한 facade는 stub). `Runtime.resume`(PM 검토 승인/거절, A3 승인 시 Run COMPLETED 해제) 구현. INPUT 재개·입력 조회·PM 검토 입력 제공(RunInputProvider 실제 구현)·복구 필드·앱 연결은 미구현 |
 | 규칙 기반 Runtime 루프 + `start_agent`/`get_result` 계약 | 완료(Fake 기반 테스트만, Backend 미연동). 기존 `Engine`은 그대로 존재 |
 | `SupervisorDecision` DTO + LLM Supervisor | 미착수 |
 | `RunStateSnapshot`의 Agent별 상태(`agents`) 확장 | 완료(계약·Fake·테스트). `RUNNING`/`SKIPPED`로 바꾸는 정식 메서드는 미정, `stale` 갱신 규칙 미구현 |

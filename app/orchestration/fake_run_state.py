@@ -1,11 +1,12 @@
 """RunStateClient의 테스트용 메모리 구현. Backend 계약의 기대 동작을 고정하는 용도이며 운영용이 아니다."""
 import hashlib
 import threading
+from datetime import datetime, timezone
 
 from app.orchestration.run_state import (
     AGENT_PREREQUISITES, AGENT_STAGES, AgentExecutionStatus, AgentState, CommitResultRequest, CommittedResult,
     InvalidStateTransition, OperationConflict, PendingReview, RecordEditRequest, RequestReviewRequest,
-    ResultNotFound, RunNotFound, RunStateSnapshot, StartAgentRequest, StateChangeReceipt, StatePersistenceError,
+    ResolveReviewRequest, ResultNotFound, RunNotFound, RunStateSnapshot, StartAgentRequest, StateChangeReceipt, StatePersistenceError,
     StateRevisionConflict,
 )
 from schema.schemas import RunStatus, Stage
@@ -37,7 +38,9 @@ class FakeRunStateClient:
     """Backend 계약 모사. RunStateClient 메서드(get_state/get_result/start_agent/commit_result/record_edit/
     request_review)만 Runtime이 사용한다. create_run, fail_next_write, set_agent_status, simulate_* 는 테스트 전용 제어다."""
 
-    def __init__(self):
+    def __init__(self, strict_commit: bool = False):
+        # True면 실제 Backend와 같은 commit 검증(RUNNING 필수, result_id 재사용 금지, upstream 일치)을 적용한다
+        self._strict_commit = strict_commit
         self._runs: dict[str, _Run] = {}
         self._lock = threading.RLock()
         self._fail_only: type | None | bool = False
@@ -86,7 +89,9 @@ class FakeRunStateClient:
             run = self._get(run_id)
             if result_id not in run.results:
                 raise ResultNotFound(f"result를 찾을 수 없습니다: {result_id}", run_id=run_id)
-            return run.results[result_id]
+            stored = run.results[result_id]
+            current = run.agents[stored.agent_type].current_result_id == result_id
+            return stored.model_copy(update={"is_current": current})
 
     def start_agent(self, req: StartAgentRequest) -> StateChangeReceipt:
         def apply(run: _Run) -> StateChangeReceipt:
@@ -108,6 +113,17 @@ class FakeRunStateClient:
 
     def commit_result(self, req: CommitResultRequest) -> StateChangeReceipt:
         def apply(run: _Run) -> StateChangeReceipt:
+            # Backend와 같은 규칙: 실행 승인(RUNNING)된 Agent만 커밋, result_id 재사용 금지, upstream은 선행 현재 결과와 일치
+            if self._strict_commit and run.agents[req.agent_type].status != "RUNNING":
+                raise InvalidStateTransition(f"{req.agent_type}가 실행 중이 아니어서 결과를 커밋할 수 없습니다",
+                                             run_id=run.run_id)
+            if self._strict_commit and req.result_id in run.results:
+                raise InvalidStateTransition(f"이미 사용된 result_id입니다: {req.result_id}", run_id=run.run_id)
+            if self._strict_commit and req.execution_status == "COMPLETED":
+                expected = [run.agents[p].current_result_id for p in AGENT_PREREQUISITES[req.agent_type]]
+                if list(req.upstream_result_ids) != expected:
+                    raise InvalidStateTransition(
+                        f"upstream_result_ids가 선행 Agent의 현재 결과와 다릅니다: expected={expected}", run_id=run.run_id)
             self._check_transition(run, req.requested_run_status)
             n = run.result_counts.get(req.agent_type, 0) + 1
             run.result_counts[req.agent_type] = n
@@ -121,7 +137,9 @@ class FakeRunStateClient:
             run.results[req.result_id] = CommittedResult(
                 run_id=run.run_id, agent_type=req.agent_type, result_id=req.result_id, result_revision=n,
                 execution_status=req.execution_status, upstream_result_ids=req.upstream_result_ids,
-                result_payload=req.result_payload)
+                result_payload=req.result_payload, created_at=datetime.now(timezone.utc), is_current=False)
+            if req.execution_status == "COMPLETED":
+                self._mark_downstream_stale(run, req.agent_type)
             run.status = "FAILED" if req.execution_status == "FAILED" else req.requested_run_status
             run.pending = None
             run.history.append({"event": "result_committed", "agent_type": req.agent_type,
@@ -131,23 +149,57 @@ class FakeRunStateClient:
 
     def record_edit(self, req: RecordEditRequest) -> StateChangeReceipt:
         def apply(run: _Run) -> StateChangeReceipt:
-            if run.agents[req.agent_type].current_result_id != req.target_result_id:
+            agent = run.agents[req.agent_type]
+            if agent.current_result_id != req.target_result_id:
                 raise InvalidStateTransition("수정 대상이 현재 결과가 아닙니다", run_id=run.run_id)
+            if agent.status == "RUNNING":
+                raise InvalidStateTransition(f"{req.agent_type}가 실행 중이라 수정할 수 없습니다", run_id=run.run_id)
+            if req.new_result_id in run.results:
+                raise InvalidStateTransition(f"이미 사용된 result_id입니다: {req.new_result_id}", run_id=run.run_id)
+            n = run.result_counts.get(req.agent_type, 0) + 1
+            run.result_counts[req.agent_type] = n
+            upstream = run.results[req.target_result_id].upstream_result_ids
+            run.results[req.new_result_id] = CommittedResult(
+                run_id=run.run_id, agent_type=req.agent_type, result_id=req.new_result_id, result_revision=n,
+                execution_status="COMPLETED", upstream_result_ids=upstream, result_payload=req.edited_payload,
+                created_at=datetime.now(timezone.utc), is_current=False)
+            run.agents[req.agent_type] = agent.model_copy(update={
+                "current_result_id": req.new_result_id, "result_revision": n, "stale": False})
+            self._mark_downstream_stale(run, req.agent_type)
             run.history.append({"event": "user_edit", "agent_type": req.agent_type,
-                                "target_result_id": req.target_result_id, "edited_by": req.edited_by,
-                                "changes": req.changes, "operation_id": req.operation_id})
-            return self._receipt(run, req.operation_id)
+                                "target_result_id": req.target_result_id, "result_id": req.new_result_id,
+                                "edited_by": req.edited_by, "reason": req.reason, "operation_id": req.operation_id})
+            return self._receipt(run, req.operation_id, req.new_result_id, n)
         return self._write(req, apply)
 
     def request_review(self, req: RequestReviewRequest) -> StateChangeReceipt:
         def apply(run: _Run) -> StateChangeReceipt:
             if run.status != "RUNNING":
                 raise InvalidStateTransition(f"{run.status} 상태에서는 검토 대기로 전환할 수 없습니다", run_id=run.run_id)
-            run.status = "WAITING_PM_REVIEW"
+            run.status = "WAITING_INPUT" if req.kind == "INPUT" else "WAITING_PM_REVIEW"
             run.pending = PendingReview(agent_type=req.agent_type, target_result_id=req.target_result_id,
-                                        reason=req.reason)
+                                        reason=req.reason, kind=req.kind)
             run.history.append({"event": "review_requested", "agent_type": req.agent_type,
                                 "operation_id": req.operation_id})
+            return self._receipt(run, req.operation_id)
+        return self._write(req, apply)
+
+    def resolve_review(self, req: ResolveReviewRequest) -> StateChangeReceipt:
+        def apply(run: _Run) -> StateChangeReceipt:
+            if run.pending is None or run.status not in ("WAITING_INPUT", "WAITING_PM_REVIEW"):
+                raise InvalidStateTransition("해제할 검토/입력 대기가 없습니다", run_id=run.run_id)
+            self._check_transition(run, "RUNNING")
+            if req.requested_run_status == "COMPLETED":
+                if req.decision == "REJECTED":
+                    raise InvalidStateTransition("REJECTED 결정으로 Run을 COMPLETED로 해제할 수 없습니다", run_id=run.run_id)
+                if any(a.status != "COMPLETED" or a.stale for a in run.agents.values()):
+                    raise InvalidStateTransition("모든 Agent가 최신 COMPLETED가 아니면 COMPLETED로 해제할 수 없습니다",
+                                                 run_id=run.run_id)
+            run.history.append({"event": "review_resolved", "agent_type": run.pending.agent_type,
+                                "kind": run.pending.kind, "decision": req.decision, "resolved_by": req.resolved_by,
+                                "comment": req.comment, "operation_id": req.operation_id})
+            run.status = req.requested_run_status
+            run.pending = None
             return self._receipt(run, req.operation_id)
         return self._write(req, apply)
 
@@ -182,6 +234,14 @@ class FakeRunStateClient:
             receipt = apply(run)
             run.receipts[req.operation_id] = (digest, receipt)
             return receipt
+
+    @staticmethod
+    def _mark_downstream_stale(run: _Run, agent_type: Stage) -> None:
+        # 결과가 있는 하위 Agent만 stale로 표시한다. 결과는 지우지 않는다.
+        for other, pres in AGENT_PREREQUISITES.items():
+            state = run.agents[other]
+            if agent_type in pres and state.current_result_id is not None:
+                run.agents[other] = state.model_copy(update={"stale": True})
 
     @staticmethod
     def _check_transition(run: _Run, target: RunStatus) -> None:

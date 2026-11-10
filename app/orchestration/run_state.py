@@ -3,6 +3,7 @@
 AI 서버는 Run 상태의 최종 영속 소유자가 아니다. 모든 변경은 expected_state_revision과
 operation_id를 붙여 Backend에 요청하고, Backend가 돌려준 상태·revision만 기준으로 삼는다.
 """
+from datetime import datetime
 from typing import Literal, Optional, Protocol
 
 from pydantic import Field, model_validator
@@ -11,6 +12,8 @@ from schema.schemas import RunStatus, Stage, _M
 
 ActorType = Literal["user", "agent", "system"]
 ResultExecutionStatus = Literal["COMPLETED", "FAILED"]
+ReviewKind = Literal["PM_REVIEW", "INPUT"]
+ReviewDecision = Literal["APPROVED", "REJECTED"]
 
 
 class RunStateError(Exception):
@@ -91,6 +94,7 @@ class PendingReview(_M):
     agent_type: Stage
     target_result_id: Optional[str] = None
     reason: str
+    kind: ReviewKind = "PM_REVIEW"
 
 
 class RunStateSnapshot(_M):
@@ -123,6 +127,8 @@ class CommittedResult(_M):
     execution_status: ResultExecutionStatus
     upstream_result_ids: list[str] = []
     result_payload: dict
+    created_at: datetime
+    is_current: bool = Field(description="조회 시점에 해당 Agent의 current_result_id인지 여부")
 
 
 class CommitResultRequest(_M):
@@ -138,13 +144,19 @@ class CommitResultRequest(_M):
 
 
 class RecordEditRequest(_M):
+    """사용자 수정은 대상 결과를 덮어쓰지 않고 새 result revision으로 커밋된다(응답 receipt에 새 result_id/revision).
+
+    new_result_id는 AI 서버가 발급하고, 수정본은 대상 결과의 upstream_result_ids를 그대로 이어받는다.
+    """
     run_id: str
     expected_state_revision: int = Field(ge=0)
     operation_id: str = Field(min_length=1)
     agent_type: Stage
     target_result_id: str
+    new_result_id: str = Field(min_length=1)
     edited_by: str
-    changes: dict
+    edited_payload: dict
+    reason: Optional[str] = None
 
 
 class RequestReviewRequest(_M):
@@ -154,6 +166,22 @@ class RequestReviewRequest(_M):
     agent_type: Stage
     target_result_id: Optional[str] = None
     reason: str
+    kind: ReviewKind = "PM_REVIEW"
+
+
+class ResolveReviewRequest(_M):
+    """대기(WAITING_PM_REVIEW/WAITING_INPUT)를 해제한다. Run은 RUNNING으로 돌아가고 pending_review는 비워진다.
+
+    다음에 무엇을 실행할지는 Runtime이 정한다(REJECTED여도 Backend는 실행 순서를 정하지 않는다).
+    """
+    run_id: str
+    expected_state_revision: int = Field(ge=0)
+    operation_id: str = Field(min_length=1)
+    resolved_by: str = Field(min_length=1)
+    decision: ReviewDecision
+    comment: Optional[str] = None
+    # COMPLETED는 모든 Agent가 최신 COMPLETED이고 APPROVED일 때만 Backend가 허용한다(commit_result의 requested_run_status와 같은 의미)
+    requested_run_status: Literal["RUNNING", "COMPLETED"] = "RUNNING"
 
 
 class StateChangeReceipt(_M):
@@ -175,3 +203,4 @@ class RunStateClient(Protocol):
     def commit_result(self, req: CommitResultRequest) -> StateChangeReceipt: ...
     def record_edit(self, req: RecordEditRequest) -> StateChangeReceipt: ...
     def request_review(self, req: RequestReviewRequest) -> StateChangeReceipt: ...
+    def resolve_review(self, req: ResolveReviewRequest) -> StateChangeReceipt: ...
