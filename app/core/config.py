@@ -9,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # Backend Run 상태 API(/internal/v1/runs). 비어 있으면 Run API는 503으로 응답한다.
+    backend_base_url: str = ""
+    backend_internal_token: str = ""
+    backend_timeout_sec: float = Field(default=10.0, gt=0)
+
     # fixture: 데이터셋 정답을 에이전트 대신 돌려줌 (오케스트레이션 개발·계약 테스트용)
     # llm: 실제 에이전트 (구현 후)
     agent_mode: str = "fixture"
