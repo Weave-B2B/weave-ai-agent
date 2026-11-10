@@ -487,6 +487,34 @@ AI Server ↔ Backend 인증 방식 (결정 필요, D-10)
 - 검증: Backend 전체 344건 통과(영속 테스트 포함). 공유 계약 테스트 Fake/live 모두 통과, 그중 `test_runtime_end_to_end_with_backend_inputs`는 **실제 Backend에서 Runtime이 입력을 조회해 A1→A2→(PM 검토 제출)→resume→A3→COMPLETED**까지 수행한다. 한계: 권한 facade는 stub, 입력 자체의 정합성(예: PMReview target_result_id가 현재 A2 결과인지)은 Backend가 검증하지 않고 AI preflight가 검증한다.
 - 미구현: 사용자 추가 입력(`answers`) 저장·반영, 기존 `pm_judgment`/`request_item` 연동, REQUEST_INPUT 수정(새 revision) API, INPUT 대기 재개.
 
+#### 14-1-4. AI 서버 Run API 연결 (구현·Fake 테스트 완료 범위)
+
+설정: `backend_base_url`, `backend_internal_token`, `backend_timeout_sec`(미설정이면 503 `BACKEND_NOT_CONFIGURED`). 행위자는 `X-Actor-Member-Id` 헤더(필수)를 Backend 호출에 그대로 전달한다.
+
+| API (`/api/v2/runs`) | 동작 |
+|---|---|
+| `POST ` | Run 생성 + 최초 입력(`agent1_input`, `rate_card_id`) 고정 → 201 Snapshot |
+| `GET /{run_id}` | Backend `get_state` 중계 |
+| `POST /{run_id}/orchestrations` | `Runtime.run` (동기) → `RuntimeResult` |
+| `POST /{run_id}/pm-review` | PM 검토 제출(`submitted_by`=행위자) → `StateChangeReceipt` |
+| `POST /{run_id}/resume` | `{decision, comment}` → `Runtime.resume` |
+
+오류 매핑: RunNotFound 404, revision/operation 충돌·잘못된 전이 409(충돌 시 `actual_state_revision` 포함), 접근 거부 403, 요청 거부 422, 저장 오류 503, 기타 502.
+검증: Fake 라우트 테스트(`test_run_routes.py`)와, 실제 Backend를 거치는 live 테스트(`test_run_routes_live.py`: 생성→오케스트레이션→PM 검토 제출/replay→resume→COMPLETED, 404 매핑)를 통과했다. 한계: live 서버는 권한 facade를 stub했고 인증 오류(401/403) 경로는 검증하지 못했다.  직접 실행(단일 Agent 상태 연동) API, 비동기 Job, 프론트↔AI 서버 인증 정책은 미구현/미확정이다.
+
+#### 14-1-5. 직접 실행 API (구현·Fake/live 테스트 완료 범위)
+
+| API (`/api/v2/runs/{run_id}`) | 동작 |
+|---|---|
+| `POST /agents/{agent}/executions` | 지정 Agent 하나만 `start_agent`→실행→`commit_result`(재실행 포함, 동기). 다음 Agent로 이어가지 않는다. `outcome=COMPLETED`는 "요청한 Agent가 커밋됨"이며 Run 상태는 `run_status`를 본다 |
+| `POST /agents/{agent}/edits` | `{target_result_id, expected_state_revision, operation_id, edited_payload, reason}` → Runtime이 출력 스키마 검증·새 `result_id`(operation_id에서 결정)·upstream을 채워 `record_edit`. **새 result revision 커밋(D-5)**, 하위 결과는 Backend가 stale 처리 |
+| `GET /results/{result_id}` | 결과 상세(과거 revision 포함) |
+
+- A3 직접 실행에서 PM 검토가 없으면 검토 대기를 만들지 않고 `PREFLIGHT_BLOCKED`로 중단한다(→ `pm-review` 제출 후 재실행). 선행 결과가 없거나 stale이면 `START_REJECTED`.
+- 수정은 `target_result_id`(사용자가 본 결과)를 반드시 받는다: 현재 결과가 아니면 거부, 같은 `operation_id` 재전송은 replay. 스키마 불일치는 422 `INVALID_EDIT_PAYLOAD`.
+- 수정으로 stale이 된 하위 Agent는 직접 실행(또는 오케스트레이션)으로 다시 돌린다. 자동 재계산은 하지 않는다.
+- 검증: Fake(`test_run_routes.py`)와 실제 Backend(`test_run_routes_live.py`)에서 실행→수정(replay·stale 전파)→하위 재실행→과거 결과 불변까지 통과. 한계는 §14-1-4와 같다(권한 stub, 동기 호출).
+
 ## 15. 미확정 사항 및 의사결정 목록
 
 각 항목: 현재 AI 구현 / 기존 Backend / 권장안 / 결정 필요.

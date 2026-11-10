@@ -7,7 +7,7 @@
 import uuid
 from typing import Callable, Literal, Optional, Protocol
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 from schema.schemas import (
     Agent1Input, Agent1Output, Agent2Input, Agent2Output, Agent3Input, Agent3Output, AgentError, Item, Meta,
     PMReview, RunStatus, Stage,
@@ -19,8 +19,8 @@ from app.agents.base import AgentFailure, AgentSet
 from app.orchestration.ids import new_result_id, now_iso
 from app.orchestration.preflight import preflight_a3
 from app.orchestration.run_state import (
-    AGENT_PREREQUISITES, CommitResultRequest, InvalidStateTransition, OperationConflict, PendingReview,
-    RequestReviewRequest, ResolveReviewRequest, RunInputs, ReviewDecision, ReviewKind, RunStateClient, RunStateSnapshot, StartAgentRequest, StatePersistenceError,
+    AGENT_PREREQUISITES, CommitResultRequest, InvalidEditPayload, InvalidStateTransition, OperationConflict, PendingReview,
+    RecordEditRequest, RequestReviewRequest, ResolveReviewRequest, RunInputs, ReviewDecision, ReviewKind, RunStateClient, RunStateSnapshot, StartAgentRequest, StateChangeReceipt, StatePersistenceError,
     StateRevisionConflict, _M,
 )
 from app.orchestration.workflow_rules import blocking_reason, is_waiting_for_user, next_agent, scope_items_of, constraints_of
@@ -33,6 +33,7 @@ StopReason = Literal[
     "START_FAILED", "PREFLIGHT_BLOCKED", "NOTHING_TO_ANALYZE", "NOT_WAITING_FOR_REVIEW", "INPUT_RESUME_UNSUPPORTED",
     "REVIEW_REJECTED", "RESOLVE_FAILED",
 ]
+_OUTPUT_MODELS = {"agent1": Agent1Output, "agent2": Agent2Output, "agent3": Agent3Output}
 
 
 class RunInputProvider(Protocol):
@@ -131,6 +132,64 @@ class OrchestrationRuntime:
             snap = self._get_state(run_id)
             outcome: Outcome = "FAILED" if stop.error else "STOPPED"
             return self._result(snap, outcome, executed, stop.reason, stop.error, stop.detail)
+
+    def run_agent(self, run_id: str, agent: Stage) -> RuntimeResult:
+        """직접 실행: 사용자가 지정한 Agent 하나만 실행한다(다음 Agent로 이어가지 않는다).
+
+        이미 COMPLETED인 Agent의 재실행도 허용한다(새 result revision, 하위 결과는 Backend가 stale 처리).
+        outcome=COMPLETED는 '요청한 Agent가 정상 커밋됨'이며 Run 전체 상태는 run_status를 본다.
+        A3의 PM 검토가 없으면 검토 대기를 만들지 않고 PREFLIGHT_BLOCKED로 중단한다(검토 제출 후 다시 실행).
+        """
+        executed: list[ExecutedAgent] = []
+        try:
+            for _ in range(self._max):
+                snap = self._get_state(run_id)
+                reason = blocking_reason(snap, agent)
+                if reason:
+                    raise _Stop("START_REJECTED", reason)
+                run_inputs = self.inputs.load(run_id)
+                if self._review_needed(agent, snap, run_inputs) is not None:
+                    raise _Stop("PREFLIGHT_BLOCKED", "Agent 3 실행 전 PM 검토 필요")
+                agent_in, upstream = self._build_input(agent, run_id, snap, run_inputs)
+                try:
+                    started = self._start(snap, agent)
+                except StateRevisionConflict:
+                    continue
+                if started.replayed:
+                    raise _Stop("START_REPLAYED", "이미 승인된 start 요청의 재전송 — 중복 실행 방지를 위해 실행하지 않음")
+                record, failed = self._execute_and_commit(run_id, agent, agent_in, upstream, started.state_revision,
+                                                          run_inputs)
+                executed.append(record[0])
+                snap = self._get_state(run_id)
+                if failed is not None:
+                    return self._result(snap, "FAILED", executed, error=failed)
+                return self._result(snap, "WAITING_FOR_REVIEW" if is_waiting_for_user(snap) else "COMPLETED", executed)
+            raise _Stop("STATE_CHANGED", "start_agent revision 충돌이 반복됨")
+        except _Stop as stop:
+            snap = self._get_state(run_id)
+            return self._result(snap, "FAILED" if stop.error else "STOPPED", executed, stop.reason, stop.error, stop.detail)
+
+    def edit_result(self, run_id: str, agent: Stage, target_result_id: str, edited_payload: dict, edited_by: str,
+                    expected_state_revision: int, operation_id: str, reason: Optional[str] = None) -> StateChangeReceipt:
+        """사용자 수정: 현재 결과를 덮어쓰지 않고 새 result revision으로 커밋한다(D-5).
+
+        target_result_id는 사용자가 수정한 화면의 결과(재전송이 같은 요청이 되도록 호출자가 지정, 현재 결과가 아니면 Backend가 거부).
+        payload는 해당 Agent 출력 스키마로 검증하고, 새 result_id·upstream을 Runtime이 채운다. 하위 결과의 stale 표시는 Backend가 한다.
+        revision이 다르면 StateRevisionConflict(사용자가 본 화면이 최신이 아님)를 그대로 올린다.
+        """
+        snap = self._get_state(run_id)
+        try:
+            output = _OUTPUT_MODELS[agent].model_validate(edited_payload)
+        except ValidationError as e:
+            raise InvalidEditPayload(f"수정 결과가 {agent} 출력 스키마와 맞지 않는다: {e.error_count()}건", run_id=run_id) from e
+        # 같은 operation_id 재전송이 같은 요청이 되도록 result_id는 operation_id에서 정해지고 created_at은 건드리지 않는다
+        new_id = f"{agent}-{output.context.case_id}-edit-{uuid.uuid5(uuid.NAMESPACE_URL, f'{run_id}/{operation_id}').hex[:8]}"
+        upstream = [snap.agents[p].current_result_id for p in AGENT_PREREQUISITES[agent]]
+        payload = output.model_copy(update={"meta": output.meta.model_copy(update={
+            "result_id": new_id, "upstream_result_ids": upstream})}).model_dump(mode="json")
+        return self._persist(self.state.record_edit, RecordEditRequest(
+            run_id=run_id, expected_state_revision=expected_state_revision, operation_id=operation_id, agent_type=agent,
+            target_result_id=target_result_id, new_result_id=new_id, edited_by=edited_by, edited_payload=payload, reason=reason))
 
     def resume(self, run_id: str, resolved_by: str, decision: ReviewDecision, comment: Optional[str] = None) -> RuntimeResult:
         """PM 검토 대기를 해제하고(Backend resolve_review) 승인이면 이어서 실행한다.

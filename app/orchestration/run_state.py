@@ -84,6 +84,11 @@ class InvalidStateTransition(RunStateError):
     code = "INVALID_STATE_TRANSITION"
 
 
+class InvalidEditPayload(RunStateError):
+    """사용자 수정 payload가 해당 Agent 출력 스키마와 맞지 않는다. 고치지 않으면 재시도해도 같다."""
+    code = "INVALID_EDIT_PAYLOAD"
+
+
 class StatePersistenceError(RunStateError):
     """Backend 저장 실패. 같은 operation_id로 재시도해도 중복 반영되지 않는다."""
     code = "STATE_PERSISTENCE_ERROR"

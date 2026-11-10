@@ -178,7 +178,7 @@ def test_error_retryability_contract():
     # http_run_state가 import되면 RunAccessDenied/RunRequestRejected(모두 재시도 불가)가 추가되므로 순서 독립으로 검증
     assert {k: v for k, v in retryable.items() if k not in ("RunAccessDenied", "RunRequestRejected")} == {
         "RunNotFound": False, "StateRevisionConflict": False, "OperationConflict": False,
-        "InvalidStateTransition": False, "StatePersistenceError": True}
+        "InvalidStateTransition": False, "InvalidEditPayload": False, "StatePersistenceError": True}
     assert not retryable.get("RunAccessDenied") and not retryable.get("RunRequestRejected")
 
 
