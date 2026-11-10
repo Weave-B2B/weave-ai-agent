@@ -1,0 +1,149 @@
+"""Backend가 소유하는 Run 상태에 대한 AI 서버 측 계약(port).
+
+AI 서버는 Run 상태의 최종 영속 소유자가 아니다. 모든 변경은 expected_state_revision과
+operation_id를 붙여 Backend에 요청하고, Backend가 돌려준 상태·revision만 기준으로 삼는다.
+"""
+from typing import Literal, Optional, Protocol
+
+from pydantic import Field, model_validator
+
+from schema.schemas import RunStatus, Stage, _M
+
+ActorType = Literal["user", "agent", "system"]
+ResultExecutionStatus = Literal["COMPLETED", "FAILED"]
+
+
+class RunStateError(Exception):
+    """retryable=True 인 오류만 같은 요청(같은 operation_id)을 그대로 재시도할 수 있다."""
+    code = "RUN_STATE_ERROR"
+    retryable = False
+
+    def __init__(self, message: str = "", *, run_id: str | None = None):
+        super().__init__(message or self.code)
+        self.run_id = run_id
+
+
+class RunNotFound(RunStateError):
+    code = "RUN_NOT_FOUND"
+
+
+class StateRevisionConflict(RunStateError):
+    """재시도 금지: 상태를 다시 읽고 계획을 재평가한 뒤 새 operation_id로 요청해야 한다."""
+    code = "STATE_REVISION_CONFLICT"
+
+    def __init__(self, message: str = "", *, run_id: str | None = None,
+                 expected_revision: int | None = None, actual_revision: int | None = None):
+        super().__init__(message, run_id=run_id)
+        self.expected_revision = expected_revision
+        self.actual_revision = actual_revision
+
+
+class OperationConflict(RunStateError):
+    """같은 operation_id가 다른 내용으로 다시 사용됨."""
+    code = "OPERATION_CONFLICT"
+
+
+class InvalidStateTransition(RunStateError):
+    code = "INVALID_STATE_TRANSITION"
+
+
+class StatePersistenceError(RunStateError):
+    """Backend 저장 실패. 같은 operation_id로 재시도해도 중복 반영되지 않는다."""
+    code = "STATE_PERSISTENCE_ERROR"
+    retryable = True
+
+
+AgentExecutionStatus = Literal["NOT_STARTED", "RUNNING", "COMPLETED", "FAILED", "SKIPPED"]
+AGENT_STAGES: tuple[Stage, ...] = ("agent1", "agent2", "agent3")
+
+
+class AgentState(_M):
+    """Agent 한 개의 실행 상태. Run 전체 상태(RunStatus)와 별개이며 사용자 검토 대기는 담지 않는다.
+
+    current_result_id/result_revision은 마지막으로 성공 커밋된 결과를 가리킨다.
+    실패한 시도는 이 포인터를 옮기지 않는다.
+    """
+    status: AgentExecutionStatus = "NOT_STARTED"
+    current_result_id: Optional[str] = None
+    result_revision: Optional[int] = Field(None, ge=1)
+    upstream_result_ids: list[str] = []
+    stale: bool = False
+
+    @model_validator(mode="after")
+    def _check_pointer(self):
+        has_pointer = self.current_result_id is not None
+        if has_pointer != (self.result_revision is not None):
+            raise ValueError("current_result_id와 result_revision은 함께 있어야 합니다")
+        if self.status == "COMPLETED" and not has_pointer:
+            raise ValueError("COMPLETED 상태에는 current_result_id가 필요합니다")
+        return self
+
+
+class PendingReview(_M):
+    agent_type: Stage
+    target_result_id: Optional[str] = None
+    reason: str
+
+
+class RunStateSnapshot(_M):
+    run_id: str
+    state_revision: int = Field(ge=0)
+    status: RunStatus
+    agents: dict[Stage, AgentState]
+    pending_review: Optional[PendingReview] = None
+
+    @model_validator(mode="after")
+    def _all_agents_present(self):
+        if set(self.agents) != set(AGENT_STAGES):
+            raise ValueError("agents에는 agent1·agent2·agent3가 모두 있어야 합니다")
+        return self
+
+
+class CommitResultRequest(_M):
+    run_id: str
+    expected_state_revision: int = Field(ge=0)
+    operation_id: str = Field(min_length=1)
+    agent_type: Stage
+    result_id: str
+    execution_status: ResultExecutionStatus = "COMPLETED"
+    upstream_result_ids: list[str] = []
+    result_payload: dict
+    requested_run_status: RunStatus = "RUNNING"
+
+
+class RecordEditRequest(_M):
+    run_id: str
+    expected_state_revision: int = Field(ge=0)
+    operation_id: str = Field(min_length=1)
+    agent_type: Stage
+    target_result_id: str
+    edited_by: str
+    changes: dict
+
+
+class RequestReviewRequest(_M):
+    run_id: str
+    expected_state_revision: int = Field(ge=0)
+    operation_id: str = Field(min_length=1)
+    agent_type: Stage
+    target_result_id: Optional[str] = None
+    reason: str
+
+
+class StateChangeReceipt(_M):
+    """Backend가 확정한 변경 결과. result_revision은 Backend가 결과 저장 시 부여한다."""
+    run_id: str
+    operation_id: str
+    state_revision: int = Field(ge=0)
+    status: RunStatus
+    result_id: Optional[str] = None
+    result_revision: Optional[int] = Field(None, ge=1)
+    replayed: bool = Field(False, description="같은 operation_id의 재요청이라 기존 결과를 돌려준 경우")
+
+
+class RunStateClient(Protocol):
+    """직접 실행과 자동 실행이 동일하게 사용하는 Run 상태 계약."""
+    def get_state(self, run_id: str) -> RunStateSnapshot: ...
+    def commit_result(self, req: CommitResultRequest) -> StateChangeReceipt: ...
+    def record_edit(self, req: RecordEditRequest) -> StateChangeReceipt: ...
+    def request_review(self, req: RequestReviewRequest) -> StateChangeReceipt: ...
