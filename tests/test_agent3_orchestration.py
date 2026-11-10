@@ -72,6 +72,26 @@ def test_provisional_impact_and_customer_documents_before_any_pm_review(tools, p
         documents(tools, approved)
 
 
+def test_customer_email_is_sectioned_without_raw_contract_dump(tools, provisional):
+    view = documents(tools, tools.estimate_impact(provisional))
+    email = view["documents"]["email"]["body"]
+    agreement = view["documents"]["agreement"]["body"]
+    for heading in ("1. 요청 사항 및 범위 검토", "2. 예상 작업 및 공수 (잠정)",
+                    "3. 예상 견적 및 일정", "4. 산정 전제 및 요청 조건",
+                    "5. 고객 확인 및 협의 사항"):
+        assert heading in email
+    assert "검토 요지:" in email and "확인 근거:" in email
+    assert "- 총 예상 공수: 8 MD" in email
+    assert "- 고객 제안 금액: 5,150,000원 (VAT 별도)" in email
+    assert "고객 협의 전 잠정 검토안" in email
+    assert "원가" not in email and "마진" not in email and "RC-SYNTH" not in email
+    # Full verified clause quotes remain in the separate agreement; email shows references.
+    quote = next(e.quote for a in provisional.a2_result.assessments
+                 for e in a.evidence if e.verified)
+    assert quote in agreement
+    assert quote not in email
+
+
 def test_forged_evidence_is_reverified_and_deferred_without_llm(tools, provisional):
     a = provisional.a2_result.assessments[0]
     a.evidence[0].quote = "forged quotation"

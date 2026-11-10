@@ -27,8 +27,8 @@ def _facts(rec):
             else:
                 facts.append(f"- 예상 공수 {estimate.totals.md:g} MD / 제안 금액 {estimate.totals.price:,}원 (부가세 별도)")
             facts.append(f"- 일정 영향: {estimate.schedule.business_days:g} 영업일" if estimate.schedule.business_days is not None else "- 일정 영향: 인력과 선행 작업 확인 후 협의 필요")
-        if all(e.totals is not None for e in estimates):
-            facts.append(f"- 전체 예상 공수 {sum(e.totals.md for e in estimates):g} MD / 전체 제안 금액 {sum(e.totals.price for e in estimates):,}원 (부가세 별도)")
+        if len(estimates) > 1:
+            facts.append("- 여러 항목의 작업 범위가 중복될 수 있어 전체 공수와 금액은 확인 후 안내드리겠습니다.")
     else:
         facts.append("\n추가 산정 대상이 없어 공수와 비용을 산정하지 않았습니다.")
     conditions = [i.text for i in rec.items or [] if i.item_type in ("deadline", "constraint", "dependency")]
