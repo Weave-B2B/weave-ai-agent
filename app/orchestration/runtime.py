@@ -20,7 +20,7 @@ from app.orchestration.ids import new_result_id, now_iso
 from app.orchestration.preflight import preflight_a3
 from app.orchestration.run_state import (
     AGENT_PREREQUISITES, CommitResultRequest, InvalidStateTransition, OperationConflict, PendingReview,
-    RequestReviewRequest, ResolveReviewRequest, ReviewDecision, ReviewKind, RunStateClient, RunStateSnapshot, StartAgentRequest, StatePersistenceError,
+    RequestReviewRequest, ResolveReviewRequest, RunInputs, ReviewDecision, ReviewKind, RunStateClient, RunStateSnapshot, StartAgentRequest, StatePersistenceError,
     StateRevisionConflict, _M,
 )
 from app.orchestration.workflow_rules import blocking_reason, is_waiting_for_user, next_agent, scope_items_of, constraints_of
@@ -35,15 +35,22 @@ StopReason = Literal[
 ]
 
 
-class RunInputs(_M):
-    """Run의 최초 입력. 출처(Backend 저장분)는 Backend와 합의 필요."""
-    agent1_input: Agent1Input
-    rate_card_id: str
-    pm_review: Optional[PMReview] = None
-
-
 class RunInputProvider(Protocol):
     def load(self, run_id: str) -> RunInputs: ...
+
+
+class BackendRunInputProvider:
+    """Backend에 저장된 입력(최초 입력 + 최신 PM 검토)을 조회한다. get_inputs를 가진 클라이언트(Http/Fake)를 받는다."""
+    def __init__(self, source):
+        self._source = source
+
+    def load(self, run_id: str) -> RunInputs:
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                return self._source.get_inputs(run_id)
+            except StatePersistenceError:
+                if attempt == MAX_ATTEMPTS - 1:
+                    raise
 
 
 class ExecutedAgent(_M):

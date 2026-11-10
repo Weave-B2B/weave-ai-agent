@@ -133,3 +133,15 @@ def test_transport_error_is_retryable_persistence_error():
     with pytest.raises(StatePersistenceError) as e:
         client_with(handler).get_state("run-1")
     assert e.value.retryable
+
+
+def test_response_ignores_unknown_fields_but_request_stays_strict():
+    from pydantic import ValidationError
+    from app.orchestration.run_state import RunStateSnapshot, StartAgentRequest
+    snap = RunStateSnapshot.model_validate({
+        "run_id": "r", "state_revision": 1, "status": "RUNNING", "future_field": 1,
+        "agents": {a: {"status": "NOT_STARTED", "new": "x"} for a in ("agent1", "agent2", "agent3")},
+        "pending_review": None})
+    assert snap.state_revision == 1
+    with pytest.raises(ValidationError):
+        StartAgentRequest(run_id="r", agent_type="agent1", expected_state_revision=0, operation_id="o", extra=1)

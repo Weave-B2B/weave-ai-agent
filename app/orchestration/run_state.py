@@ -6,14 +6,39 @@ operation_id를 붙여 Backend에 요청하고, Backend가 돌려준 상태·rev
 from datetime import datetime
 from typing import Literal, Optional, Protocol
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
-from schema.schemas import RunStatus, Stage, _M
+from schema.schemas import Agent1Input, PMReview, RunStatus, Stage, _M
 
 ActorType = Literal["user", "agent", "system"]
 ResultExecutionStatus = Literal["COMPLETED", "FAILED"]
 ReviewKind = Literal["PM_REVIEW", "INPUT"]
 ReviewDecision = Literal["APPROVED", "REJECTED"]
+
+
+class _Resp(_M):
+    """Backend 응답 DTO. 호환 정책: 응답은 모르는 필드를 무시해 Backend의 필드 추가에 깨지지 않게 하고,
+    요청 DTO(_M)는 엄격하게 검증한다."""
+    model_config = ConfigDict(extra="ignore")
+
+
+class RunInputs(_M):
+    """Run의 입력 문서 묶음. Backend run_input에 저장된다(REQUEST_INPUT은 Run 생성 시 고정, pm_review는 제출 시 추가)."""
+    agent1_input: Agent1Input
+    rate_card_id: str
+    pm_review: Optional[PMReview] = None
+
+
+class RunInputsView(_Resp):
+    """GET /inputs 응답. 모르는 필드는 무시한다."""
+    run_id: str
+    agent1_input: Agent1Input
+    rate_card_id: str
+    pm_review: Optional[PMReview] = None
+    pm_review_revision: Optional[int] = None
+
+    def to_inputs(self) -> RunInputs:
+        return RunInputs(agent1_input=self.agent1_input, rate_card_id=self.rate_card_id, pm_review=self.pm_review)
 
 
 class RunStateError(Exception):
@@ -28,6 +53,11 @@ class RunStateError(Exception):
 
 class RunNotFound(RunStateError):
     code = "RUN_NOT_FOUND"
+
+
+class RunInputNotFound(RunNotFound):
+    """Run은 있으나 최초 입력이 저장되어 있지 않다. 재시도해도 같다."""
+    code = "RUN_INPUT_NOT_FOUND"
 
 
 class ResultNotFound(RunNotFound):
@@ -68,7 +98,7 @@ AGENT_PREREQUISITES: dict[Stage, tuple[Stage, ...]] = {
 }
 
 
-class AgentState(_M):
+class AgentState(_Resp):
     """Agent 한 개의 실행 상태. Run 전체 상태(RunStatus)와 별개이며 사용자 검토 대기는 담지 않는다.
 
     current_result_id/result_revision은 마지막으로 성공 커밋된 결과를 가리킨다.
@@ -90,14 +120,14 @@ class AgentState(_M):
         return self
 
 
-class PendingReview(_M):
+class PendingReview(_Resp):
     agent_type: Stage
     target_result_id: Optional[str] = None
     reason: str
     kind: ReviewKind = "PM_REVIEW"
 
 
-class RunStateSnapshot(_M):
+class RunStateSnapshot(_Resp):
     run_id: str
     state_revision: int = Field(ge=0)
     status: RunStatus
@@ -119,7 +149,7 @@ class StartAgentRequest(_M):
     operation_id: str = Field(min_length=1)
 
 
-class CommittedResult(_M):
+class CommittedResult(_Resp):
     run_id: str
     agent_type: Stage
     result_id: str
@@ -184,7 +214,17 @@ class ResolveReviewRequest(_M):
     requested_run_status: Literal["RUNNING", "COMPLETED"] = "RUNNING"
 
 
-class StateChangeReceipt(_M):
+class SubmitInputRequest(_M):
+    """PM 검토 문서 제출. state_revision을 올리지만 Agent 상태·결과는 바꾸지 않는다. submitted_by는 행위자와 같아야 한다."""
+    run_id: str
+    expected_state_revision: int = Field(ge=0)
+    operation_id: str = Field(min_length=1)
+    kind: Literal["PM_REVIEW"] = "PM_REVIEW"
+    submitted_by: str = Field(min_length=1)
+    payload: PMReview
+
+
+class StateChangeReceipt(_Resp):
     """Backend가 확정한 변경 결과. result_revision은 Backend가 결과 저장 시 부여한다."""
     run_id: str
     operation_id: str

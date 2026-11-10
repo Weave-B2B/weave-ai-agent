@@ -472,6 +472,21 @@ AI Server ↔ Backend 인증 방식 (결정 필요, D-10)
   INPUT 대기는 해제하지 않고 `INPUT_RESUME_UNSUPPORTED`로 중단한다(입력 저장·조회 계약 미확정).
 - 검증: Backend `com.weave.run.*` 통과, AI 계약 테스트 Fake 14 + live 14 통과. **한계**: A3 사전 검토(agent2 대상) 승인 후 실제 진행은 `RunInputProvider`가 PM 검토 결과를 제공해야 하며(Backend 저장·조회 미구현), 없으면 다시 대기한다.
 
+#### 14-1-3. 입력 문서(`run_input`)와 호환 정책 (구현·테스트 완료 범위)
+
+결정(D-12 해소 방식): Backend는 Run 범위의 불변 입력 문서 `run_input`(kind, input_revision, payload)을 두고 **payload 내용은 해석하지 않는다**(AI의 `Agent1Input`/`PMReview` DTO 그대로 저장). 기존 `pm_judgment`와의 매핑은 후속 과제다.
+
+| API | 설명 |
+|---|---|
+| `POST /internal/v1/runs` | 선택 필드 `agent1_input`(객체), `rate_card_id`를 받으면 최초 입력(REQUEST_INPUT)을 **한 번만** 고정한다(이미 있으면 유지). 필드가 없으면 기존 동작 그대로 |
+| `GET /internal/v1/runs/{id}/inputs` | `{run_id, agent1_input, rate_card_id, pm_review|null, pm_review_revision|null}`. 최초 입력이 없으면 404 `RUN_INPUT_NOT_FOUND` |
+| `POST /internal/v1/runs/{id}/inputs` | `{expected_state_revision, operation_id, kind:"PM_REVIEW", submitted_by, payload}`. 새 input_revision 추가 + `state_revision` +1, Agent 상태·결과는 변경 없음. `submitted_by`는 행위자와 같아야 함(아니면 403). operation_id 멱등(replay), revision 충돌 409 |
+
+- AI: `RunInputs`는 `run_state.py`로 이동(runtime에서 재노출), `RunInputsView`(응답, 모르는 필드 무시), `SubmitInputRequest`, `RunInputNotFound`, `HttpRunStateClient.get_inputs/submit_input/create_run(inputs=)`, `BackendRunInputProvider`.
+- **호환 정책**: Backend 응답 DTO(`RunStateSnapshot`, `AgentState`, `PendingReview`, `CommittedResult`, `StateChangeReceipt`, `RunInputsView`)는 `extra="ignore"`로 Backend의 필드 추가에 깨지지 않게 하고, 요청 DTO는 `extra="forbid"`를 유지한다.
+- 검증: Backend 전체 344건 통과(영속 테스트 포함). 공유 계약 테스트 Fake/live 모두 통과, 그중 `test_runtime_end_to_end_with_backend_inputs`는 **실제 Backend에서 Runtime이 입력을 조회해 A1→A2→(PM 검토 제출)→resume→A3→COMPLETED**까지 수행한다. 한계: 권한 facade는 stub, 입력 자체의 정합성(예: PMReview target_result_id가 현재 A2 결과인지)은 Backend가 검증하지 않고 AI preflight가 검증한다.
+- 미구현: 사용자 추가 입력(`answers`) 저장·반영, 기존 `pm_judgment`/`request_item` 연동, REQUEST_INPUT 수정(새 revision) API, INPUT 대기 재개.
+
 ## 15. 미확정 사항 및 의사결정 목록
 
 각 항목: 현재 AI 구현 / 기존 Backend / 권장안 / 결정 필요.

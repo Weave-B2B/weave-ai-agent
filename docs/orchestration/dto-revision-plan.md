@@ -331,7 +331,7 @@ Planner-Worker 패턴은 채택하지 않는다(전체 작업 그래프·동적 
 |---|---|
 | Agent 1·2 단일 실행 API(v2) | 완료(상태 비저장) |
 | Backend 상태 조회/결과 저장 계약 DTO + AI 측 client port + Fake | 완료(HTTP client는 미구현) |
-| Backend run/state/result API·영속 (`feat/#59`) | A1~A6 + Run 생성(B1) 구현·테스트 완료(4단계 기록 참고). B4 resolve_review 포함. `HttpRunStateClient`와 live 계약 테스트 통과(권한 facade는 stub). `Runtime.resume`(PM 검토 승인/거절, A3 승인 시 Run COMPLETED 해제) 구현. INPUT 재개·입력 조회·PM 검토 입력 제공(RunInputProvider 실제 구현)·복구 필드·앱 연결은 미구현 |
+| Backend run/state/result API·영속 (`feat/#59`) | A1~A6 + Run 생성(B1) 구현·테스트 완료(4단계 기록 참고). B4 resolve_review 포함. `HttpRunStateClient`와 live 계약 테스트 통과(권한 facade는 stub). `Runtime.resume`(PM 검토 승인/거절, A3 승인 시 Run COMPLETED 해제) 구현. INPUT 재개·입력 조회·복구 필드·앱 연결은 미구현. 입력 문서(`run_input`, GET/POST `/inputs`)와 `BackendRunInputProvider`는 구현되어 실제 Backend end-to-end(A1→A2→PM 검토→A3) 통과(§14-1-3) |
 | 규칙 기반 Runtime 루프 + `start_agent`/`get_result` 계약 | 완료(Fake 기반 테스트만, Backend 미연동). 기존 `Engine`은 그대로 존재 |
 | `SupervisorDecision` DTO + LLM Supervisor | 미착수 |
 | `RunStateSnapshot`의 Agent별 상태(`agents`) 확장 | 완료(계약·Fake·테스트). `RUNNING`/`SKIPPED`로 바꾸는 정식 메서드는 미정, `stale` 갱신 규칙 미구현 |

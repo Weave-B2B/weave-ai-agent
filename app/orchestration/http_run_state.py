@@ -9,8 +9,8 @@ import httpx
 
 from app.orchestration.run_state import (
     CommitResultRequest, CommittedResult, InvalidStateTransition, OperationConflict, RecordEditRequest,
-    RequestReviewRequest, ResolveReviewRequest, ResultNotFound, RunNotFound, RunStateError, RunStateSnapshot,
-    StartAgentRequest, StateChangeReceipt, StatePersistenceError, StateRevisionConflict,
+    RequestReviewRequest, ResolveReviewRequest, ResultNotFound, RunInputNotFound, RunInputs, RunInputsView, RunNotFound,
+    RunStateError, RunStateSnapshot, StartAgentRequest, SubmitInputRequest, StateChangeReceipt, StatePersistenceError, StateRevisionConflict,
 )
 
 TOKEN_HEADER = "X-Internal-Token"
@@ -40,12 +40,24 @@ class HttpRunStateClient:
         self._http.close()
 
     # Protocol 밖: Run 생성은 직접/자동 실행 진입점(Backend B1)이 쓴다.
-    def create_run(self, project_id: str, change_request_id: str) -> RunStateSnapshot:
+    def create_run(self, project_id: str, change_request_id: str,
+                   inputs: Optional[RunInputs] = None) -> RunStateSnapshot:
+        """inputs를 주면 최초 입력(agent1_input, rate_card_id)이 Run에 한 번 고정된다(이미 있으면 기존 값 유지)."""
         body = {"project_id": project_id, "change_request_id": change_request_id}
+        if inputs is not None:
+            body["agent1_input"] = inputs.agent1_input.model_dump(mode="json")
+            body["rate_card_id"] = inputs.rate_card_id
         return RunStateSnapshot.model_validate(self._call("POST", "/internal/v1/runs", json=body))
 
     def get_state(self, run_id: str) -> RunStateSnapshot:
         return RunStateSnapshot.model_validate(self._call("GET", f"/internal/v1/runs/{run_id}", run_id=run_id))
+
+    def get_inputs(self, run_id: str) -> RunInputs:
+        data = self._call("GET", f"/internal/v1/runs/{run_id}/inputs", run_id=run_id)
+        return RunInputsView.model_validate(data).to_inputs()
+
+    def submit_input(self, req: SubmitInputRequest) -> StateChangeReceipt:
+        return self._write(req, "inputs")
 
     def get_result(self, run_id: str, result_id: str) -> CommittedResult:
         data = self._call("GET", f"/internal/v1/runs/{run_id}/results/{result_id}", run_id=run_id)
@@ -91,6 +103,8 @@ def _map_error(resp: httpx.Response, run_id: Optional[str]) -> RunStateError:
     code, message, status = body.get("code", ""), body.get("message", ""), resp.status_code
     if status >= 500:
         return StatePersistenceError(message or f"Backend 오류 {status}", run_id=run_id)
+    if code == "RUN_INPUT_NOT_FOUND":
+        return RunInputNotFound(message, run_id=run_id)
     if code == "RUN_NOT_FOUND":
         return RunNotFound(message, run_id=run_id)
     if code == "RUN_RESULT_NOT_FOUND":

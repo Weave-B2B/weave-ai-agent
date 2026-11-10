@@ -9,28 +9,39 @@ import uuid
 
 import pytest
 
+from schema.schemas import Agent1Input, PMReview
+
+from app.agents.base import AgentSet
+from app.agents.fixture import FixtureAgent1, FixtureAgent2, FixtureAgent3, load_chain
 from app.orchestration.fake_run_state import FakeRunStateClient
 from app.orchestration.http_run_state import HttpRunStateClient
 from app.orchestration.run_state import (
     CommitResultRequest, InvalidStateTransition, OperationConflict, RecordEditRequest, RequestReviewRequest,
-    ResolveReviewRequest, ResultNotFound, RunNotFound, StartAgentRequest, StateRevisionConflict,
+    ResolveReviewRequest, ResultNotFound, RunInputs, RunNotFound, StartAgentRequest, StateRevisionConflict,
+    SubmitInputRequest,
 )
+from app.orchestration.runtime import BackendRunInputProvider, OrchestrationRuntime
 
 ACTOR = os.environ.get("WEAVE_ACTOR_MEMBER_ID", str(uuid.UUID(int=0xB1)))
 LIVE_ENV = ("WEAVE_BACKEND_URL", "WEAVE_INTERNAL_TOKEN", "WEAVE_ACTOR_MEMBER_ID", "WEAVE_PROJECT_ID")
+
+
+CASE, RC = "CR-A-001", "RC-SYNTH-2026H2-v1"
+_ROW = load_chain()[CASE]
+INPUTS = RunInputs(agent1_input=Agent1Input.model_validate(_ROW["agent1_input"]), rate_card_id=RC)
 
 
 @pytest.fixture(params=["fake", "live"])
 def ctx(request):
     if request.param == "fake":
         client = FakeRunStateClient(strict_commit=True)
-        client.create_run("run-1")
+        client.create_run("run-1", INPUTS)
         yield client, "run-1"
         return
     if not all(os.environ.get(k) for k in LIVE_ENV):
         pytest.skip("실제 Backend 환경변수(WEAVE_BACKEND_URL 등)가 없어 live 계약 테스트를 건너뜀")
     client = HttpRunStateClient(os.environ["WEAVE_BACKEND_URL"], os.environ["WEAVE_INTERNAL_TOKEN"], ACTOR)
-    run_id = client.create_run(os.environ["WEAVE_PROJECT_ID"], str(uuid.uuid4())).run_id
+    run_id = client.create_run(os.environ["WEAVE_PROJECT_ID"], str(uuid.uuid4()), INPUTS).run_id
     yield client, run_id
     client.close()
 
@@ -211,3 +222,54 @@ def test_resolve_to_completed_only_when_all_agents_current_and_approved(ctx):
         resolve("APPROVED", "COMPLETED")
     assert f.c.get_state(f.run_id).pending_review is not None
     assert resolve("APPROVED", "RUNNING").status == "RUNNING"
+
+
+def _review(target_result_id, review_id="rv-1"):
+    return PMReview.model_validate({**_ROW["pm_review"], "target_result_id": target_result_id, "review_id": review_id})
+
+
+def test_inputs_are_fixed_at_creation_and_have_no_review_yet(ctx):
+    client, run_id = ctx
+    got = client.get_inputs(run_id)
+    assert got.agent1_input == INPUTS.agent1_input and got.rate_card_id == RC and got.pm_review is None
+
+
+def test_submit_pm_review_bumps_revision_only_and_is_idempotent(ctx):
+    f = Flow(*ctx)
+    f.run_agent("agent1", "r1")
+    before = f.c.get_state(f.run_id)
+    req = SubmitInputRequest(run_id=f.run_id, expected_state_revision=before.state_revision, operation_id=f.op(),
+                             submitted_by=ACTOR, payload=_review("r1"))
+    receipt = f.c.submit_input(req)
+    assert receipt.state_revision == before.state_revision + 1 and receipt.replayed is False
+    assert f.c.submit_input(req).replayed is True
+    after = f.c.get_state(f.run_id)
+    assert after.agents == before.agents and after.status == before.status
+    assert f.c.get_inputs(f.run_id).pm_review == _review("r1")
+    with pytest.raises(StateRevisionConflict):
+        f.c.submit_input(req.model_copy(update={"operation_id": f.op(), "expected_state_revision": 0}))
+    with pytest.raises(OperationConflict):
+        f.c.submit_input(req.model_copy(update={"payload": _review("r1", "other")}))
+
+
+def test_runtime_end_to_end_with_backend_inputs(ctx):
+    """Runtime이 입력을 Backend에서 읽어 A1→A2 실행·검토 대기, PM 검토 제출·승인 후 A3까지 완료한다."""
+    client, run_id = ctx
+    chain = load_chain()
+    rt = OrchestrationRuntime(client, AgentSet(FixtureAgent1(chain), FixtureAgent2(chain), FixtureAgent3(chain)),
+                              BackendRunInputProvider(client))
+    first = rt.run(run_id)
+    assert (first.outcome, first.pending_review.agent_type) == ("WAITING_FOR_REVIEW", "agent2")
+    a2 = client.get_state(run_id).agents["agent2"].current_result_id
+
+    # 검토 제출 전 승인은 A3를 실행하지 않고 다시 대기한다(preflight가 PM 검토를 요구)
+    waiting = rt.resume(run_id, ACTOR, "APPROVED")
+    assert waiting.outcome == "WAITING_FOR_REVIEW" and waiting.executed == []
+
+    state = client.get_state(run_id)
+    client.submit_input(SubmitInputRequest(run_id=run_id, expected_state_revision=state.state_revision,
+                                           operation_id=f"rv-{uuid.uuid4().hex[:8]}", submitted_by=ACTOR,
+                                           payload=_review(a2)))
+    done = rt.resume(run_id, ACTOR, "APPROVED")
+    assert (done.outcome, done.run_status, [e.agent_type for e in done.executed]) == ("COMPLETED", "COMPLETED", ["agent3"])
+    assert all(a.status == "COMPLETED" and not a.stale for a in client.get_state(run_id).agents.values())

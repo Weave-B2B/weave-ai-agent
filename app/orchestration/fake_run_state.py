@@ -7,7 +7,7 @@ from app.orchestration.run_state import (
     AGENT_PREREQUISITES, AGENT_STAGES, AgentExecutionStatus, AgentState, CommitResultRequest, CommittedResult,
     InvalidStateTransition, OperationConflict, PendingReview, RecordEditRequest, RequestReviewRequest,
     ResolveReviewRequest, ResultNotFound, RunNotFound, RunStateSnapshot, StartAgentRequest, StateChangeReceipt, StatePersistenceError,
-    StateRevisionConflict,
+    StateRevisionConflict, RunInputNotFound, RunInputs, SubmitInputRequest,
 )
 from schema.schemas import RunStatus, Stage
 
@@ -32,6 +32,8 @@ class _Run:
         self.history: list[dict] = []
         self.results: dict[str, CommittedResult] = {}
         self.receipts: dict[str, tuple[str, StateChangeReceipt]] = {}
+        self.inputs: RunInputs | None = None
+        self.pm_review_revision = 0
 
 
 class FakeRunStateClient:
@@ -46,9 +48,29 @@ class FakeRunStateClient:
         self._fail_only: type | None | bool = False
         self._bump_only: type | None | bool = False
 
-    def create_run(self, run_id: str) -> None:
+    def create_run(self, run_id: str, inputs: RunInputs | None = None) -> None:
         with self._lock:
-            self._runs[run_id] = _Run(run_id)
+            run = _Run(run_id)
+            run.inputs = inputs.model_copy(update={"pm_review": None}) if inputs else None
+            self._runs[run_id] = run
+
+    # Protocol 밖: 입력 문서. Runtime의 RunInputProvider와 화면(PM 검토 제출)이 쓴다.
+    def get_inputs(self, run_id: str) -> RunInputs:
+        with self._lock:
+            run = self._get(run_id)
+            if run.inputs is None:
+                raise RunInputNotFound(f"Run의 최초 입력이 없습니다: {run_id}", run_id=run_id)
+            return run.inputs.model_copy()
+
+    def submit_input(self, req: SubmitInputRequest) -> StateChangeReceipt:
+        def apply(run: _Run) -> StateChangeReceipt:
+            if run.inputs is None:
+                raise RunInputNotFound(f"Run의 최초 입력이 없습니다: {run.run_id}", run_id=run.run_id)
+            run.inputs = run.inputs.model_copy(update={"pm_review": req.payload})
+            run.pm_review_revision += 1
+            run.history.append({"event": "input_submitted", "kind": req.kind, "operation_id": req.operation_id})
+            return self._receipt(run, req.operation_id)
+        return self._write(req, apply)
 
     def fail_next_write(self, only: type | None = None) -> None:
         """다음 쓰기 한 번(only 지정 시 해당 요청 타입)을 저장 실패로 만든다(상태는 변하지 않는다)."""
