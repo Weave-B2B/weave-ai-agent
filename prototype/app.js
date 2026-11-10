@@ -1,6 +1,6 @@
 import { Agent1Api, Agent2Api, Agent3Api, AnalysisApi, ApiError, KbApi, MockPreview } from "./api.js?v=orchestration-1";
 import { records, sampleItems, scenarioInput } from "./fixtures.js?v=common-rate-2";
-import { createAnalysisDemo, analysisSnapshot } from "./analysis-demo.js?v=integrated-email-1";
+import { createAnalysisDemo, analysisSnapshot } from "./analysis-demo.js?v=analysis-progress-3";
 
 const root = document.querySelector("#app");
 const api = new Agent3Api();
@@ -19,7 +19,19 @@ const defaultModels = { gemini: "gemini-2.5-flash-lite", openai: "gpt-6-luna", o
 const defaultModel = provider => defaultModels[provider] || "";
 const draftLab = { provider: "openai", model: "gpt-6-luna", region: "ap-northeast-2" };
 const lab = { enabled: false, provider: "openai", model: "gpt-6-luna", base_url: "http://127.0.0.1:11434/v1", region: "ap-northeast-2", fakeText: "" };
-const analysisDemo = createAnalysisDemo({ records, storage: sessionStorage, render, navigate, openAnalysis: id => { location.hash = id ? `#/analysis/${encodeURIComponent(id)}` : '#/analysis'; }, analysisApi });
+const analysisDemo = createAnalysisDemo({
+  records, storage: sessionStorage, render, navigate, analysisApi,
+  openAnalysis: id => { location.hash = id ? `#/analysis/${encodeURIComponent(id)}` : '#/analysis'; },
+  updateProgress: rows => {
+    const feed = document.querySelector('.analysis-events');
+    if (!feed) return;
+    for (const {seq,html} of rows) {
+      const existing = feed.querySelector(`[data-progress-step="${seq}"]`);
+      if (existing) existing.outerHTML = html;
+      else feed.insertAdjacentHTML('beforeend', html);
+    }
+  }
+});
 const e = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 const itemTypeLabel = value => ({ function: "기능", question: "확인", constraint: "제약", deadline: "기한", dependency: "의존성" }[value] || value || "항목");
 const number = value => typeof value === "number" && Number.isFinite(value) ? value.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "—";
