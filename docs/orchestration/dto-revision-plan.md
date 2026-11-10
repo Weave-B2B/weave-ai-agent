@@ -295,6 +295,15 @@ Planner-Worker 패턴은 채택하지 않는다(전체 작업 그래프·동적 
 - 결과 커밋은 `COMPLETED`/`FAILED`를 반영한다. `RUNNING`/`SKIPPED`는 DTO로 표현만 가능하며 Fake의 테스트 전용 `set_agent_status`로만 만든다.
 - `current_stage`는 추가하지 않았다.
 
+### 3단계 — 규칙 기반 Orchestration Runtime (Fake 위에서만 검증)
+
+- 계약 확장: `StartAgentRequest`·`start_agent`(Backend 승인 후에만 Agent 실행, RUNNING 전이·revision 증가), `get_result`/`CommittedResult`(커밋된 upstream 결과 조회), `ResultNotFound(RunNotFound)`, `AGENT_PREREQUISITES`(agent2←agent1, agent3←agent1+agent2). 기존 메서드·DTO 의미는 유지.
+- `workflow_rules.py`: 순서·시작 가능 여부(순수 함수). `runtime.py`: `OrchestrationRuntime.run(run_id)`(get_state → start_agent → 실행 → commit_result → 재조회 반복), `RunInputs`/`RunInputProvider`, `RuntimeResult`(payload 전문 미포함).
+- 충돌·재시도: start/commit revision 충돌 시 재조회, commit 충돌은 Agent 재실행 없이 반영 여부 확인 후 새 operation_id로 재커밋, 저장 실패는 같은 operation_id로 최대 3회. 실패는 FAILED로 커밋하고 이후 Agent를 실행하지 않는다.
+- A3 시작 전 PM 검토가 없으면 `request_review`로 대기하고 아무것도 실행하지 않는다. 완료 Agent는 재호출해도 재실행하지 않는다.
+- 테스트: Fake 9건(`tests/test_run_state_start_agent.py`) + Runtime 16건(`tests/test_orchestration_runtime.py`). 실제 LLM·Backend 호출 없음 — Fake 통과는 Backend 연동 검증이 아니다.
+- 미구현/한계: HTTP client, Backend API, Supervisor, 비동기 Job, RUNNING 복구(재시작 후 RUNNING이면 `AGENT_RUNNING`으로 멈춤), 재호출 시 replay된 start는 `START_REPLAYED`로 멈춤(보수적), stale 전파 정책, NEEDS_INPUT을 검토 대기로 표현(WAITING_INPUT 전이 없음), 리드 검토·PM 항목 확인 미모델링, PM 검토·rate_card 출처(Backend 합의 필요). 범위 필터 규칙은 `engine.py`와 중복(`workflow_rules.SCOPE_INTENTS`).
+
 ### 설계 변경 — Planner-Worker → Supervisor 중심 (문서만 변경, 코드 변경 없음)
 
 - `PlanProposal`, task 그래프, `RunState.tasks`를 제거하고 `SupervisorDecision`과 Agent별 상태(`agents`) 중심 `RunState`로 대체했다.
@@ -308,7 +317,7 @@ Planner-Worker 패턴은 채택하지 않는다(전체 작업 그래프·동적 
 | Agent 1·2 단일 실행 API(v2) | 완료(상태 비저장) |
 | Backend 상태 조회/결과 저장 계약 DTO + AI 측 client port + Fake | 완료(HTTP client는 미구현) |
 | Backend run/state/result API·영속 (`feat/#59`) | 미착수 |
-| 규칙 기반 Runtime 루프 | 미착수(기존 고정 단계 `Engine`만 존재, 메모리 저장) |
+| 규칙 기반 Runtime 루프 + `start_agent`/`get_result` 계약 | 완료(Fake 기반 테스트만, Backend 미연동). 기존 `Engine`은 그대로 존재 |
 | `SupervisorDecision` DTO + LLM Supervisor | 미착수 |
 | `RunStateSnapshot`의 Agent별 상태(`agents`) 확장 | 완료(계약·Fake·테스트). `RUNNING`/`SKIPPED`로 바꾸는 정식 메서드는 미정, `stale` 갱신 규칙 미구현 |
 | Agent 3 run 연결(session ID 은닉) | 미착수 |
@@ -316,4 +325,4 @@ Planner-Worker 패턴은 채택하지 않는다(전체 작업 그래프·동적 
 
 ### 다음 단계 제안
 
-3단계: 규칙 기반 Runtime(고정 Agent 순서, 커밋·재조회·충돌·검토 대기/재개)을 `RunStateClient` 위에 구현한다. 4단계: `SupervisorDecision` DTO와 LLM Supervisor를 Runtime 검증 뒤에 연결한다. 이전의 Planner 단계는 삭제했다. 3단계 전에 Backend와 `RUNNING`/`SKIPPED` 전이 방식(전용 메서드 vs 커밋 부수효과)을 합의한다.
+4단계: Backend API 계약 확정(`start_agent`, `get_result`, 입력·PM 검토 출처, WAITING_INPUT, stale 정책, RUNNING 복구)과 HTTP client. 이후 `SupervisorDecision` DTO와 LLM Supervisor를 Runtime 검증 뒤에 연결한다. 이전의 Planner 단계는 삭제했다.

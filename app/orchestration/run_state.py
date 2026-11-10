@@ -27,6 +27,10 @@ class RunNotFound(RunStateError):
     code = "RUN_NOT_FOUND"
 
 
+class ResultNotFound(RunNotFound):
+    code = "RESULT_NOT_FOUND"
+
+
 class StateRevisionConflict(RunStateError):
     """재시도 금지: 상태를 다시 읽고 계획을 재평가한 뒤 새 operation_id로 요청해야 한다."""
     code = "STATE_REVISION_CONFLICT"
@@ -55,6 +59,10 @@ class StatePersistenceError(RunStateError):
 
 AgentExecutionStatus = Literal["NOT_STARTED", "RUNNING", "COMPLETED", "FAILED", "SKIPPED"]
 AGENT_STAGES: tuple[Stage, ...] = ("agent1", "agent2", "agent3")
+# Backend가 start_agent에서 강제하고 Runtime이 사전 검사에 쓰는 선행 결과 규칙
+AGENT_PREREQUISITES: dict[Stage, tuple[Stage, ...]] = {
+    "agent1": (), "agent2": ("agent1",), "agent3": ("agent1", "agent2"),
+}
 
 
 class AgentState(_M):
@@ -97,6 +105,24 @@ class RunStateSnapshot(_M):
         if set(self.agents) != set(AGENT_STAGES):
             raise ValueError("agents에는 agent1·agent2·agent3가 모두 있어야 합니다")
         return self
+
+
+class StartAgentRequest(_M):
+    """Agent 실행 시작 승인 요청. Backend가 승인(RUNNING 전이)한 경우에만 Agent를 실행할 수 있다."""
+    run_id: str
+    agent_type: Stage
+    expected_state_revision: int = Field(ge=0)
+    operation_id: str = Field(min_length=1)
+
+
+class CommittedResult(_M):
+    run_id: str
+    agent_type: Stage
+    result_id: str
+    result_revision: int = Field(ge=1)
+    execution_status: ResultExecutionStatus
+    upstream_result_ids: list[str] = []
+    result_payload: dict
 
 
 class CommitResultRequest(_M):
@@ -144,6 +170,8 @@ class StateChangeReceipt(_M):
 class RunStateClient(Protocol):
     """직접 실행과 자동 실행이 동일하게 사용하는 Run 상태 계약."""
     def get_state(self, run_id: str) -> RunStateSnapshot: ...
+    def get_result(self, run_id: str, result_id: str) -> CommittedResult: ...
+    def start_agent(self, req: StartAgentRequest) -> StateChangeReceipt: ...
     def commit_result(self, req: CommitResultRequest) -> StateChangeReceipt: ...
     def record_edit(self, req: RecordEditRequest) -> StateChangeReceipt: ...
     def request_review(self, req: RequestReviewRequest) -> StateChangeReceipt: ...
