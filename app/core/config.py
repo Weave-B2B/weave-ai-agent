@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     llm_fake_responses: str | None = None
     aws_region: str = "ap-northeast-2"
     database_url: str = ""  # Postgres 체크포인터·상태 저장 (thread_id = case_id)
+    prototype_supervisor_db: Path | None = None  # Optional local SQLite file for Supervisor checkpoints.
 
     stage_timeout_sec: int = 60       # 단계당 시간 제한 (공통기준 D-6)
     tool_max_retries: int = 2         # retryable 도구 실패 자동 재시도 (공통기준 11장)

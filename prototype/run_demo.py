@@ -85,7 +85,7 @@ def apply_environment(config: RunConfig, responses: Path | None = None) -> None:
         "OLLAMA_MODEL": config.model if config.provider == "ollama" else (os.environ.get("OLLAMA_MODEL", "") or dotenv_values(ROOT / ".env").get("OLLAMA_MODEL", "")),
         "OLLAMA_KEEP_ALIVE": os.environ.get("OLLAMA_KEEP_ALIVE") or dotenv_values(ROOT / ".env").get("OLLAMA_KEEP_ALIVE") or "30m",
         "GEMINI_API_KEY": config.api_key if config.provider == "gemini" else os.environ.get("GEMINI_API_KEY", ""),
-        "LLM_API_KEY": config.api_key if config.provider == "openai" else os.environ.get("LLM_API_KEY", ""),
+        **({"LLM_API_KEY": config.api_key} if config.provider == "openai" else {}),
         "LLM_LOCAL_JSON_MODE": "schema",
         "LLM_FAKE_RESPONSES": str(responses) if responses else "",
         "RATE_CARD_FILE": str(config.rate_file),

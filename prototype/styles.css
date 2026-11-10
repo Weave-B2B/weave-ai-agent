@@ -29,6 +29,7 @@
 .analysis-event-link:hover { text-decoration:underline; }
 .analysis-event-link span { font-size:10px; font-weight:400; color:var(--tertiary); margin-left:auto; white-space:nowrap; }
 .analysis-event p { margin-top:7px; color:var(--secondary); font-size:12px; line-height:1.8; overflow-wrap:anywhere; white-space:pre-wrap; }
+.analysis-event .analysis-tool-summary { border-left:2px solid var(--border); padding-left:10px; color:var(--tertiary); }
 .analysis-result { display:grid; gap:16px; min-width:0; }
 .analysis-stages { display:grid; gap:8px; margin-top:16px; }
 .analysis-stage { display:flex; align-items:center; gap:12px; width:100%; border:1px solid var(--border); border-radius:6px; background:var(--muted); padding:12px; text-align:left; }

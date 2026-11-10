@@ -34,6 +34,14 @@ def test_no_estimate_does_not_invent_zero_or_numbers(chain):
     assert "0원" not in out["draft"]["body"]
 
 
+def test_multiple_estimates_do_not_present_unverified_sum(chain):
+    engine, rec = ready_case(chain)
+    rec.a3.estimates.append(rec.a3.estimates[0].model_copy(deep=True))
+    out = generate_email_draft(engine, rec.inp.context.case_id, rec.state.state_revision, rec.a3.meta.result_id, FakeLlm([FAKE_EMAIL]))
+    assert "작업 범위가 중복될 수 있어" in out["draft"]["body"]
+    assert "전체 예상 공수" not in out["draft"]["body"]
+
+
 def test_blocking_questions_and_stale_result_are_rejected(chain):
     engine, rec = ready_case(chain)
     q = Question(question_id="Q-EMAIL", case_id=rec.inp.context.case_id, stage="agent3", text="조건?", reason="확인", target="pm", blocking=True)

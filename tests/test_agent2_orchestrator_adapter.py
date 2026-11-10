@@ -182,12 +182,24 @@ def test_plain_confirmation_is_not_estimable_even_if_out_of_scope():
 
 def test_agent3_evidence_need_can_be_passed_to_agent2_adapter_without_direct_agent_call():
     from app.agents.agent3.contracts import Agent3Need
-    from app.orchestration.evidence_handoff import propose_scope_research
+    from app.orchestration.evidence_handoff import execute_scope_research
     port, agent, adapter = _setup("CR-A-001")
     ids = _ids("CR-A-001")
     need = Agent3Need(kind="more_evidence", item_ids=ids, topic="변경합의서 범위 확인", source="agent3")
-    proposed = propose_scope_research(need, set(ids))
-    result = adapter.execute("CR-A-001", 0, "research-1", proposed.model_dump())
+    result = execute_scope_research(adapter=adapter, case_id="CR-A-001", state_revision=0,
+                                    operation_id="research-1", need=need, allowed_item_ids=set(ids))
     assert agent.calls == [(ids, "변경합의서 범위 확인")]
     assert result.status in ("ready", "needs_input")
     assert port.snapshot.a2_result is not None
+
+
+def test_research_rejects_stale_state_without_running_agent():
+    from app.agents.agent3.contracts import Agent3Need
+    from app.orchestration.evidence_handoff import execute_scope_research
+    port, agent, adapter = _setup("CR-A-001")
+    ids = _ids("CR-A-001")
+    need = Agent3Need(kind="more_evidence", item_ids=ids, topic="계약 조건 확인", source="agent3")
+    result = execute_scope_research(adapter=adapter, case_id="CR-A-001", state_revision=1,
+                                    operation_id="research-stale", need=need, allowed_item_ids=set(ids))
+    assert result.status == "error" and result.error.code == "STATE_CONFLICT"
+    assert agent.calls == [] and port.updates == []

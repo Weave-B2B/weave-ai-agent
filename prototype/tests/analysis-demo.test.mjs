@@ -90,35 +90,89 @@ test('snapshot keeps real Agent 1 item types, spans and questions',()=>{
   assert.equal(withA3.view.impact.estimates[0].totals.cost,1000);
 });
 
-test('real flow runs Agent 2 right after Agent 1, then asks PM to confirm judgments',async()=>{
-  const items=[
-    {item_id:'X-1',case_id:'X',display_no:'R1',item_type:'function',intent:'change_request',text:'리뷰 기능',spans:[]},
-    {item_id:'X-2',case_id:'X',display_no:'R2',item_type:'deadline',intent:'constraint',text:'기존 오픈 일정 유지',spans:[]}
-  ];
-  const a2={status:'READY_FOR_REVIEW',assessments:[{item_id:'X-1',label:'out_of_scope',rationale:'제외 기능',evidence:[{doc_id:'FSP-A-001-v1.0',section_id:'F-11'}]}],questions:[],meta:{result_id:'a2-1'}};
+test('Supervisor automatically retries a temporary failure and stops for a PM answer',async t=>{
+  const previous=globalThis.fetch;
+  t.after(()=>{globalThis.fetch=previous;});
+  const a1={items:[{item_id:'X-1',item_type:'function',intent:'change_request',text:'리뷰 기능'}]};
+  const question={question_id:'Q1',topic:'사진도 포함할까요?',target:'pm',blocking:true};
   const calls=[];
-  globalThis.fetch=async(url,opts)=>{const body=JSON.parse(opts.body);calls.push(body.kind);
-    if (body.kind==='items') return {ok:true,json:async()=>({state:{state_revision:3,stage:'pm_review'},a2})};
-    return {ok:true,json:async()=>({state:{state_revision:4},a3:{status:'NOT_REQUIRED',estimates:[]}})};};
-  const store=new Map(),records=[];
+  const steps=[
+    {event:{action:'assess_scope',status:'error',reason:'범위 확인',error:{message:'일시 오류',retryable:true}},state:{a1,state_revision:0}},
+    {event:{action:'assess_scope',status:'ready'},state:{a1,state_revision:1,a2:{assessments:[]}}},
+    {event:{action:'ask_pm',status:'waiting_input'},state:{a1,state_revision:2,question}},
+    {event:{action:'draft_documents',status:'ready'},state:{a1,state_revision:4,ready_for_review:true,
+      agent3:{impact:{status:'NOT_REQUIRED',estimates:[]},snapshot_hash:'H1',documents:{email:{subject:'초안',body:'본문'}}}}},
+  ];
+  globalThis.fetch=async(url,options)=>{
+    const path=url.split('/').at(-1);
+    calls.push(path);
+    let result;
+    if(path==='cases') result={a1,state_revision:0};
+    else if(path==='answer') {
+      assert.deepEqual(JSON.parse(options.body),{question_id:'Q1',text:'포함해 주세요',state_revision:2});
+      result={a1,state_revision:3};
+    } else result=steps.shift();
+    return {ok:true,json:async()=>result};
+  };
   let demo;
-  const analysisApi={start:async()=>({analysis_id:'A',case_id:'X',structured_request:{structured:{items,questions:[]}},
-    schedule_reference:{item_ids:['X-2'],as_of:'2026-10-05',contract_end:'2026-11-24',contract_end_ref:'CO-A-001-v1.0:CO-02',applied_change_orders:['CO-A-001-v1.0'],milestones:[],note:'기준 안내'},
-    workflow:{state_revision:2,stage:'pm_items'}})};
-  demo=createAnalysisDemo({records,storage:{getItem:k=>store.get(k),setItem:(k,v)=>store.set(k,v)},render:()=>{},navigate:()=>{},openAnalysis:id=>demo.enter(id),schedule:()=>{},analysisApi});
+  demo=createAnalysisDemo({records:[],storage:{getItem:()=>null,setItem:()=>{}},render:()=>{},
+    navigate:()=>{},openAnalysis:id=>demo.enter(id),analysisApi:{}});
   const click=action=>demo.click({closest:s=>s==='[data-demo-action]'?{dataset:{demoAction:action}}:null});
   demo.input({id:'analysis-request',value:'요청'});
-  click('start'); await new Promise(r=>setTimeout(r,10));
-  assert.deepEqual(calls,['items']);
-  const page=demo.page();
-  assert.match(page,/범위 판정 결과를 확인해 주세요/);
-  assert.match(page,/2026-11-24/);
-  assert.match(page,/FSP-A-001-v1.0 F-11/);
-  demo.change({name:'analysis-pm-choice',value:'범위 판정 결과 확인 완료, 영향 산정 진행'});
-  await new Promise(r=>setTimeout(r,10));
-  assert.deepEqual(calls,['items','pm_review']);
-  demo.current().emailDraft={subject:'초안',body:'본문'}; click('final'); demo.change({name:'analysis-pm-choice',value:'approve'});
-  assert.equal(records.length,1); assert.equal(records[0].md,'산정 대상 없음'); assert.equal(records[0].price,'—');
+  click('start');
+  await new Promise(setImmediate);
+  assert.deepEqual(calls,['cases','step','step','step']);
+  assert.match(demo.page(),/자동 재시도합니다/);
+  assert.match(demo.page(),/사진도 포함할까요/);
+  assert.doesNotMatch(demo.page(),/총괄 실행 계속/);
+  demo.input({id:'analysis-pm-other',value:'포함해 주세요'});
+  click('answer');
+  await new Promise(setImmediate);
+  assert.deepEqual(calls,['cases','step','step','step','answer','step']);
+  assert.match(demo.page(),/최종 검토하기/);
+});
+
+test('Supervisor groups repeated live tool events under a single Agent 2 result',{timeout:3000},async t=>{
+  const previous=globalThis.fetch;
+  t.after(()=>{globalThis.fetch=previous;});
+  const parent={seq:1,kind:'step',agent:'Agent 2',title:'범위 검토 중'};
+  const tool={kind:'tool',parent_seq:1,tool:'search_docs'};
+  const started={...tool,seq:2,phase:'start',label:'계약 문서 검색',title:'계약 문서 검색 중'};
+  const finished={...tool,seq:3,phase:'done',matches:4};
+  const progress=[parent,started,finished,{...started,seq:4},{...finished,seq:5,matches:3}];
+  const a1={items:[]};
+  const question={question_id:'Q1',topic:'사진도 포함할까요?'};
+  let finishStep, signal, showProgress;
+  const shown=new Promise(resolve=>{showProgress=resolve;});
+  globalThis.fetch=async(url,options)=>{
+    if (url.endsWith('/cases')) return {ok:true,json:async()=>({a1,state_revision:0})};
+    if (url.endsWith('/step')) {
+      if (finishStep) return {ok:true,json:async()=>({event:{action:'ask_pm',status:'waiting_input'},
+        state:{a1,state_revision:2,question,progress}})};
+      return new Promise(resolve=>{finishStep=resolve;});
+    }
+    assert.match(url,/\/progress\?after=0$/);
+    signal=options.signal;
+    return {ok:true,json:async()=>({events:[parent,started]})};
+  };
+  let demo;
+  demo=createAnalysisDemo({records:[],storage:{getItem:()=>null,setItem:()=>{}},render:()=>{},
+    updateProgress:showProgress,navigate:()=>{},openAnalysis:id=>demo.enter(id),analysisApi:{}});
+  demo.input({id:'analysis-request',value:'합성 요청'});
+  demo.click({closest:s=>s==='[data-demo-action]'?{dataset:{demoAction:'start'}}:null});
+  const live=await shown;
+  assert.equal(live.length,1);
+  assert.match(live[0].html,/범위 검토 중.*계약 문서 검색 중/s);
+  assert.equal(demo.current().running,true);
+  finishStep({ok:true,json:async()=>({event:{action:'assess_scope',status:'ready'},
+    state:{a1,a2:{assessments:[{}]},state_revision:1,progress}})});
+  await new Promise(setImmediate);
+  assert.equal(signal.aborted,true);
+  assert.equal(demo.current().running,false);
+  const rows=demo.current().events.filter(e=>e.agent==='Agent 2');
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].tab,'scope');
+  assert.match(demo.page(),/범위와 근거를 검토했습니다.*계약 문서 검색 2회 \(최근 검색 후보 3건\).*PM 답변이 필요합니다/s);
 });
 
 test('real NOT_REQUIRED never falls back to simulated estimate or document and registers safely',()=>{
@@ -234,4 +288,33 @@ test('restoring a case loads real server data and does not invent final approval
   assert.equal(demo.current().text,'복원 요청'); assert.equal(demo.current().stateRevision,8);
   assert.equal(demo.current().approved,false); assert.equal(records.length,1);
   assert.match(demo.page(),/메일 초안 생성/);
+});
+
+test('PM question dialog offers contextual quick choices and submits immediately on click',async t=>{
+  const q={question_id:'Q-REUSE',stage:'agent2',text:'기존 사진 업로드 기능을 재사용할 수 있는지 확인이 필요합니다.',reason:'원문만으로 확정되지 않았습니다.',target:'pm',blocking:true,status:'open'};
+  const session={id:'CR-UI-QCHOICE',caseId:'C-QC',stateRevision:3,text:'요청',created:'2026-11-10',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
+  let submitted=null;
+  globalThis.fetch=async(url,opts)=>{
+    if (url.endsWith('/answer')) {
+      submitted=JSON.parse(opts.body);
+      return {ok:true,json:async()=>({state_revision:4,a1:{items:[]},ready_for_review:true,agent3:{impact:{status:'NOT_REQUIRED',estimates:[]},snapshot_hash:'H1',documents:{email:{subject:'제목',body:'본문'}}}})};
+    }
+    if (url.endsWith('/step')) {
+      return {ok:true,json:async()=>({event:{action:'draft_documents',status:'ready'},state:{state_revision:4,a1:{items:[]},ready_for_review:true,agent3:{impact:{status:'NOT_REQUIRED',estimates:[]},snapshot_hash:'H1',documents:{email:{subject:'제목',body:'본문'}}}}})};
+    }
+    return {ok:true,json:async()=>({state_revision:3,a1:{items:[]},question:q})};
+  };
+  h.demo.enter(session.id);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  h.click('agent3-question');
+  const html=h.demo.page();
+  assert.match(html,/기존 기능 재사용 가능/);
+  assert.match(html,/신규 구현 필요/);
+  assert.match(html,/기타 · 직접 입력/);
+  assert.doesNotMatch(html,/id="analysis-pm-other"/);
+  h.choice('기존 기능을 재사용할 수 있습니다 (기존 모듈 활용)');
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.deepEqual(submitted,{question_id:'Q-REUSE',text:'기존 기능을 재사용할 수 있습니다 (기존 모듈 활용)',state_revision:3});
 });

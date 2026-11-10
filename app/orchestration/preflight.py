@@ -106,8 +106,10 @@ def provisional_selection(inp: ProvisionalAgent3Input):
                 "topic": f"견적 요청 - 연결 항목({linked}) 산정 결과로 답변"})
             continue
         a = assessments.get(item.item_id)
-        blocking_questions = [q for q in guarded.questions if q.blocking and q.status in ("open", "answered") and
-            (not q.item_ids or item.item_id in q.item_ids)]
+        answered_qids = {ans.question_id for ans in inp.answers}
+        blocking_questions = [q for q in guarded.questions if q.blocking and q.status in ("open", "answered")
+            and q.question_id not in answered_qids
+            and (not q.item_ids or item.item_id in q.item_ids)]
         blocked = bool(blocking_questions)
         if blocked:
             for q in blocking_questions:

@@ -4,7 +4,7 @@
 - 계약 식별자: `a2-orchestration/1.0.0-draft`
 - 상태: **Agent 2 측 제안. 팀 공통 규격으로 확정되지 않았음.**
 - 범위: 오케스트레이터 에이전트 ↔ 공통 실행 서버 ↔ Agent 2 도구. Agent 1·3 내부 구현을 변경하지 않는다.
-- 기준: [통합 분석 설계](../prototype/integrated-request-analysis-plan.md) 4~6장, [Agent 1 연동 계약](../agent1/orchestration-integration-contract-v1.md), [Agent 3 연동 계약](../agent3/orchestration-integration-contract-v1.md). 용어는 Agent 3 계약과 같다.
+- 기준: [통합 분석 설계](../orchestration/integrated-request-analysis-plan.md) 4~6장, [Agent 1 연동 계약](../agent1/orchestration-integration-contract-v1.md), [Agent 3 연동 계약](../agent3/orchestration-integration-contract-v1.md). 용어는 Agent 3 계약과 같다.
 
 ## 1. 현재 구현 상태
 
@@ -89,6 +89,8 @@ Agent 2는 항목별로 독립 판단하므로 Agent 3과 달리 세션이 없�
 - `status=needs_input`은 열린 블로킹 질문이 있을 때만이다.
 
 ### needs
+
+전문 에이전트 대상의 `target`은 총괄의 판단을 돕는 힌트다. 총괄이 공유 상태와 조사 이력을 보고 다음 행동을 고르며, 서버가 허용 여부와 인자를 검증한다.
 
 | kind | target | 의미 | 오케스트레이터 다음 행동 |
 |---|---|---|---|

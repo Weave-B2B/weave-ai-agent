@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 TOOL_LOG: list[dict] = []
 current_result_id: ContextVar[str | None] = ContextVar("current_result_id", default=None)
+tool_activity: ContextVar = ContextVar("tool_activity", default=None)
 
 
 def _h(obj) -> str:
@@ -23,11 +24,18 @@ def traced(name: str, version: str = "1"):
         def wrap(*a, **kw):
             rec = {"result_id": current_result_id.get(), "tool": name, "version": version,
                    "in": _h([a, kw]), "at": datetime.now(timezone.utc).isoformat(), "ok": False}
+            activity = tool_activity.get()
+            if activity is not None:
+                activity(name, "start")
             try:
                 out = fn(*a, **kw)
                 rec["out"], rec["ok"] = _h(out), True
+                if activity is not None:
+                    activity(name, "done", out)
                 return out
             finally:
                 TOOL_LOG.append(rec)
+                if activity is not None and not rec["ok"]:
+                    activity(name, "error")
         return wrap
     return deco

@@ -201,6 +201,26 @@ class Agent3OrchestratorAdapter:
         with self._lock:
             return self._locks.setdefault(case_id, RLock())
 
+    def export_checkpoint(self, case_id):
+        with self._case_lock(case_id):
+            snapshot = self.state.load(case_id)
+            if not snapshot.a3_ref:
+                return None
+            key = (snapshot.a1_input.context.project_id, case_id)
+            return self._services[key].export_session(snapshot.a3_ref.session_id)
+
+    def restore_checkpoint(self, case_id, checkpoint):
+        with self._case_lock(case_id):
+            snapshot = self.state.load(case_id)
+            ref = snapshot.a3_ref
+            if ref is None:
+                raise ValueError("Agent 3 checkpoint has no saved reference")
+            tools = self.tools_factory(snapshot)
+            tools.restore_session(ref.session_id, checkpoint, case_id=case_id,
+                                  state_revision=ref.state_revision, snapshot_hash=ref.snapshot_hash)
+            key = (snapshot.a1_input.context.project_id, case_id)
+            self._services[key] = tools
+
     def execute(self, case_id, expected_state_revision, operation_id, call):
         """The first three arguments are injected by the host, not the LLM."""
         return self._execute(case_id, expected_state_revision, operation_id, call, actor_ref=None)
