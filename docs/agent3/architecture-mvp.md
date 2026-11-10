@@ -2,6 +2,8 @@
 
 작성일: 2026-10-29. **목표 설계 및 일부 테스트 구현**. 현재 구현 설명은 [Agent 3 MVP 실행 문서](agent3-mvp.md), 확장 방향은 [최종 목표 아키텍처](agent3-architecture-proposal.md)를 참조한다.
 
+> 아래 산정 승인 후 메일 생성은 기존 Agent 3 독립 MVP 경로다. 통합 요청 분석에서는 [통합 오케스트레이션 계획](../orchestration/integrated-request-analysis-plan.md)에 따라 잠정 산정과 문서 초안 생성 후 PM이 한 번에 검토한다.
+
 ## 계약 기준과 범위
 
 [MVP 사용자 시나리오](https://app.notion.com/p/2dfa8da52356837f8db4812924d44179)는 **가상의 고정가 도급 프로젝트**에서 변경 요청을 다룬다. 금액·MD·기간은 설계 예시다. [필요 데이터 정의](https://app.notion.com/p/26fa8da5235683218782810a08f7ad4c)는 맨먼스는 인력·기간, 도급은 합의된 산출물 기준으로 구분한다. 두 문서는 Notion에서 미검증 상태이므로 확정된 실제 계약 조항으로 취급하지 않는다.

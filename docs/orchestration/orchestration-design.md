@@ -1,6 +1,8 @@
-# 오케스트레이션 설계
+# 현행 오케스트레이션 구현: 순차 엔진
 
-`feat/#5-orchestration` 브랜치에서 구현한 요청 분석 오케스트레이션의 구조와 흐름을 정리한 문서입니다. 에이전트별 연동 계약은 각 `docs/agent*/orchestration-integration-contract-v1.md`를 기준으로 합니다.
+**구현 기준:** 2026-11-10 로컬 코드 기준 · **적용 범위:** Agent 1 → Agent 2 → Agent 3 순차 실행 경로
+
+이 문서는 현재 동작하는 순차 엔진과 API를 설명합니다. 총괄 LLM이 결과를 보고 다음 도구를 선택하는 목표 구조와 우선순위는 [통합 요청 분석 오케스트레이션 계획](integrated-request-analysis-plan.md)을 참고하세요. 아래 중간 PM 검토와 단계 전이는 기존 실행 경로의 동작입니다. 에이전트별 연동 계약은 각 `docs/agent*/orchestration-integration-contract-v1.md`를 기준으로 합니다.
 
 ## 1. 목적과 원칙
 
@@ -89,7 +91,7 @@ flowchart TD
 
 - 이벤트가 기록될 때마다 `state_revision`이 1씩 오르고 저장소에 저장됩니다.
 - 모든 재개 요청은 `state_revision`을 함께 보내며, 현재 값과 다르면 `VersionConflict`(409)로 거부합니다. 오래된 화면의 덮어쓰기를 막기 위한 장치입니다.
-- 현재 저장소는 메모리입니다. 서버를 재시작하면 상태가 사라집니다. 운영에서는 Postgres 체크포인터(`thread_id = case_id`)로 교체하는 것이 전제입니다.
+- 현재 저장소는 메모리입니다. 서버를 재시작하면 상태가 사라집니다. 운영용 영속 저장소와 재시작 복구 방식은 별도 설계 과제입니다.
 
 ## 5. 재실행과 무효화
 
@@ -105,6 +107,7 @@ flowchart TD
 - 원문이 바뀐 재요청은 `request_revision`이 올라가야 하고 새 `analysis_id`가 필요합니다. 아니면 `VersionConflict`입니다.
 - PM 검토를 다시 제출하면 기존 검토와 a3를 무효화하고 Agent 3부터 다시 실행합니다. `new_evidence=true`이면 Agent 2부터 다시 실행합니다.
 - 질문 답변은 Agent 1의 `analyze_answer` 결과(`rerun_from`)에 따라 해당 단계부터 무효화합니다. 답변 분석이 실패해도 흐름은 중단하지 않고 질문을 `answered`로 남깁니다.
+- Agent 3 질문이 해소됐고 별도 `rerun_from` 지정이 없다면, 기존 Agent 3 결과를 무효화하고 답변을 반영해 Agent 3부터 재산정합니다. 이전 결과는 이력에 보존합니다.
 - 리드 반려는 Agent 3부터 다시 실행합니다.
 
 ## 6. 실패 처리
@@ -132,6 +135,9 @@ flowchart TD
 | POST | `/cases/{id}/resume` | `kind`가 `items`, `pm_review`, `lead` 중 하나 |
 | POST | `/cases/{id}/questions/{qid}/answer` | 질문 답변, 필요 시 재실행 |
 | POST | `/cases/{id}/retry` | `FAILED` 단계 재시도 |
+| POST | `/cases/{id}/email-draft` | 최신 Agent 3 결과를 바탕으로 고객 협의 메일 초안 생성 |
+
+이메일 초안 생성은 로컬 실행 경로이며, 고객 발송·공식 업무 백엔드 저장·변경합의서 생성과는 구분합니다.
 
 `ConfirmItems`(항목 확인)의 입력 스키마는 공통 스키마에 정의되어 있지 않아 임시안입니다. 팀 합의 후 확정이 필요합니다.
 
@@ -208,7 +214,7 @@ python -m pytest tests/test_analysis_api.py tests/test_engine.py tests/test_api.
 node --test prototype/tests/analysis-demo.test.mjs
 ```
 
-`analysis-demo.test.mjs`의 기존 테스트 3건은 화면 문구 변경으로 이미 실패하고 있습니다.
+검증 결과는 실행한 커밋 기준으로 기록합니다.
 
 ## 11. 알려진 한계와 후속 과제
 
