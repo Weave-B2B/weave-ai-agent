@@ -48,3 +48,27 @@ def build_run_services(actor_member_id: str) -> Iterator[RunServices]:
 
 
 RunServicesFactory = Callable[[str], Iterator[RunServices]]
+
+
+@dataclass
+class RunSupervisorServices:
+    backend: object
+    runtime: object
+
+
+def build_run_supervisor_services(actor_member_id: str) -> Iterator[RunSupervisorServices]:
+    """Explicit opt-in; never send new writes to an unsupported Backend."""
+    from app.llm.factory import build_llm
+    from app.orchestration.http_run_coordination import HttpCoordinatedRunStateClient
+    from app.orchestration.run_supervisor import RunSupervisorRuntime
+    if not settings.backend_coordination_enabled:
+        raise BackendNotConfigured("Backend coordination 계약 지원 확인 후 BACKEND_COORDINATION_ENABLED를 활성화해야 합니다")
+    if not settings.backend_base_url or not settings.backend_internal_token:
+        raise BackendNotConfigured("backend_base_url / backend_internal_token 이 설정되지 않았다")
+    client = HttpCoordinatedRunStateClient(settings.backend_base_url, settings.backend_internal_token,
+        actor_member_id, timeout=settings.backend_timeout_sec, coordination_enabled=True)
+    try:
+        llm = build_llm(settings)
+        yield RunSupervisorServices(client, RunSupervisorRuntime(client, _agents(), llm, llm))
+    finally:
+        client.close()

@@ -1,6 +1,6 @@
 import { Agent1Api, Agent2Api, Agent3Api, AnalysisApi, ApiError, KbApi, MockPreview } from "./api.js?v=orchestration-1";
 import { records, sampleItems, scenarioInput } from "./fixtures.js?v=common-rate-2";
-import { createAnalysisDemo, analysisSnapshot } from "./analysis-demo.js?v=analysis-progress-3";
+import { createAnalysisDemo, analysisSnapshot, analysisTitle } from "./analysis-demo.js?v=run-storage-20261111-title3";
 
 const root = document.querySelector("#app");
 const api = new Agent3Api();
@@ -40,7 +40,7 @@ const money = value => typeof value === "number" && Number.isFinite(value) ? `${
 const icon = file => `<span class="icon"><img src="./assets/${file}.svg" alt=""></span>`;
 const chip = (label, tone = "neutral") => `<span class="chip ${tone}">${icon(tone === "ai" ? "1b8e7" : tone === "success" ? "396d8" : tone === "info" ? "59318" : tone === "warning" ? "691d6" : "edb5c")}<span>${e(label)}</span></span>`;
 const button = (label, action, options = {}) => `<button type="button" class="button ${options.class || ""}" data-action="${action}" ${options.disabled ? "disabled" : ""} ${options.title ? `title="${e(options.title)}"` : ""}>${options.icon ? icon(options.icon) : ""}${e(label)}</button>`;
-const record = () => { const s=analysisDemo.byId(state.id); return s ? {...records.find(item=>item.id===s.id),id:s.id,api:true,analysisDemo:true,title:s.text.split('\n')[0],project:'모노마켓 · 화면 테스트',requester:'직접 입력',messageText:s.text,channel:'수동',date:s.created?.slice(5,10)||'—'} : records.find(item => item.id === state.id) || records[0]; };
+const record = () => { const s=analysisDemo.byId(state.id); return s ? {...records.find(item=>item.id===s.id),id:s.id,api:true,analysisDemo:true,title:analysisTitle(s),project:'모노마켓 · 화면 테스트',requester:'직접 입력',messageText:s.text,channel:'수동',date:s.created?.slice(5,10)||'—'} : records.find(item => item.id === state.id) || records[0]; };
 const estimates = () => record().api ? state.view?.impact?.estimates || [] : [];
 const unknownSchedule = () => estimates().some(item => item.schedule?.business_days == null);
 const parsedInput = () => JSON.parse(state.inputText);
@@ -97,7 +97,14 @@ function route() {
   const match = location.hash.match(/^#\/request\/([^/]+)\/(original|scope|impact|draft)$/);
   if (match && (analysisDemo.byId(decodeURIComponent(match[1])) || records.some(item => (item.analysisDemo || item.api || item.datasetSample || item.id === "CR-001") && item.id === decodeURIComponent(match[1])))) {
     state.id = decodeURIComponent(match[1]); state.tab = match[2]; state.page = "detail";
-    if (analysisDemo.byId(state.id)) loadAnalysisResult(analysisDemo.byId(state.id));
+    if (analysisDemo.byId(state.id)) {
+      const id = state.id;
+      const session = analysisDemo.byId(id);
+      loadAnalysisResult(session);
+      if (session.runBacked) analysisDemo.refresh(id).then(updated => {
+        if (state.page === 'detail' && state.id === id) { loadAnalysisResult(updated); render(); }
+      }).catch(() => { if (state.page === 'detail' && state.id === id) { state.error = '저장된 최신 결과를 확인하지 못했습니다. 연결 상태를 확인해 주세요.'; render(); } });
+    }
     if (!analysisDemo.byId(state.id) && record().api && samples && activeCase !== state.id) selectCase(state.id);
   }
   else state.page = "list";
@@ -189,7 +196,7 @@ function statusStrip() {
   const scope = integrated?.analysisId ? (labels.length === 1 ? labels[0] : labels.length ? "항목별 상이" : "미분석") : "범위 밖";
   const scopeSource = integrated?.analysisId ? "Agent 2 판단 · 상세 확인" : "상위 PM 검토: 예시";
   const sub = integrated?.analysisId ? "상태 연동 전" : "이번 범위 밖";
-  const cells = [["요청 처리", "PM 검토 필요", "합성 입력"], ["범위 판단", scope, scopeSource], ["상업적 결정", "미결정", sub], ["PM 산정 승인", actual ? state.view.approval?.approved ? "승인됨" : state.view.approval ? "반려 · 재검토" : "미승인" : "미요청", actual ? PHASE[state.view.phase] || state.view.phase : "API 결과 없음"], ["고객 협의", "미요청", "외부 발송 없음"], ["실행", "미착수", sub], ["청구", "청구 대상 아님", "자동 확정 없음"]];
+  const cells = [["요청 처리", integrated?.approved ? "검토 완료" : "PM 검토 필요", "합성 입력"], ["범위 판단", scope, scopeSource], ["상업적 결정", "미결정", sub], [integrated?.runBacked ? "PM 최종 확인" : "PM 산정 승인", integrated?.runBacked ? integrated.approved ? "확인 완료" : integrated.hold ? "보류" : "검토 대기" : actual ? state.view.approval?.approved ? "승인됨" : state.view.approval ? "반려 · 재검토" : "미승인" : "미요청", actual ? PHASE[state.view.phase] || state.view.phase : "API 결과 없음"], ["고객 협의", "미요청", "외부 발송 없음"], ["실행", "미착수", sub], ["청구", "청구 대상 아님", "자동 확정 없음"]];
   return `<div class="status-strip">${cells.map(([label, value, sub]) => `<div class="status-cell"><span>${label}</span>${chip(value)}<small>${e(sub)}</small></div>`).join("")}</div>`;
 }
 function tabTestGuide() {
@@ -207,12 +214,12 @@ function detail() {
   if (item.datasetSample) {
     const tabs = [["original", "요청 원문"], ["scope", "범위 검토"], ["impact", "영향 산정"], ["draft", "승인·협의"]];
     const actions = state.tab === "original" ? button(a1.pending ? "항목화 중…" : "Agent 1 실행", "run-a1", { class: "primary", disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase], icon: "a1cb9" }) : state.tab === "impact" ? button(state.pending ? "처리 중…" : "영향 산정 실행", "prepare", { class: "primary", disabled: state.pending }) : button("영향 산정으로", "go-impact", { class: "primary" });
-    return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span>${e(item.title)}</h1><p class="subtitle">${e(item.project)} · 에이전트 테스트 요청</p></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div>${tabTestGuide()}<div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? agent1Original(item) : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}`;
+    return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span><span class="detail-title-text">${e(item.title)}</span></h1><p class="subtitle">${e(item.project)} · 에이전트 테스트 요청</p></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div>${tabTestGuide()}<div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? agent1Original(item) : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}`;
   }
   const tabs = [["original", "요청 원문"], ["scope", "범위 검토"], ["impact", "영향 산정"], ["draft", "승인·협의"]];
   let actions = state.tab === "original" ? button(a1.pending ? "항목화 중…" : "Agent 1 실행", "run-a1", { class: "primary", icon: "a1cb9", disabled: a1.pending || !lab.enabled || !agent1Inputs?.[activeCase] || !item.api }) : state.tab === "scope" ? button("영향 산정으로", "go-impact", { class: "primary", icon: "ec151" }) : state.tab === "impact" ? button(state.pending ? "처리 중…" : "영향 산정 실행", "prepare", { class: "primary", icon: "a1cb9", disabled: state.pending || !item.api }) : button("영향 산정으로", "go-impact", { icon: "ec991" });
   if (item.analysisDemo) actions = `<button class="button" data-demo-open="${e(item.id)}">통합 진행 기록으로</button>`;
-  return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span>${e(item.title)}</h1></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div><div class="detail-meta"><span>${icon("91f0e")}${e(item.project)}</span><span>${icon("e56db")}요청자 ${e(item.requester)} (고객 PM)</span><span>${icon("29cce")}${item.channel} · ${item.date} 수신</span><span>${icon("d6187")}판단 기준선 ${item.api ? "BL-2 · 합성" : "v1.2 · 예시"}</span><span><span class="avatar">김</span>담당 김서윤</span></div>${item.analysisDemo ? `<div class="notice"><strong>통합 분석 결과</strong>통합 실행에서 전달된 결과를 읽기 전용으로 표시합니다. PM 확인은 통합 진행 기록에서 가능합니다.</div>` : tabTestGuide()}${!item.api ? `<div class="notice"><strong>조회용 예시 요청입니다.</strong>이 요청은 화면 흐름만 확인할 수 있습니다. 실제 Agent 3 연결은 ${button("CR-A-001 열기", "open-api", { class: "small" })}에서 확인해 주세요.</div>` : ""}${statusStrip()}<div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}${["실행·검수", "청구", "이력"].map(label => `<button class="tab" role="tab" aria-selected="false" disabled title="이번 구현 범위 밖">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? agent1Original(item) : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}${item.analysisDemo && state.tab === "draft" ? `<section class="card" style="margin-top:16px">${analysisDemo.resultPreview(item.id, "draft")}</section>` : ""}`;
+  return `<div class="page-heading"><div><h1 class="detail-title"><span class="cr-id">${e(item.id)}</span><span class="detail-title-text">${e(item.title)}</span></h1></div><div class="button-group">${button("목록", "list", { class: "plain" })}${actions}</div></div><div class="detail-meta"><span>${icon("91f0e")}${e(item.project)}</span><span>${icon("e56db")}요청자 ${e(item.requester)} (고객 PM)</span><span>${icon("29cce")}${item.channel} · ${item.date} 수신</span><span>${icon("d6187")}판단 기준선 ${item.api ? "BL-2 · 합성" : "v1.2 · 예시"}</span><span><span class="avatar">김</span>담당 김서윤</span></div>${item.analysisDemo ? `<div class="notice"><strong>통합 분석 결과</strong>통합 실행에서 전달된 결과를 읽기 전용으로 표시합니다. PM 확인은 통합 진행 기록에서 가능합니다.</div>` : tabTestGuide()}${!item.api ? `<div class="notice"><strong>조회용 예시 요청입니다.</strong>이 요청은 화면 흐름만 확인할 수 있습니다. 실제 Agent 3 연결은 ${button("CR-A-001 열기", "open-api", { class: "small" })}에서 확인해 주세요.</div>` : ""}${statusStrip()}<div class="tabs" role="tablist" aria-label="변경 요청 상세 단계">${tabs.map(([key, label]) => `<button class="tab" role="tab" aria-selected="${state.tab === key}" data-tab="${key}">${label}</button>`).join("")}${["실행·검수", "청구", "이력"].map(label => `<button class="tab" role="tab" aria-selected="false" disabled title="이번 구현 범위 밖">${label}</button>`).join("")}</div>${state.error ? errorBanner() : ""}${state.tab === "original" ? agent1Original(item) : state.tab === "scope" ? scope() : state.tab === "impact" ? impact() : draft()}${item.analysisDemo && state.tab === "draft" ? `<section class="card" style="margin-top:16px">${analysisDemo.resultPreview(item.id, "draft")}</section>` : ""}`;
 }
 function agent1Items() {
   if (a1.result?.items?.length) return a1.result.items;
@@ -830,7 +837,7 @@ function projectsPage() {
 function render() {
   const active = document.activeElement;
   const focus = active?.id ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
-  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "analysis" ? analysisDemo.page() : state.page === "projects" ? projectsPage() : state.page === "register" ? registrationPage() : state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. AI 서버는 메모리 세션을 사용하며 CN 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
+  root.innerHTML = `<div class="shell">${sidebar()}<div class="right">${topbar()}<main id="main" class="content" tabindex="-1">${state.page === "analysis" ? analysisDemo.page() : state.page === "projects" ? projectsPage() : state.page === "register" ? registrationPage() : state.page === "list" ? inbox() : detail()}<p class="footer-note">합성 예시로 동작을 확인하는 로컬 화면입니다. 백엔드 업무 DB·실제 사용자 인증과 연결되지 않았습니다.</p></main></div></div>`;
   if (state.page === "analysis") analysisDemo.syncDialog();
   if (focus) { const target = document.getElementById(focus.id); if (target && !target.disabled) { target.focus({ preventScroll: true }); if (typeof focus.start === "number" && target.setSelectionRange && !["number", "checkbox"].includes(target.type)) target.setSelectionRange(focus.start, focus.end); } }
 }

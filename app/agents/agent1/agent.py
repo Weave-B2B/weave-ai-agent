@@ -34,15 +34,17 @@ class LlmAgent1:
         llm: LlmClient,
         *,
         feature_search: FeatureSearch | None = None,
+        system_suffix: str = "",
     ) -> None:
         """Store the structured LLM client and feature-candidate search function."""
         self.llm = llm
         self.feature_search = feature_search
+        self.system_suffix = system_suffix
 
     def run(self, inp: Agent1Input) -> Agent1Output:
         """Create a validated Agent1 result with application-owned IDs and spans."""
         result = self.llm.complete_structured(
-            system=SYSTEM,
+            system=SYSTEM + self.system_suffix,
             user=build_user_prompt(inp, prompt_version=PROMPT_VERSION),
             schema=Agent1Draft,
             tool_name="submit_items",

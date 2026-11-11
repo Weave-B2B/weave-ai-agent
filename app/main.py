@@ -15,6 +15,8 @@ from app.api.analysis_routes import router as analysis_router
 from app.api.supervisor_routes import router as supervisor_router
 from app.api.execution_routes import router as execution_router
 from app.api.run_routes import router as run_router, register_error_handlers
+from app.api.run_supervisor_routes import router as run_supervisor_router
+from app.api.local_run_routes import router as local_run_router
 from app.llm.factory import build_llm
 from prototype.rate_routes import router as prototype_rate_router
 
@@ -40,6 +42,8 @@ app.include_router(analysis_router)
 app.include_router(supervisor_router)
 app.include_router(execution_router)
 app.include_router(run_router)
+app.include_router(run_supervisor_router)
+app.include_router(local_run_router)
 register_error_handlers(app)
 app.include_router(prototype_rate_router)
 
