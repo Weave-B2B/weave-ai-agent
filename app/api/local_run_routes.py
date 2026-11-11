@@ -72,6 +72,12 @@ class ReviewBody(RevisionBody):
 
 @lru_cache(maxsize=1)
 def get_store():
+    if settings.backend_coordination_enabled and settings.backend_base_url and settings.backend_internal_token:
+        from app.orchestration.backend_run_store import BackendRunStore
+        actor = os.environ.get("WEAVE_ACTOR_MEMBER_ID", "00000000-0000-0000-0000-0000000000b1")
+        project_id = os.environ.get("WEAVE_PROJECT_ID", "00000000-0000-0000-0000-0000000000a1")
+        return BackendRunStore(settings.backend_base_url, settings.backend_internal_token, actor,
+                               settings.prototype_run_db, project_id=project_id)
     return LocalRunStore(settings.prototype_run_db)
 
 
@@ -110,8 +116,10 @@ def _view(store, case_id):
     hold = run.coordination.hold_reason
     if run.state.status == "WAITING_PM_REVIEW" and review and review["decision"] == "hold":
         hold = "PM 최종 검토 보류"
+    is_backend = getattr(store, "is_backend_connected", False)
+    storage_type = "backend-postgresql" if is_backend else "local-sqlite"
     view = {"impact": payload, "documents": payload.get("documents", {}), "snapshot_hash": snapshot_hash,
-            "can_final_review": bool(target), "storage": "local-sqlite"} if payload else None
+            "can_final_review": bool(target), "storage": storage_type} if payload else None
     return {"case_id": case_id, "run_id": case_id, "state_revision": run.state.state_revision,
         "input": store.get_inputs(case_id).agent1_input.model_dump(mode="json"),
         "provider": store.provider(case_id), "run_status": run.state.status,
@@ -120,7 +128,7 @@ def _view(store, case_id):
         "question": pending.model_dump(mode="json") if pending else None,
         "ready_for_review": bool(target), "review": reviewed if run.state.status == "COMPLETED" or hold else None,
         "hold_reason": hold, "history": history, "progress": progress_for(store, case_id).after(),
-        "storage": "local-sqlite", "backend_connected": False,
+        "storage": storage_type, "backend_connected": is_backend,
         "llm_calls": run.coordination.llm_calls, "segment_llm_calls": run.coordination.segment_llm_calls}
 
 
@@ -149,8 +157,8 @@ def create(body: StartBody, store=Depends(get_store)):
         raise HTTPException(422, "프로젝트·기준선·단가표를 확인해 주세요.")
     # Validate credentials/configuration before creating any durable state.
     provider_workers(body.provider)
-    store.create_run(context.case_id, RunInputs(agent1_input=body.input, rate_card_id=body.rate_card_id), provider=body.provider)
-    _perform(store, context.case_id, lambda: _runtime(store, context.case_id).step(context.case_id, expected_revision=0))
+    state = store.create_run(context.case_id, RunInputs(agent1_input=body.input, rate_card_id=body.rate_card_id), provider=body.provider)
+    _perform(store, context.case_id, lambda: _runtime(store, context.case_id).step(context.case_id, expected_revision=state.state_revision))
     return _view(store, context.case_id)
 
 
