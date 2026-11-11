@@ -291,6 +291,34 @@ class Agent3Orchestration:
             raise WorkflowConflict(f"upstream context changed: {gate.reason}")
         return s
 
+    def restore_result(self, raw, impact, documents, *, rate_hash, effort_hash):
+        """Rebuild a transient tool session from versioned business results, without LLM.
+
+        Trusted Run integration only. The source input must be reconstructed from
+        the stored upstream result IDs and answer IDs, never from a new prompt.
+        """
+        inp, allowed, deferred = self._selection(raw)
+        if rate_hash != _rate_hash(inp.rate_card_id) or effort_hash != _hash(load_effort_rules()):
+            raise WorkflowConflict("stored standards changed; full re-estimation required")
+        out = Agent3Output.model_validate(impact)
+        if out.context != inp.context or sorted(i for e in out.estimates for i in e.item_ids) != sorted(allowed):
+            raise WorkflowConflict("stored impact does not match its source input")
+        if any(d.get("a2_result_id") != inp.a2_result.meta.result_id
+               or d.get("impact_result_id") != out.meta.result_id for d in documents.values()):
+            raise WorkflowConflict("stored document provenance mismatch")
+        sid = f"a3-orchestration-{uuid4().hex}"
+        with self._lock:
+            key = (inp.context.project_id, inp.context.case_id)
+            previous_id = self._current.get(key)
+            if previous_id and self._sessions[previous_id]["input"].context.request_revision > inp.context.request_revision:
+                raise WorkflowConflict("cannot restore an older request over the current session")
+            self._sessions[sid] = {"input": inp, "impact": out, "deferred": deferred,
+                "state_revision": 1, "documents": copy.deepcopy(documents), "approval": None,
+                "history": [], "rate_hash": rate_hash, "effort_hash": effort_hash,
+                "last_review": None, "processed_item_ids": []}
+            self._current[key] = sid
+        return self.get(sid)
+
     @staticmethod
     def _snapshot(s):
         return _hash({"input": s["input"].model_dump(mode="json"),

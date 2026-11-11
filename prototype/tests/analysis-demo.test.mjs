@@ -2,7 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../analysis-demo.js',import.meta.url),'utf8');
-const {createAnalysisDemo,analysisSnapshot}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const {createAnalysisDemo,analysisSnapshot,analysisTitle}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+
+test('request title uses the feature summary while keeping the complete source',()=>{
+  const s={text:'고객 원문 '.repeat(100),realA1:{items:[{item_type:'function',text:'구매자 리뷰 기능 — 별점·텍스트 및 상세 조건'},
+    {item_type:'constraint',text:'일정은 미정'},{item_type:'function',text:'알림 추가'}]}};
+  const original=s.text;
+  assert.equal(analysisTitle(s),'구매자 리뷰 기능 외 1건');
+  assert.ok(analysisTitle({text:'긴 원문'.repeat(100)}).length<=49);
+  assert.equal(s.text,original);
+});
 
 function setup(store=new Map()) {
   const records=[],queue=[],visits=[];
@@ -76,6 +85,7 @@ test('snapshot keeps real Agent 1 item types, spans and questions',()=>{
   assert.deepEqual(snap.a1.items.map(i=>i.item_type),['deadline','question']);
   assert.equal(snap.a1.items[0].spans.length,1);
   assert.deepEqual(snap.a1.questions,questions);
+  assert.equal(snap.a2,null); // No invented scope result before the real worker runs.
   assert.equal(snap.input.constraints[0].text,'기존 오픈 일정 유지');
   const realA2={status:'READY_FOR_REVIEW',assessments:[{item_id:'C-1',label:'in_scope',rationale:'계약 근거',evidence_level:'explicit',evidence:[{doc_id:'D1'}]}],questions:[]};
   const withA2=analysisSnapshot({id:'C',text:'원문',created:'x',step:3,items:['a'],realA1:{status:'READY',items,questions},realA2});
@@ -109,7 +119,10 @@ test('Supervisor automatically retries a temporary failure and stops for a PM an
     let result;
     if(path==='cases') result={a1,state_revision:0};
     else if(path==='answer') {
-      assert.deepEqual(JSON.parse(options.body),{question_id:'Q1',text:'포함해 주세요',state_revision:2});
+      const {operation_id,...payload}=JSON.parse(options.body);
+      assert.equal(typeof operation_id,'string');
+      assert.match(url,/\/prototype\/runs\/cases\//);
+      assert.deepEqual(payload,{question_id:'Q1',text:'포함해 주세요',state_revision:2});
       result={a1,state_revision:3};
     } else result=steps.shift();
     return {ok:true,json:async()=>result};
@@ -130,6 +143,34 @@ test('Supervisor automatically retries a temporary failure and stops for a PM an
   await new Promise(setImmediate);
   assert.deepEqual(calls,['cases','step','step','step','answer','step']);
   assert.match(demo.page(),/최종 검토하기/);
+});
+
+test('common Run exposes server choices and unknown answers stay pending',async t=>{
+  const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
+  const calls=[];
+  const a1={items:[{item_id:'R1',item_type:'function',intent:'change_request',text:'리뷰'}]};
+  const q={question_id:'Q1',text:'업로드 방식을 선택하세요',choices:['재사용','신규 구현','모름'],allow_other:true};
+  let revision=1;
+  globalThis.fetch=async(url,options)=>{
+    calls.push({url,body:options?.body?JSON.parse(options.body):null});
+    if(url.endsWith('/cases')) return {ok:true,json:async()=>({a1,state_revision:revision,storage:'local-sqlite'})};
+    if(url.endsWith('/answer')) { revision++; return {ok:true,json:async()=>({a1,state_revision:revision,question:q,storage:'local-sqlite'})}; }
+    return {ok:true,json:async()=>({event:{status:'waiting_input'},state:{a1,state_revision:revision,question:q,storage:'local-sqlite'}})};
+  };
+  let demo;
+  demo=createAnalysisDemo({records:[],storage:{getItem:()=>null,setItem:()=>{}},render:()=>{},navigate:()=>{},openAnalysis:id=>demo.enter(id),analysisApi:{}});
+  demo.input({id:'analysis-request',value:'합성 요청'});
+  demo.click({closest:s=>s==='[data-demo-action]'?{dataset:{demoAction:'start'}}:null});
+  await new Promise(setImmediate);
+  assert.ok(calls.every(call=>call.url.startsWith('/prototype/runs/cases')));
+  assert.match(demo.page(),/신규 구현/);
+  assert.doesNotMatch(demo.page(),/id="analysis-pm-other"/);
+  await demo.change({name:'analysis-pm-choice',value:'모름'});
+  await new Promise(setImmediate);
+  assert.equal(demo.current().supervisorQuestion.question_id,'Q1');
+  assert.equal(demo.current().running,false);
+  assert.equal(calls.find(c=>c.url.endsWith('/answer')).body.text,'모름');
+  assert.ok(calls.find(c=>c.url.endsWith('/answer')).body.operation_id);
 });
 
 test('Supervisor groups repeated live tool events under a single Agent 2 result',{timeout:3000},async t=>{

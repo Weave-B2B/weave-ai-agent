@@ -122,6 +122,8 @@ class StructuredLlm(ABC):
         retried = False
 
         for attempt in range(2):
+            from app.llm.attempts import before_attempt
+            before_attempt()
             try:
                 raw = self._call(
                     system=system,
