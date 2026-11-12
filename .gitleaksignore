@@ -1,0 +1,6 @@
+# gitleaks 오탐 목록 (형식: <커밋>:<파일>:<규칙>:<줄>)
+# 비밀이 아닌 값만 등록한다. 실제 비밀이 커밋됐다면 여기에 넣지 말고 키를 폐기·교체한다.
+
+# Figma 파일 식별자(file_key). 접근 권한 없이는 쓸 수 없는 ID이며 API 키가 아님
+5d30c4e7144d5650e9d3e2030f433f426b6de45a:docs/dev-workflow/profiles/agent3-prototype.json:generic-api-key:49
+8533f1de4345d969f7688090785b43ba16a08dab:docs/dev-workflow/profiles/agent3-prototype.json:generic-api-key:49

@@ -188,3 +188,6 @@ data/index/
 .prototype-rate-cards/
 .prototype-kb/
 .prototype-runs/
+
+# 로컬 AI 에이전트 지침 파일
+CLAUDE.md

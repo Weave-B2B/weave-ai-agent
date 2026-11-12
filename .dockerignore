@@ -27,4 +27,5 @@ prototype/tests
 Dockerfile
 README.md
 AGENTS.md
+CLAUDE.md
 pytest.ini
