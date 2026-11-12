@@ -12,7 +12,7 @@ from schema.schemas import Agent1Input, PMReview, RunStatus, Stage, _M
 
 ActorType = Literal["user", "agent", "system"]
 ResultExecutionStatus = Literal["COMPLETED", "FAILED"]
-ReviewKind = Literal["PM_REVIEW", "INPUT"]
+ReviewKind = Literal["PM_REVIEW", "INPUT", "FINAL_REVIEW"]
 ReviewDecision = Literal["APPROVED", "REJECTED"]
 
 
