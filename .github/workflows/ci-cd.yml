@@ -1,0 +1,198 @@
+# AI 서버 CI/CD (태그·푸시 규칙은 weave-backend의 ci-cd.yml과 같음)
+#   CI : [시크릿 스캔] 통과 → [이미지 빌드 → 컨테이너 기동 확인(GET /health)]
+#   CD : dev/main에 머지된 경우에만 기동 확인을 통과한 이미지를 ECR에 푸시 (태그: dev-<SHA>, main-<SHA>)
+#   문서(docs/**, *.md)만 바뀐 경우: 시크릿 스캔만 실행하고 이미지는 건너뜀
+#   Python은 컴파일 단계가 없어서, 백엔드의 빌드·테스트 대신 실제로 띄워 보는 것으로 실행 가능 여부를 확인한다
+name: AI CI/CD
+
+on:
+  pull_request:
+    branches: [dev, main]    # PR: 검사 + 이미지 빌드·기동 확인까지만 (푸시 안 함)
+  push:
+    branches: [dev, main]    # 머지: 검사 통과 시 ECR 푸시
+  workflow_dispatch:         # Actions 탭에서 수동 실행 (푸시 안 함)
+
+# PR에 새 커밋이 오면 이전 실행 취소. dev/main 푸시는 중간에 끊기지 않도록 취소하지 않음
+concurrency:
+  group: ci-cd-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 변경 경로 확인 ──────────────────────────────────────────────────────────
+  # 문서 외 파일이 하나라도 바뀌었으면 code=true. 수동 실행은 항상 true
+  changes:
+    name: 변경 경로 확인
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read    # PR 변경 파일 목록 조회
+    outputs:
+      code: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.code == 'true' }}
+    steps:
+      - name: 코드 받기
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@v4
+
+      - name: 문서 외 변경 여부 확인
+        id: filter
+        if: github.event_name != 'workflow_dispatch'
+        uses: dorny/paths-filter@v3
+        with:
+          # 아래 조건을 모두 만족하는 파일(= 문서가 아닌 파일)이 있으면 code=true
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+
+  # ── CI 1) 시크릿 스캔 ───────────────────────────────────────────────────────
+  # 비밀번호·API 키·토큰이 커밋에 들어갔는지 전체 기록 검사
+  # 비밀이 아닌 값의 오탐은 .gitleaksignore에 지문(fingerprint)으로 등록한다
+  secret-scan:
+    name: 시크릿 스캔
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.28.0
+    steps:
+      - name: 코드 받기 (전체 커밋 기록 포함)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks 설치
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP" gitleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      # 발견되면 실패(exit 1). --redact: 로그에 비밀값을 그대로 찍지 않음
+      - name: 시크릿 검사
+        run: |
+          gitleaks version
+          gitleaks git --redact --verbose .
+
+  # ── CI 2) 이미지 빌드 → 기동 확인 → CD) dev/main 머지일 때만 ECR 푸시 ──────
+  # 시크릿 스캔이 통과해야 실행된다. 문서만 바뀌면 건너뜀
+  # 기동 확인을 통과한 같은 이미지를 그대로 푸시해서 두 번 빌드하지 않는다
+  image:
+    name: 이미지 빌드 / 기동 확인 / ECR 푸시
+    needs: [changes, secret-scan]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write        # GitHub OIDC로 AWS 임시 권한을 받기 위해 필요
+    env:
+      ECR_REPOSITORY: weave-ai-agent
+      AWS_REGION: ap-northeast-2
+      # 레포 변수(Settings > Secrets and variables > Actions > Variables)로 설정
+      #   AWS_ROLE_ARN   : GitHub Actions용 IAM 역할 ARN (설정 전에는 푸시를 건너뜀)
+      #   IMAGE_PLATFORM : 노드 아키텍처 (linux/amd64 또는 linux/arm64, 기본 linux/amd64)
+      IMAGE_PLATFORM: ${{ vars.IMAGE_PLATFORM || 'linux/amd64' }}
+      SHOULD_PUSH: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main') && vars.AWS_ROLE_ARN != '' }}
+    steps:
+      - name: 코드 받기
+        uses: actions/checkout@v4
+
+      # dev 머지 → dev-<SHA 7자리>, main 머지 → main-<SHA 7자리>, PR·수동 실행 → ci-<SHA 7자리>(푸시 안 함)
+      - name: 이미지 태그 정하기
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}-${SHORT_SHA}"
+          else
+            TAG="ci-${SHORT_SHA}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "image=${ECR_REPOSITORY}:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "이미지 태그: ${TAG}"
+
+      # arm64 이미지를 x86 러너에서 빌드·실행할 때 필요
+      - name: QEMU 설정
+        if: contains(env.IMAGE_PLATFORM, 'arm64')
+        uses: docker/setup-qemu-action@v3
+
+      - name: Buildx 설정
+        uses: docker/setup-buildx-action@v3
+
+      # 기동 확인을 위해 러너의 Docker에 이미지를 올린다 (이 단계에서는 푸시하지 않음)
+      - name: 이미지 빌드
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ env.IMAGE_PLATFORM }}
+          load: true
+          push: false
+          provenance: false   # 빌드 증명서 생성 안 함 → 이미지 1개만 푸시
+          sbom: false         # 구성 요소 목록(SBOM)도 생성 안 함
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 환경변수 없이 기본 모드(AGENT_MODE=fixture, LLM_PROVIDER=fake)로 띄워 GET /health가 200인지 확인
+      # 60초 안에 응답이 없으면 컨테이너 로그를 남기고 실패
+      - name: 기동 확인 (GET /health)
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          docker run -d --name smoke --platform "$IMAGE_PLATFORM" -p 8000:8000 "$IMAGE"
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health; then
+              echo
+              echo "기동 확인 완료 (${i}초)"
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' smoke)" != "true" ]; then
+              echo "::error::컨테이너가 기동 중 종료됨"
+              break
+            fi
+            sleep 1
+          done
+          echo "::error::GET /health 응답 없음"
+          docker logs smoke
+          exit 1
+
+      - name: 기동 확인 컨테이너 정리
+        if: always()
+        run: docker rm -f smoke || true
+
+      - name: AWS 인증 (OIDC, 액세스 키 저장 없음)
+        if: env.SHOULD_PUSH == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: ECR 로그인
+        if: env.SHOULD_PUSH == 'true'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 기동 확인을 통과한 이미지에 ECR 주소 태그를 붙여 푸시
+      - name: ECR 푸시 (dev/main 머지 시)
+        if: env.SHOULD_PUSH == 'true'
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TARGET: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.tag }}
+        run: |
+          docker tag "$IMAGE" "$TARGET"
+          docker push "$TARGET"
+
+      - name: 결과 요약
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          if [ "$SHOULD_PUSH" = "true" ]; then
+            echo "ECR 푸시 완료: ${REGISTRY}/${ECR_REPOSITORY}:${TAG} (${IMAGE_PLATFORM})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "이미지 빌드·기동 확인만 함 (푸시 안 함): ${ECR_REPOSITORY}:${TAG} (${IMAGE_PLATFORM})" >> "$GITHUB_STEP_SUMMARY"
+          fi
