@@ -1,0 +1,30 @@
+.git
+.github
+.DS_Store
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.venv
+venv
+
+# 비밀값과 로컬 설정은 이미지에 넣지 않는다 (운영은 환경변수/Secret)
+.env
+.env.*
+!.env.example
+
+# 로컬 실행 중 생기는 파일
+.prototype-runs
+.prototype-rate-cards
+.prototype-kb
+data/index
+
+# 실행에 필요 없는 폴더·파일
+tests
+docs
+.agents
+.codex
+prototype/tests
+Dockerfile
+README.md
+AGENTS.md
+pytest.ini
