@@ -137,8 +137,9 @@ class _RateCards(dict):
         return dict.__contains__(self, key)
 
 
-def register_remote(kb: dict) -> None:
-    """backend_kb.to_kb 모양을 지식베이스에 더한다. 로컬 샘플과 ID가 겹치면 로컬을 유지한다."""
+def register_remote(kb: dict, *, overwrite: bool = False) -> None:
+    """backend_kb.to_kb 모양을 지식베이스에 더한다. 로컬 샘플과 ID가 겹치면 로컬을 유지한다.
+    overwrite=True면 이미 읽은 백엔드 값을 새 값으로 바꾼다 (refresh_remote)."""
     secs = {(x["doc_id"], x["section_id"]): x for x in kb.get("sections", [])}
     docs = {d["doc_id"]: d for d in kb.get("documents", [])}
     _REMOTE["sections"].update(secs)
@@ -146,7 +147,21 @@ def register_remote(kb: dict) -> None:
     _REMOTE["baselines"].update(kb.get("baselines", {}))
     for cache, new in ((sections(), secs), (documents(), docs), (baselines(), kb.get("baselines", {}))):
         for k, v in new.items():
-            dict.setdefault(cache, k, v)
+            # 백엔드 ID는 UUID라 로컬 샘플 ID(CTR-A-001-v1.0 등)와 겹치지 않는다
+            (dict.__setitem__ if overwrite else dict.setdefault)(cache, k, v)
+
+
+def refresh_remote(baseline_id: str) -> bool:
+    """백엔드 기준선을 다시 읽는다. 현재 기준선에는 문서가 더해질 수 있어 분석 요청마다 부른다 (KB_SOURCE=backend)."""
+    from app.kb import backend_kb
+    if settings.kb_source != "backend" or not backend_kb.is_backend_id(baseline_id):
+        return False
+    kb = backend_kb.load_baseline(baseline_id, backend_kb.build_client(settings))
+    if kb is None:
+        return False
+    _REMOTE_MISSING.discard(baseline_id)
+    register_remote(kb, overwrite=True)
+    return True
 
 
 def _fetch_remote(baseline_id: str) -> bool:
