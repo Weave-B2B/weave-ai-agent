@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     backend_timeout_sec: float = Field(default=10.0, gt=0)
     # Backend가 추가 coordination 계약을 지원할 때만 활성화한다(기존 v2 순차 경로는 유지).
     backend_coordination_enabled: bool = False
+    # 색인 결과(A-MQ-02) 전달 경로. 로컬에서 정식 내부 API가 없으면 /dev/document-versions/{document_version_id}/ingest-result
+    backend_ingest_result_path: str = "/internal/v1/document-versions/{document_version_id}/ingest-result"
     prototype_run_db: Path = ROOT / ".prototype-runs" / "runs.sqlite3"
 
     # fixture: 데이터셋 정답을 에이전트 대신 돌려줌 (오케스트레이션 개발·계약 테스트용)
