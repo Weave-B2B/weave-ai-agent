@@ -76,17 +76,70 @@ def clear_caches() -> None:
 # ---- KB_SOURCE=backend: 백엔드 기준선을 처음 볼 때 한 번 읽어 아래 사전들에 더한다 ----
 _REMOTE: dict = {"sections": {}, "documents": {}, "baselines": {}}
 _REMOTE_MISSING: set[str] = set()
+_REMOTE_RATES: dict = {}
+_REMOTE_RATES_MISSING: set[str] = set()
 
 
 def clear_remote() -> None:
-    """백엔드에서 읽은 기준선을 잊는다 (기준선 문서가 바뀐 뒤 다시 읽을 때·테스트)."""
+    """백엔드에서 읽은 기준선과 단가표를 잊는다 (기준선/단가표가 바뀐 뒤 다시 읽을 때·테스트)."""
     _REMOTE.update(sections={}, documents={}, baselines={})
     _REMOTE_MISSING.clear()
+    _REMOTE_RATES.clear()
+    _REMOTE_RATES_MISSING.clear()
     clear_caches()
 
 
-def register_remote(kb: dict) -> None:
-    """backend_kb.to_kb 모양을 지식베이스에 더한다. 로컬 샘플과 ID가 겹치면 로컬을 유지한다."""
+def clear_remote_rates() -> None:
+    _REMOTE_RATES.clear()
+    _REMOTE_RATES_MISSING.clear()
+
+
+def register_remote_rate(card_id: str, card: dict) -> None:
+    _REMOTE_RATES[card_id] = card
+
+
+def _fetch_remote_rate(card_id: str) -> bool:
+    from app.kb import backend_rates
+    if card_id in _REMOTE_RATES_MISSING or not backend_rates.is_backend_rate_id(card_id):
+        return False
+    if settings.kb_source != "backend" and not settings.backend_base_url:
+        return False
+    try:
+        client = backend_rates.build_rate_client(settings)
+        resp = client.fetch_by_id(card_id)
+        if resp is None:
+            _REMOTE_RATES_MISSING.add(card_id)
+            return False
+        _REMOTE_RATES[card_id] = backend_rates.to_card(resp)
+        return True
+    except Exception:
+        _REMOTE_RATES_MISSING.add(card_id)
+        return False
+
+
+class _RateCards(dict):
+    def _ensure(self, key) -> None:
+        if isinstance(key, str) and not dict.__contains__(self, key):
+            _fetch_remote_rate(key)
+            if key in _REMOTE_RATES:
+                dict.__setitem__(self, key, _REMOTE_RATES[key])
+
+    def get(self, key, default=None):
+        self._ensure(key)
+        return dict.get(self, key, default)
+
+    def __getitem__(self, key):
+        self._ensure(key)
+        return dict.__getitem__(self, key)
+
+    def __contains__(self, key):
+        self._ensure(key)
+        return dict.__contains__(self, key)
+
+
+def register_remote(kb: dict, *, overwrite: bool = False) -> None:
+    """backend_kb.to_kb 모양을 지식베이스에 더한다. 로컬 샘플과 ID가 겹치면 로컬을 유지한다.
+    overwrite=True면 이미 읽은 백엔드 값을 새 값으로 바꾼다 (refresh_remote)."""
     secs = {(x["doc_id"], x["section_id"]): x for x in kb.get("sections", [])}
     docs = {d["doc_id"]: d for d in kb.get("documents", [])}
     _REMOTE["sections"].update(secs)
@@ -94,7 +147,21 @@ def register_remote(kb: dict) -> None:
     _REMOTE["baselines"].update(kb.get("baselines", {}))
     for cache, new in ((sections(), secs), (documents(), docs), (baselines(), kb.get("baselines", {}))):
         for k, v in new.items():
-            dict.setdefault(cache, k, v)
+            # 백엔드 ID는 UUID라 로컬 샘플 ID(CTR-A-001-v1.0 등)와 겹치지 않는다
+            (dict.__setitem__ if overwrite else dict.setdefault)(cache, k, v)
+
+
+def refresh_remote(baseline_id: str) -> bool:
+    """백엔드 기준선을 다시 읽는다. 현재 기준선에는 문서가 더해질 수 있어 분석 요청마다 부른다 (KB_SOURCE=backend)."""
+    from app.kb import backend_kb
+    if settings.kb_source != "backend" or not backend_kb.is_backend_id(baseline_id):
+        return False
+    kb = backend_kb.load_baseline(baseline_id, backend_kb.build_client(settings))
+    if kb is None:
+        return False
+    _REMOTE_MISSING.discard(baseline_id)
+    register_remote(kb, overwrite=True)
+    return True
 
 
 def _fetch_remote(baseline_id: str) -> bool:
@@ -186,7 +253,9 @@ def superseded_by(baseline_id: str) -> Optional[str]:
 def rate_cards() -> dict[str, dict]:
     # Avoid stale rates after a supplied file is replaced.
     path = settings.rate_card_file or settings.data_dir / "kb" / "rate_cards.json"
-    cards = load_rate_cards(path)
+    cards = _RateCards(load_rate_cards(path))
+    for k, v in _REMOTE_RATES.items():
+        cards.setdefault(k, v)
     # Local prototype edits are separate, immutable versions; never overwrite source files.
     if os.environ.get("PROTOTYPE_LAB") == "1":
         directory = settings.data_dir.parent / ".prototype-rate-cards"

@@ -330,3 +330,39 @@ def test_optional_agent3_suggestion_does_not_restart_pm_round(setup):
     assert result["status"] == "waiting_final_review"
     assert result["run"].coordination.questions == []
     assert len(setup[1].agent3.llm.calls) == 1
+
+
+def test_backend_pm_edit_snapshot_regenerates_documents_without_estimation_call(setup):
+    from app.orchestration.run_state import RecordEditRequest
+    from app.tools.calc_cost import calc_cost
+    state, workers, decisions, draft = setup
+    for _ in range(6):
+        runtime(setup).step("run-1")
+    before = state.get_coordinated_run("run-1")
+    old_id = before.state.agents["agent3"].current_result_id
+    raw = copy.deepcopy(state.get_result("run-1", old_id).result_payload)
+    estimate = raw["estimates"][0]
+    estimate["lines"][0]["md"] += 0.5
+    estimate["totals"] = calc_cost(estimate["lines"], raw["source"]["rate_card_id"])
+    raw["meta"]["result_id"] = "pm-result"
+    raw["source"]["pm_edit_id"] = "pm-result"
+    raw["documents"] = {}
+    raw["draft"] = None
+    state.record_edit(RecordEditRequest(run_id="run-1", agent_type="agent3", target_result_id=old_id,
+        new_result_id="pm-result", operation_id="pm-change", expected_state_revision=before.state.state_revision,
+        edited_by="pm", edited_payload=raw, reason="공수 수정"))
+    worker_calls = len(workers.agent3.llm.calls)
+    selector = FakeLlm([{"action": "draft_documents", "args": {"item_ids": ["CR-A-001-1", "CR-A-001-3"],
+        "kind": "negotiation_email"}, "reason": "PM 수정본 문서 재생성"}])
+    rt = RunSupervisorRuntime(state, workers, selector, draft)
+    assert rt.step("run-1")["action"] == "draft_documents"
+    assert rt.step("run-1")["status"] == "waiting_final_review"
+    after = state.get_coordinated_run("run-1")
+    out = state.get_result("run-1", after.state.agents["agent3"].current_result_id).result_payload
+    assert len(workers.agent3.llm.calls) == worker_calls
+    assert out["estimates"][0]["lines"][0]["md"] == estimate["lines"][0]["md"]
+    assert out["source"]["pm_edit_id"] == "pm-result"
+    assert out["documents"]["email"]["body"]
+    assert out["documents"]["agreement"]["body"]
+    assert f'{estimate["totals"]["price"]:,}' in out["documents"]["agreement"]["body"]
+    assert after.review_bundle.document_fingerprint != before.review_bundle.document_fingerprint

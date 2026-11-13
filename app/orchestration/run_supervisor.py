@@ -379,7 +379,8 @@ class RunSupervisorRuntime:
         raw["source"] = Agent3Source(a1_result_id=run.state.agents["agent1"].current_result_id,
             a2_result_id=run.state.agents["agent2"].current_result_id, answer_ids=[a.answer_id for a in inp.answers],
             rate_card_id=rate, quote_links=run.coordination.quote_links, rate_hash=_rate_hash(rate),
-            effort_hash=_hash(load_effort_rules())).model_dump()
+            effort_hash=_hash(load_effort_rules()),
+            pm_edit_id=old.source.pm_edit_id if old and old.source else None).model_dump()
         return Agent3RunOutput.model_validate(raw)
 
     def answer(self, request: AnswerQuestion):

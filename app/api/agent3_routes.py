@@ -3,6 +3,7 @@
 from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app.agents.agent3.agent import LlmAgent3
 from app.agents.agent3.workflow import Agent3Workflow, EditImpact, ReviewImpact, GenerateDraft, WorkflowConflict
@@ -109,3 +110,40 @@ def final_review(session_id: str, req: FinalReview):
 def edit_provisional_document(session_id: str, req: EditDocument):
     """Trusted PM caller only; not an orchestrator-callable capability."""
     return _guard(lambda: get_orchestration().edit_document(session_id, req))
+
+
+class ProposalDraftRequest(BaseModel):
+    case_id: str
+    project_id: str
+    review_version_id: str
+    request_items: list[str] = []
+    tasks: list[str] = []
+    total_price: int = 0
+    currency: str = "KRW"
+    model: str = "mock-llm-v1"
+
+
+class ProposalDraftResponse(BaseModel):
+    subject: str
+    body: str
+    model: str
+
+
+@router.post("/proposal-draft", response_model=ProposalDraftResponse)
+def generate_proposal_draft(req: ProposalDraftRequest):
+    """백엔드 E 파트(협의안 발급)에서 호출하는 제안서 초안 문안 생성 API."""
+    subject = f"[{req.case_id}] 변경 요청 검토 및 협의 제안서"
+    items_desc = "\n".join(f"- {it}" for it in req.request_items) if req.request_items else "- 추가 변경 항목"
+    tasks_desc = "\n".join(f"- {t}" for t in req.tasks) if req.tasks else "- 제안 작업 수행"
+    price_str = f"{req.total_price:,} {req.currency}" if req.total_price else "별도 협의"
+
+    body = (
+        f"안녕하세요. 요청해주신 변경 요청 건({req.case_id})에 대한 검토 내용 및 협의 제안서를 전달드립니다.\n\n"
+        f"[요청 항목]\n{items_desc}\n\n"
+        f"[수행 작업]\n{tasks_desc}\n\n"
+        f"[제안 금액]\n{price_str} (VAT 별도)\n\n"
+        "상기 제안 내용을 검토하신 후 의견이나 승인 여부를 회신해 주시기 바랍니다.\n"
+        "감사합니다."
+    )
+    return ProposalDraftResponse(subject=subject, body=body, model=req.model)
+

@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.api.routes import router
 from app.api.agent1_routes import router as agent1_router
 from app.api.agent2_routes import router as agent2_router
+from app.api.internal_analysis_routes import router as internal_analysis_router
 from app.api.agent3_routes import router as agent3_router
 from app.api.analysis_routes import router as analysis_router
 from app.api.supervisor_routes import router as supervisor_router
@@ -38,6 +39,7 @@ app = FastAPI(
 app.include_router(router)
 app.include_router(agent1_router)
 app.include_router(agent2_router)
+app.include_router(internal_analysis_router)
 app.include_router(agent3_router)
 app.include_router(analysis_router)
 app.include_router(supervisor_router)

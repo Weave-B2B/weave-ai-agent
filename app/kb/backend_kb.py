@@ -78,8 +78,11 @@ def to_kb(resp: dict) -> dict:
     by_version: dict[str, dict] = {}
     for d in resp.get("documents", []):
         doc_type, code = DOC_TYPES.get(d["documentType"], ("other", "DOC"))
+        # version(=근거의 doc_version)은 문서 버전 UUID다. 백엔드가 근거를 청크와 이을 때 이 값으로 문서 버전을 찾는다.
+        # 사람이 보는 버전 번호는 version_no로 따로 둔다
         doc = {"doc_id": d["documentVersionId"], "project_id": project_id, "doc_type": doc_type,
-               "version": str(d["documentVersionNo"]), "effective_date": d.get("effectiveDate"),
+               "version": d["documentVersionId"], "version_no": d.get("documentVersionNo"),
+               "effective_date": d.get("effectiveDate"),
                "approval_state": (d.get("approvalStatus") or "").lower(), "priority_rank": PRIORITY.index(code) + 1,
                "title": d.get("documentTitle"), "document_code": d.get("documentCode"),
                "judgment_role": d.get("judgmentRole"), "extraction_status": d.get("extractionStatus")}
