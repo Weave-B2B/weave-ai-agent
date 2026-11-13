@@ -19,6 +19,7 @@ from app.api.run_supervisor_routes import router as run_supervisor_router
 from app.api.local_run_routes import router as local_run_router
 from app.llm.factory import build_llm
 from prototype.rate_routes import router as prototype_rate_router
+from prometheus_fastapi_instrumentator import Instrumentator
 
 
 @asynccontextmanager
@@ -56,3 +57,14 @@ if os.environ.get("PROTOTYPE_LAB") == "1":
 prototype_dir = Path(__file__).resolve().parents[1] / "prototype"
 if prototype_dir.is_dir():
     app.mount("/prototype", StaticFiles(directory=prototype_dir, html=True), name="prototype")
+
+if settings.metrics_enabled:
+    Instrumentator(
+        should_group_status_codes=False,
+        should_ignore_untemplated=True,
+        excluded_handlers=[r"^/metrics$"],
+    ).instrument(app).expose(
+        app,
+        endpoint="/metrics",
+        include_in_schema=False,
+    )
