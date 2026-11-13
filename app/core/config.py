@@ -71,5 +71,8 @@ class Settings(BaseSettings):
     stage_timeout_sec: int = 60       # 단계당 시간 제한 (공통기준 D-6)
     tool_max_retries: int = 2         # retryable 도구 실패 자동 재시도 (공통기준 11장)
 
+        # Prometheus HTTP metrics; explicitly enabled per environment.
+    metrics_enabled: bool = False
+
 
 settings = Settings()
