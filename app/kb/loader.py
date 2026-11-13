@@ -73,6 +73,63 @@ def clear_caches() -> None:
         f.cache_clear()
 
 
+# ---- KB_SOURCE=backend: 백엔드 기준선을 처음 볼 때 한 번 읽어 아래 사전들에 더한다 ----
+_REMOTE: dict = {"sections": {}, "documents": {}, "baselines": {}}
+_REMOTE_MISSING: set[str] = set()
+
+
+def clear_remote() -> None:
+    """백엔드에서 읽은 기준선을 잊는다 (기준선 문서가 바뀐 뒤 다시 읽을 때·테스트)."""
+    _REMOTE.update(sections={}, documents={}, baselines={})
+    _REMOTE_MISSING.clear()
+    clear_caches()
+
+
+def register_remote(kb: dict) -> None:
+    """backend_kb.to_kb 모양을 지식베이스에 더한다. 로컬 샘플과 ID가 겹치면 로컬을 유지한다."""
+    secs = {(x["doc_id"], x["section_id"]): x for x in kb.get("sections", [])}
+    docs = {d["doc_id"]: d for d in kb.get("documents", [])}
+    _REMOTE["sections"].update(secs)
+    _REMOTE["documents"].update(docs)
+    _REMOTE["baselines"].update(kb.get("baselines", {}))
+    for cache, new in ((sections(), secs), (documents(), docs), (baselines(), kb.get("baselines", {}))):
+        for k, v in new.items():
+            dict.setdefault(cache, k, v)
+
+
+def _fetch_remote(baseline_id: str) -> bool:
+    from app.kb import backend_kb
+    if settings.kb_source != "backend" or baseline_id in _REMOTE_MISSING or not backend_kb.is_backend_id(baseline_id):
+        return False
+    kb = backend_kb.load_baseline(baseline_id, backend_kb.build_client(settings))
+    if kb is None:
+        _REMOTE_MISSING.add(baseline_id)
+        return False
+    register_remote(kb)
+    return True
+
+
+class _Baselines(dict):
+    """없는 기준선 ID를 찾으면 (KB_SOURCE=backend일 때) 백엔드에서 그 기준선의 문서·청크를 읽어 온다.
+    기준선 조회가 모든 판단의 첫 단계라, 여기서 읽으면 sections()·documents()도 함께 채워진다."""
+
+    def _ensure(self, key) -> None:
+        if isinstance(key, str) and not dict.__contains__(self, key):
+            _fetch_remote(key)
+
+    def get(self, key, default=None):
+        self._ensure(key)
+        return dict.get(self, key, default)
+
+    def __getitem__(self, key):
+        self._ensure(key)
+        return dict.__getitem__(self, key)
+
+    def __contains__(self, key):
+        self._ensure(key)
+        return dict.__contains__(self, key)
+
+
 def doc_text(doc_id: str) -> str:
     """offset 기준 텍스트: 추출 페이지를 \\f로 이은 것."""
     pages = _read_json("doc_pages.json")["docs"].get(doc_id) or _lab_kb().get("pages", {}).get(doc_id, [])
@@ -90,6 +147,8 @@ def sections() -> dict[tuple[str, str], dict]:
             "start_offset": start, "end_offset": end}
     for s in _lab_kb().get("sections", []):                # 색인 파이프라인이 만든 청크 (chunk_id·offset 포함)
         out.setdefault((s["doc_id"], s["section_id"]), s)
+    for k, s in _REMOTE["sections"].items():
+        out.setdefault(k, s)
     return out
 
 
@@ -98,13 +157,17 @@ def documents() -> dict[str, dict]:
     out = {d["doc_id"]: d for d in _read_jsonl("documents.jsonl")}
     for d in _lab_kb().get("documents", []):
         out.setdefault(d["doc_id"], d)
+    for k, d in _REMOTE["documents"].items():
+        out.setdefault(k, d)
     return out
 
 
 @lru_cache
 def baselines() -> dict[str, dict]:
-    out = dict(_read_json("baselines.json")["baselines"])
+    out = _Baselines(_read_json("baselines.json")["baselines"])
     for k, b in _lab_kb().get("baselines", {}).items():
+        out.setdefault(k, b)
+    for k, b in _REMOTE["baselines"].items():
         out.setdefault(k, b)
     return out
 
