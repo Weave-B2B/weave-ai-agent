@@ -69,10 +69,16 @@ def test_model_failure_is_502_with_error_code(client, monkeypatch):
     assert r.json()["detail"]["code"] == "MODEL_TIMEOUT" and r.json()["detail"]["retryable"] is True
 
 
-def test_fixture_unknown_case_is_404(client):
+def test_fixture_unknown_case_needs_pm_review(client):
+    """fixture에 없는 케이스(요청분석 화면의 직접 입력 등)는 근거를 지어내지 않고 모두 unclear·PM 검토로 돌려준다."""
     other = {**INPUTS[CASE], "context": {**INPUTS[CASE]["context"], "case_id": "CR-NOPE"}}
     other["items"] = [{**it, "case_id": "CR-NOPE"} for it in INPUTS[CASE]["items"]]
-    assert client.post("/agent2/assessments", json=other).status_code == 404
+    r = client.post("/agent2/assessments", json=other)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "READY_FOR_REVIEW"
+    assert [a["item_id"] for a in body["assessments"]] == [it["item_id"] for it in other["items"]]
+    assert all(a["label"] == "unclear" and a["evidence"] == [] and a["missing_info"] for a in body["assessments"])
 
 
 def test_malformed_body_is_422(client):
