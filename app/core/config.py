@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     # 기준선 문서·청크 원문 출처. local: data/kb 샘플 · backend: 백엔드 내부 API(업로드·색인한 실제 문서)
     kb_source: str = "local"
     backend_baseline_chunks_path: str = "/internal/v1/baselines/{baseline_id}/chunks"
+    backend_rate_card_path: str = "/internal/v1/rate-cards/{rate_card_id}"
+    backend_project_rate_card_path: str = "/internal/v1/projects/{project_id}/rate-card"
     prototype_run_db: Path = ROOT / ".prototype-runs" / "runs.sqlite3"
 
     # fixture: 데이터셋 정답을 에이전트 대신 돌려줌 (오케스트레이션 개발·계약 테스트용)
