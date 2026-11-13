@@ -11,3 +11,4 @@ pgvector>=0.3
 # 구현 단계에서 추가
 # langgraph, langgraph-checkpoint-postgres   # 오케스트레이션 부모 그래프·체크포인터
 # LLM SDK, PDF 추출기(pdftotext-layout-v1과 같은 결과가 나오는 것)
+prometheus-fastapi-instrumentator>=8.1,<9
