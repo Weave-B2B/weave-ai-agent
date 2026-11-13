@@ -76,6 +76,7 @@ def test_to_kb_maps_documents_and_keeps_only_approved_baseline_docs():
     assert docs[SOW]["doc_type"] == "sow" and docs[SOW]["priority_rank"] == 3
     sec = next(s for s in kb["sections"] if s["section_id"] == "SOW-02")
     assert sec["page"] == 2 and sec["heading"] == "02. 제외 범위" and sec["ref"] == f"{SOW}:SOW-02"
+    assert docs[SOW]["version"] == SOW and sec["doc_version"] == SOW          # 근거 doc_version = 문서 버전 UUID
 
 
 def test_doc_tools_read_backend_baseline_on_first_lookup(backend):
@@ -120,3 +121,15 @@ def test_backend_error_is_raised(monkeypatch):
     with pytest.raises(backend_kb.BackendKbError) as e:
         client.fetch(str(uuid4()))
     assert e.value.status_code == 500
+
+
+def test_refresh_remote_picks_up_documents_added_to_current_baseline(backend, monkeypatch):
+    list_baseline_docs(NEW)
+    added = str(uuid4())
+    changed = {**RESPONSES[NEW], "documents": RESPONSES[NEW]["documents"] + [_doc(added, "CONTRACT")],
+               "chunks": RESPONSES[NEW]["chunks"] + [_chunk(added, "CTR-01", "01. 목적", "계약 목적을 정한다.")]}
+    monkeypatch.setitem(RESPONSES, NEW, changed)
+    assert added not in list_baseline_docs(NEW)["document_ids"]       # 캐시된 기준선
+    assert loader.refresh_remote(NEW) is True
+    assert added in list_baseline_docs(NEW)["document_ids"]
+    assert get_section(added, "CTR-01")["text"] == "계약 목적을 정한다."
