@@ -117,3 +117,14 @@ Agent 3은 `source`에 A1/A2 결과 ID·답변 ID·단가표 ID·견적 연결·
 실제 GPT 합성 시나리오: `CR-UI-5E9D48D8`. 요청 항목화, 범위 검토, PM 답변 2회, 재산정, 협의 메일·변경합의서 초안 생성, 일정 미산정 확인 후 최종 검토 저장을 화면에서 확인했다. 모델 호출 시도는 총 29회였다. 결과 8.5 MD·판매가 5,500,000원은 합성 기준의 테스트 값이며 실제 견적이나 계약 승인으로 사용하지 않는다. 이 테스트 이후 비차단 제안의 PM 질문 승격을 막는 회귀 보완을 추가했다.
 
 기존 로컬 Backend `dev`에는 추가 coordination API가 없어 실제 BE E2E는 수행하지 않았다. 서버 간 토큰 설정만으로 해당 API 지원이 생기는 것은 아니다. 로컬 화면에는 ‘로컬 저장 · 백엔드 미연결’을 표시한다.
+
+## 2026-11-13: Backend D PM 수정본 재생성 연결
+
+이 절은 현재 작업 트리의 추가 계약이며 배포 완료 선언이 아니다.
+
+- D의 기존 견적 PATCH가 같은 트랜잭션에서 연결 Run의 Agent 3 결과를 새 revision으로 저장한다. 수정 결과는 `source.pm_edit_id`를 포함하고 이전 documents/draft와 최종 검토 묶음을 비운다. 원본 결과·질문·호출 예산은 보존한다.
+- AI `Agent3Source.pm_edit_id`는 선택 필드다. 총괄은 이 결과를 기존 조회로 읽고 `draft_documents`를 선택할 수 있다. 작업 분해·공수 추정 모델을 다시 호출하지 않고 수정 스냅샷을 복원하여 문안 모델을 호출한다. 새 결과에도 pm_edit_id를 보존한다.
+- 클라이언트는 PATCH 후 기존 `/api/v2/runs/{runId}/supervisor/execute`로 이어 실행한다. 별도 PM 수정 전용 실행 API는 추가하지 않는다.
+- 고정 단가표·공수 기준이 바뀌면 이전 복원 결과를 재사용하지 않는다. Backend 실제 단가표 UUID와 AI 계산 도구의 동일 버전/단가 구성이 전제다.
+- E 전달 전 문안 수정 후의 재승인은 D 공개 `POST /api/v1/estimates/proposals/{proposalVersionId}/approval`을 쓴다. 예상 문안 해시·권한·DB 금액을 검증하며 옛 승인 행은 SUPERSEDED로 보존한다. 이 API가 총괄의 최초 최종 검토를 대체하는 것은 아니다.
+- 근거: Backend `docs/estimate-run-integration.md`에 공개 D 4개, 공통 내부 Run 및 AI 경로, 오류/SQL/검증 경계를 정리했다. 실제 외부 LLM·배포 환경·브라우저 E2E는 별도 검증 대상이다.

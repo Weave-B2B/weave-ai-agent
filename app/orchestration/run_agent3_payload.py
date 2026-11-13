@@ -22,6 +22,7 @@ class Agent3Source(_M):
     quote_links: dict[str, list[str]] = Field(default_factory=dict)
     rate_hash: str
     effort_hash: str
+    pm_edit_id: str | None = None
 
 
 class CustomerDocumentDraft(_M):
