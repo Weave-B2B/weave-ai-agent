@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     vector_db_url: str = ""          # 예: postgresql://weave:weave@localhost:5433/weave_vector (weave-infra 기본값)
     # 문서 색인 (app.indexing). 로컬은 weave-infra LocalStack (S3_ENDPOINT=http://localhost:4566)
     s3_endpoint: str = ""
+    s3_access_key_id: str = ""      # 비우면 boto3 기본 자격 증명(환경 변수·~/.aws·IAM 역할). LocalStack은 아무 값(test)
+    s3_secret_access_key: str = ""
     s3_region: str = "ap-northeast-2"
     s3_source_bucket: str = "weave-dev-files"
     s3_result_bucket: str = "weave-dev-files"

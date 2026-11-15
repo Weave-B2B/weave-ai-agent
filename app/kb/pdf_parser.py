@@ -25,11 +25,15 @@ class PdfExtractError(RuntimeError):
     """추출 실패 (failedStage=EXTRACT)."""
 
 
+class PdfToolMissing(PdfExtractError):
+    """서버에 pdftotext가 없음 — 문서 문제가 아니라 설치하면 같은 문서로 다시 할 수 있다."""
+
+
 def extract_pages(pdf: Path | bytes) -> list[str]:
     """pdftotext -layout. 마지막 \\f 뒤의 빈 조각은 페이지가 아니다."""
     exe = shutil.which("pdftotext")
     if exe is None:
-        raise PdfExtractError("pdftotext(poppler) 없음 — brew install poppler / apt install poppler-utils")
+        raise PdfToolMissing("pdftotext(poppler) 없음 — brew install poppler / apt install poppler-utils")
     data = pdf if isinstance(pdf, bytes) else Path(pdf).read_bytes()
     run = subprocess.run([exe, "-layout", "-enc", "UTF-8", "-", "-"], input=data, capture_output=True, timeout=120)
     if run.returncode != 0:
