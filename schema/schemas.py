@@ -18,6 +18,8 @@ SCHEMA_VERSION = "0.3.0"
 # ================= 열거형 =================
 Stage = Literal["agent1", "agent2", "agent3"]
 ItemType = Literal["function", "constraint", "deadline", "dependency", "question"]
+# function 항목의 하위 분류. 범위 판단(②)·공수 산정(③)에서 신규/변경/화면/비기능을 구분하는 데 쓴다
+ChangeKind = Literal["feature_add", "feature_change", "ui_content", "non_functional"]
 Intent = Literal["change_request", "estimate_only", "confirmation", "defect", "issue_report",
                  "status_check", "constraint", "estimate_request"]
 ScopeLabel = Literal["in_scope", "out_of_scope", "unclear", "approved_change"]
@@ -112,6 +114,10 @@ class Item(_M):
     conditional_followup: Optional[str] = Field(
         None,
         description="원문상 범위 밖이면 추가를 희망하는 조건부 후속 요청과 원문 근거",
+    )
+    change_kind: Optional[ChangeKind] = Field(
+        None,
+        description="function 항목만: feature_add(신규 기능)·feature_change(기존 기능 변경)·ui_content(화면·문구·디자인)·non_functional(성능·보안·호환성). 그 외 유형은 null",
     )
 
 

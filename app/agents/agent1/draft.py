@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from schema.schemas import Intent, ItemType
+from schema.schemas import ChangeKind, Intent, ItemType
 
 
 class _DraftModel(BaseModel):
@@ -22,6 +22,7 @@ class DraftItem(_DraftModel):
     quotes: list[str] = Field(default_factory=list)
     inferred: bool = False
     conditional_followup: str | None = None
+    change_kind: ChangeKind | None = None
 
 
 class DraftQuestion(_DraftModel):

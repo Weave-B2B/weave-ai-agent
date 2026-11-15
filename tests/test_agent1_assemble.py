@@ -536,3 +536,20 @@ def test_focused_ambiguous_question_round_trip() -> None:
     assert assembled.questions[0].stage == expected.questions[0].stage
     assert assembled.questions[0].blocking == expected.questions[0].blocking
     assert assembled.questions[0].item_ids == expected.questions[0].item_ids == []
+
+
+def test_change_kind_is_kept_for_function_and_dropped_for_other_types() -> None:
+    message = "리뷰 기능을 추가해주세요. 월말까지 필요합니다."
+    draft = Agent1Draft(
+        items=[
+            DraftItem(item_type="function", intent="change_request", text="리뷰 기능 추가",
+                      quotes=["리뷰 기능을 추가해주세요."], change_kind="feature_add"),
+            DraftItem(item_type="constraint", intent="constraint", text="월말까지 필요",
+                      quotes=["월말까지 필요합니다."], change_kind="feature_change"),
+        ]
+    )
+
+    output, report = assemble(_input(message), draft, feature_search=None)
+
+    assert [item.change_kind for item in output.items] == ["feature_add", None]
+    assert "CASE-TEST-2: change_kind dropped for constraint" in report.warnings
