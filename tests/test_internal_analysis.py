@@ -125,10 +125,12 @@ def test_report_retries_only_retryable_errors(env, monkeypatch):
     client.post("/internal/v1/analyses", json=_body(), headers={"X-Internal-Token": TOKEN})
     assert len(rec.calls) == internal_analysis_routes.REPORT_RETRIES
 
+    # 결과가 거부되면(4xx) 재시도하지 않고 실패로 한 번 알린다 — QUEUED로 남지 않게
     rec = Recorder(AnalysisReportError("400", retryable=False, status_code=400))
     monkeypatch.setattr(internal_analysis_routes, "build_client", lambda _s: rec)
     client.post("/internal/v1/analyses", json=_body(), headers={"X-Internal-Token": TOKEN})
-    assert len(rec.calls) == 1
+    assert [kind for kind, *_ in rec.calls] == ["complete", "fail"]
+    assert rec.calls[1][2] == ("OUTPUT_INVALID", False)
 
 
 # ---- 결과 전달 클라이언트 ----
@@ -153,3 +155,26 @@ def test_client_error_classification(code, retryable):
     with pytest.raises(AnalysisReportError) as e:
         _client(lambda r: httpx.Response(code, text="x")).complete(uuid4(), {})
     assert e.value.retryable is retryable
+
+
+def test_impact_requires_agent3_input(env):
+    client, rec = env
+    body = {"aiAnalysisId": str(uuid4()), "analysisType": "IMPACT", "input": INPUTS[CASE]}   # Agent2 입력은 IMPACT가 아니다
+    assert client.post("/internal/v1/analyses", json=body, headers={"X-Internal-Token": TOKEN}).status_code == 422
+    assert rec.calls == []
+
+
+def test_impact_runs_agent3_and_reports(env, monkeypatch):
+    client, rec = env
+    seen = []
+    monkeypatch.setattr(internal_analysis_routes, "run_impact_analysis", lambda ai_id, inp: seen.append((ai_id, inp)))
+    monkeypatch.setattr(internal_analysis_routes.Agent3Input, "model_validate", classmethod(lambda cls, value: _Stub()))
+    body = {"aiAnalysisId": str(uuid4()), "analysisType": "IMPACT", "input": {"any": "value"}}
+    resp = client.post("/internal/v1/analyses", json=body, headers={"X-Internal-Token": TOKEN})
+    assert resp.status_code == 202
+    assert len(seen) == 1
+
+
+class _Stub:
+    class context:
+        baseline_id = "BL"

@@ -1,14 +1,34 @@
-pydantic>=2.10,<3
-pydantic-settings
+# ==========================================
+# 1. Core API & Configuration
+# ==========================================
 fastapi
 uvicorn[standard]
+pydantic>=2.10,<3
+pydantic-settings
+
+# ==========================================
+# 2. AWS & LLM Provider
+# ==========================================
+boto3>=1.35  # AWS Bedrock Converse provider
+
+# ==========================================
+# 3. Database & Vector Search
+# ==========================================
+psycopg[binary]>=3.2             # vector-db
+pgvector>=0.3
+
+# ==========================================
+# 4. Monitoring & Observability
+# ==========================================
+prometheus-fastapi-instrumentator>=8.1,<9
+
+# ==========================================
+# 5. Frontend / Interactive Demo
+# ==========================================
+streamlit>=1.40,<2  #삭제예정
+
+# ==========================================
+# 6. Testing
+# ==========================================
 pytest
 httpx
-boto3>=1.35  # AWS Bedrock Converse provider
-streamlit>=1.40,<2  # Agent1 interactive demo
-psycopg[binary]>=3.2  # vector-db (VECTOR_STORE=pgvector)
-pgvector>=0.3
-# 구현 단계에서 추가
-# langgraph, langgraph-checkpoint-postgres   # 오케스트레이션 부모 그래프·체크포인터
-# LLM SDK, PDF 추출기(pdftotext-layout-v1과 같은 결과가 나오는 것)
-prometheus-fastapi-instrumentator>=8.1,<9

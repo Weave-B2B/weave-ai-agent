@@ -251,6 +251,12 @@ def assemble(
         elif draft_item.item_type == "function" and intent in {"constraint", "estimate_request"}:
             report.warnings.append(f"{item_id}: function intent requires review")
 
+        change_kind = None
+        if draft_item.item_type == "function":
+            change_kind = draft_item.change_kind
+        elif draft_item.change_kind is not None:
+            report.warnings.append(f"{item_id}: change_kind dropped for {draft_item.item_type}")
+
         if draft_item.item_type == "deadline":
             item_text = infer_month_end_deadline(draft_item.text, reference_date)
         elif draft_item.item_type == "function":
@@ -293,6 +299,7 @@ def assemble(
                         None,
                     )
                 ),
+                change_kind=change_kind,
             )
         )
 

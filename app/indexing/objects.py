@@ -30,9 +30,11 @@ class DirStore:
 
 
 class S3Store:
-    def __init__(self, endpoint_url: str | None = None, region: str = "ap-northeast-2"):
+    def __init__(self, endpoint_url: str | None = None, region: str = "ap-northeast-2",
+                 access_key_id: str | None = None, secret_access_key: str | None = None):
         import boto3
-        self.s3 = boto3.client("s3", endpoint_url=endpoint_url or None, region_name=region)
+        keys = {"aws_access_key_id": access_key_id, "aws_secret_access_key": secret_access_key} if access_key_id and secret_access_key else {}
+        self.s3 = boto3.client("s3", endpoint_url=endpoint_url or None, region_name=region, **keys)
 
     def get(self, bucket: str, key: str) -> bytes:
         return self.s3.get_object(Bucket=bucket, Key=key)["Body"].read()

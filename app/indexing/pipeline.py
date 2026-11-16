@@ -13,7 +13,7 @@ import logging
 from app.embed.base import Embedder
 from app.indexing.messages import IndexRequest, IndexResult, ObjectRef
 from app.indexing.objects import ObjectStore
-from app.kb.pdf_parser import EXTRACTION_VERSION, PdfExtractError, parse_pdf, to_chunks
+from app.kb.pdf_parser import EXTRACTION_VERSION, PdfExtractError, PdfToolMissing, parse_pdf, to_chunks
 from app.kb.vector_store import IndexConflict, PgVectorStore, build_pg_index, chunk_text, profile_id, text_hash
 
 log = logging.getLogger(__name__)
@@ -67,6 +67,8 @@ def _run(req, objects, embedder, store, source_bucket, result_bucket, profile) -
         raise _Fail("EXTRACT", "SOURCE_CHECKSUM_MISMATCH", False, "원본 SHA-256이 요청과 다름")
     try:
         pages, secs = parse_pdf(pdf)
+    except PdfToolMissing as exc:
+        raise _Fail("EXTRACT", "EXTRACT_TOOL_MISSING", True, str(exc)) from exc
     except PdfExtractError as exc:
         raise _Fail("EXTRACT", "EXTRACT_FAILED", False, str(exc)) from exc
     if not secs:

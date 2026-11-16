@@ -17,7 +17,7 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.alias_generators import to_camel
-from schema.schemas import Agent2Input
+from schema.schemas import Agent2Input, Agent3Input
 
 from app.agents.base import AgentFailure
 from app.core.config import settings
@@ -39,8 +39,8 @@ REPORT_BACKOFF_SEC = 2.0
 class AnalysisRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
     ai_analysis_id: UUID
-    analysis_type: Literal["SCOPE"]
-    input: Agent2Input
+    analysis_type: Literal["SCOPE", "IMPACT"]      # SCOPE = Agent2 범위 분석, IMPACT = Agent3 영향 산정
+    input: dict
 
 
 class AnalysisAccepted(BaseModel):
@@ -59,9 +59,14 @@ def _require_token(token: Optional[str]) -> None:
 def request_analysis(req: AnalysisRequest, background: BackgroundTasks,
                      x_internal_token: Optional[str] = Header(None)) -> AnalysisAccepted:
     _require_token(x_internal_token)
-    if not req.input.context.baseline_id:
+    try:
+        inp = (Agent2Input if req.analysis_type == "SCOPE" else Agent3Input).model_validate(req.input)
+    except ValidationError as exc:
+        raise HTTPException(422, f"input이 {req.analysis_type} 입력 스키마와 맞지 않습니다: {exc.errors()[:3]}") from None
+    if not inp.context.baseline_id:
         raise HTTPException(422, "context.baseline_id가 필요합니다.")
-    background.add_task(run_scope_analysis, req.ai_analysis_id, req.input)
+    task = run_scope_analysis if req.analysis_type == "SCOPE" else run_impact_analysis
+    background.add_task(task, req.ai_analysis_id, inp)
     return AnalysisAccepted(ai_analysis_id=req.ai_analysis_id)
 
 
@@ -102,6 +107,39 @@ def run_scope_analysis(ai_analysis_id: UUID, inp: Agent2Input) -> None:
     _report(ai_analysis_id, output, failure)
 
 
+def run_impact_analysis(ai_analysis_id: UUID, inp: Agent3Input) -> None:
+    """Agent3(영향 산정)를 실행하고 결과·실패를 백엔드에 보낸다. 범위 분석과 같은 결과 입구를 쓴다."""
+    from app.agents.agent3.agent import LlmAgent3
+    from app.llm.client import build_llm
+
+    failure: Optional[tuple[str, bool]] = None
+    output: Optional[dict] = None
+    try:
+        out = LlmAgent3(build_llm(settings)).run(inp)
+        if out.status == "ERROR" and out.error is not None:
+            failure = (out.error.code, out.error.retryable)
+        else:
+            meta = out.meta.model_copy(update={
+                "result_id": out.meta.result_id or new_result_id("A3", inp.context.case_id),
+                "created_at": out.meta.created_at or now_iso()})
+            output = out.model_copy(update={"meta": meta}).model_dump(mode="json")
+    except AgentFailure as exc:
+        failure = (exc.error.code, exc.error.retryable)
+    except (LlmConfigError, EmbedConfigError):
+        failure = ("INTERNAL_ERROR", False)
+    except ValidationError:
+        failure = ("OUTPUT_INVALID", True)
+    except (ToolInputError, ValueError, KeyError):                  # 없는 단가표·직군 등 입력 문제
+        log.exception("영향 산정 입력 오류 ai_analysis_id=%s", ai_analysis_id)
+        failure = ("INVALID_INPUT", False)
+    except Exception:
+        log.exception("영향 산정 실패 ai_analysis_id=%s", ai_analysis_id)
+        failure = ("INTERNAL_ERROR", True)
+    if failure:
+        log.warning("영향 산정 실패 ai_analysis_id=%s code=%s retryable=%s", ai_analysis_id, *failure)
+    _report(ai_analysis_id, output, failure)
+
+
 def _report(ai_analysis_id: UUID, output: Optional[dict], failure: Optional[tuple[str, bool]]) -> None:
     try:
         client = build_client(settings)
@@ -117,6 +155,10 @@ def _report(ai_analysis_id: UUID, output: Optional[dict], failure: Optional[tupl
                     client.complete(ai_analysis_id, output)
                 return
             except AnalysisReportError as e:
+                if not failure and not e.retryable:      # 백엔드가 결과를 거부함 (검증 실패 등) — QUEUED로 남지 않게 실패로 알린다
+                    log.error("분석 결과가 거부됨 ai_analysis_id=%s status=%s: %s", ai_analysis_id, e.status_code, e)
+                    failure = ("OUTPUT_INVALID", False)
+                    continue
                 if not e.retryable or attempt == REPORT_RETRIES:
                     log.error("분석 결과 전달 실패 ai_analysis_id=%s status=%s: %s", ai_analysis_id, e.status_code, e)
                     return
