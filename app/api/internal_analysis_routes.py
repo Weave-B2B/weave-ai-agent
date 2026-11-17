@@ -110,11 +110,13 @@ def run_scope_analysis(ai_analysis_id: UUID, inp: Agent2Input) -> None:
 def run_impact_analysis(ai_analysis_id: UUID, inp: Agent3Input) -> None:
     """Agent3(영향 산정)를 실행하고 결과·실패를 백엔드에 보낸다. 범위 분석과 같은 결과 입구를 쓴다."""
     from app.agents.agent3.agent import LlmAgent3
+    from app.kb import loader
     from app.llm.client import build_llm
 
     failure: Optional[tuple[str, bool]] = None
     output: Optional[dict] = None
     try:
+        loader.refresh_remote(inp.context.baseline_id or "")    # 현재 기준선에 문서가 더해졌을 수 있다
         out = LlmAgent3(build_llm(settings)).run(inp)
         if out.status == "ERROR" and out.error is not None:
             failure = (out.error.code, out.error.retryable)
@@ -125,6 +127,10 @@ def run_impact_analysis(ai_analysis_id: UUID, inp: Agent3Input) -> None:
             output = out.model_copy(update={"meta": meta}).model_dump(mode="json")
     except AgentFailure as exc:
         failure = (exc.error.code, exc.error.retryable)
+    except BaselineSuperseded:
+        failure = ("VERSION_CONFLICT", False)
+    except BackendKbError:
+        failure = ("RETRIEVAL_UNAVAILABLE", True)
     except (LlmConfigError, EmbedConfigError):
         failure = ("INTERNAL_ERROR", False)
     except ValidationError:
