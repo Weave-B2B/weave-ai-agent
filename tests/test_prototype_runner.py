@@ -24,13 +24,12 @@ def test_fake_default_and_explicit_gemini_presets_ignore_stale_provider_environm
     gemini = run_demo.configuration(selected, environment)
     assert gemini.model == "gemini-2.5-flash-lite" and gemini.api_key == "mock-secret"
     assert "mock-secret" not in repr(gemini)
-    for name in ("AGENT_MODE", "AGENT2_MODE", "LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "GEMINI_API_KEY", "LLM_BASE_URL", "LLM_LOCAL_JSON_MODE", "LLM_FAKE_RESPONSES", "RATE_CARD_FILE", "LLM_MAX_TOKENS"):
+    for name in ("AGENT_MODE", "LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "GEMINI_API_KEY", "LLM_BASE_URL", "LLM_LOCAL_JSON_MODE", "LLM_FAKE_RESPONSES", "RATE_CARD_FILE", "LLM_MAX_TOKENS"):
         monkeypatch.setenv(name, "stale")
     run_demo.apply_environment(gemini)
     import os
     assert os.environ["LLM_PROVIDER"] == "local"
     assert os.environ["AGENT_MODE"] == "llm"
-    assert os.environ["AGENT2_MODE"] == "llm"
     assert os.environ["LLM_BASE_URL"] == run_demo.GEMINI_BASE_URL
     assert os.environ["LLM_FAKE_RESPONSES"] == ""
     assert os.environ["GEMINI_API_KEY"] == "mock-secret"
@@ -57,7 +56,6 @@ def test_ollama_mode_uses_local_defaults(monkeypatch):
     assert os.environ["OLLAMA_BASE_URL"] == "http://localhost:11434"
     assert os.environ["OLLAMA_MODEL"] == "gpt-oss:20b"
     assert os.environ["AGENT_MODE"] == "llm"
-    assert os.environ["AGENT2_MODE"] == "llm"
 
 
 def test_model_and_rate_override_precedence(tmp_path):
@@ -127,10 +125,10 @@ def test_invalid_rate_file_fails_check(tmp_path, capsys):
 
 
 def test_fake_mode_keeps_agent2_on_fixture(monkeypatch):
-    for name in ("AGENT_MODE", "AGENT2_MODE", "LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "GEMINI_API_KEY", "LLM_BASE_URL", "LLM_LOCAL_JSON_MODE",
+    for name in ("AGENT_MODE", "LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "GEMINI_API_KEY", "LLM_BASE_URL", "LLM_LOCAL_JSON_MODE",
                  "LLM_FAKE_RESPONSES", "RATE_CARD_FILE", "LLM_MAX_TOKENS", "LLM_TEMPERATURE", "LLM_READ_TIMEOUT_SEC",
                  "LLM_CONNECT_TIMEOUT_SEC"):
         monkeypatch.setenv(name, "llm")                      # apply_environment가 바꾼 값을 테스트 후 되돌린다
     run_demo.apply_environment(run_demo.configuration(args(), {}))
     import os
-    assert os.environ["AGENT2_MODE"] == "fixture"            # 오프라인 fake 모드는 실제 Agent 2를 부르지 않는다
+    assert os.environ["AGENT_MODE"] == "fixture"            # 오프라인 fake 모드는 실제 에이전트를 부르지 않는다

@@ -41,7 +41,6 @@ def env(monkeypatch):
     rec = Recorder()
     monkeypatch.setattr(settings, "backend_internal_token", TOKEN)
     monkeypatch.setattr(settings, "agent_mode", "fixture")
-    monkeypatch.setattr(settings, "agent2_mode", "fixture")
     monkeypatch.setattr(internal_analysis_routes, "build_client", lambda _s: rec)
     monkeypatch.setattr(internal_analysis_routes, "REPORT_BACKOFF_SEC", 0)
     cached = agent2_routes.get_agent2                    # 테스트가 monkeypatch로 바꿔도 원본 캐시를 비운다

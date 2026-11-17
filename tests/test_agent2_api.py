@@ -17,7 +17,6 @@ CASE = "CR-A-001"
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(settings, "agent_mode", "fixture")       # .env 값과 무관하게
-    monkeypatch.setattr(settings, "agent2_mode", "fixture")
     cached = agent2_routes.get_agent2                       # 테스트가 monkeypatch로 바꿔도 원본 캐시를 비운다
     cached.cache_clear()
     yield TestClient(app)
