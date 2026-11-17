@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+import logging
 from pathlib import Path
 import os
 
@@ -24,9 +25,44 @@ from prototype.rate_routes import router as prototype_rate_router
 from prometheus_fastapi_instrumentator import Instrumentator
 
 
+_log = logging.getLogger("app.startup")
+
+
+def _parse_env_keys(path: Path) -> set[str]:
+    keys: set[str] = set()
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#") and "=" in line:
+            keys.add(line.split("=", 1)[0].strip())
+    return keys
+
+
+def _warn_local_env_drift() -> None:
+    """Warn only when local .env exists and is missing active keys from .env.example or runs in fixture mode."""
+    env_path = Path(".env")
+    if not env_path.is_file():
+        return
+    example_path = Path(".env.example")
+    if example_path.is_file():
+        missing = sorted(_parse_env_keys(example_path) - _parse_env_keys(env_path))
+        if missing:
+            _log.warning("[ENV WARNING] .env.example 대비 누락된 키가 있습니다: %s", ", ".join(missing))
+    fixture_modes = [
+        name for name, val in (
+            ("AGENT_MODE", settings.agent_mode),
+            ("AGENT1_MODE", settings.agent1_mode),
+            ("AGENT2_MODE", settings.agent2_mode),
+        )
+        if val == "fixture"
+    ]
+    if fixture_modes:
+        _log.warning("[ENV WARNING] fixture 모드로 실행 중입니다 (%s). 실제 LLM 테스트 시 llm으로 변경하세요.", ", ".join(fixture_modes))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Validate selected LLM configuration before starting LLM mode."""
+    _warn_local_env_drift()
     if settings.agent_mode == "llm":
         build_llm(settings)
     yield
