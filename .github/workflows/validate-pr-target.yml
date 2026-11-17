@@ -1,0 +1,29 @@
+name: Validate PR Target Branch
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  warn-non-dev-to-main:
+    name: Recommend dev as PR Target
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check head branch for main PR
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" == "dev" || "$HEAD_REF" == release/* ]]; then
+            echo "Release merge ($HEAD_REF -> main) allowed."
+            exit 0
+          fi
+
+          echo "::warning::일반 작업 PR($HEAD_REF -> main)입니다. 작업 브랜치는 'dev'로 PR을 올려주세요. ('main'은 배포 시에만 'dev'에서 머지합니다.)"
+          echo "### ⚠️ PR 타깃 브랜치 권장 안내" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 현재 PR: \`$HEAD_REF\` → \`main\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 팀 규칙상 일반 작업 PR은 **\`dev\`** 브랜치로 올려주세요. (\`main\`은 배포 시에만 \`dev\`에서 머지)" >> "$GITHUB_STEP_SUMMARY"
