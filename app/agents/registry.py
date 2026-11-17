@@ -10,9 +10,6 @@ def build_agents() -> AgentSet:
             from app.agents.agent1.agent import LlmAgent1
             from app.llm.client import build_llm
             agents.agent1 = LlmAgent1(build_llm(settings))
-        if settings.agent2_mode == "llm":               # ②만 실제 LLM으로 (①③은 정답 fixture)
-            from app.llm.client import build_llm
-            agents.agent2 = build_agent2(build_llm(settings))
         return agents
     from app.agents.agent1.agent import LlmAgent1
     from app.llm.client import build_llm

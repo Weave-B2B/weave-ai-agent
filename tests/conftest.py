@@ -32,8 +32,7 @@ def _no_embedding_api(monkeypatch):
     from app.tools import doc_tools
     monkeypatch.setattr(settings, "embed_provider", "none")
     monkeypatch.setattr(settings, "vector_store", "local")     # .env의 VECTOR_STORE=pgvector가 테스트에 섞이지 않게
-    monkeypatch.setattr(settings, "agent_mode", "fixture")     # .env의 AGENT_MODE·AGENT2_MODE=llm이 실제 LLM을 부르지 않게
-    monkeypatch.setattr(settings, "agent2_mode", "fixture")
+    monkeypatch.setattr(settings, "agent_mode", "fixture")     # .env의 AGENT_MODE=llm이 실제 LLM을 부르지 않게
     doc_tools.vector_backend.cache_clear()
     yield
     doc_tools.vector_backend.cache_clear()

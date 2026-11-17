@@ -12,7 +12,6 @@ from test_agent2 import INPUTS
 def client(monkeypatch):
     monkeypatch.setattr(settings, "agent_mode", "fixture")
     monkeypatch.setattr(settings, "agent1_mode", "fixture")
-    monkeypatch.setattr(settings, "agent2_mode", "fixture")
     agent1_routes.get_agent1.cache_clear()
     agent2_routes.get_agent2.cache_clear()
     yield TestClient(app)
