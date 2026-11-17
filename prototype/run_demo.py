@@ -77,7 +77,6 @@ def apply_environment(config: RunConfig, responses: Path | None = None) -> None:
     """Configure the shared factory for the selected provider and enable real Agent execution."""
     os.environ.update({
         "AGENT_MODE": "llm" if config.mode in ("gemini", "openai", "ollama") else "fixture",
-        "AGENT2_MODE": "llm" if config.mode in ("gemini", "openai", "ollama") else "fixture",
         "LLM_PROVIDER": "local" if config.provider == "gemini" else ("openai" if config.provider == "openai" else ("ollama" if config.provider == "ollama" else "fake")),
         "LLM_MODEL": config.model,
         "LLM_BASE_URL": GEMINI_BASE_URL if config.provider == "gemini" else "",

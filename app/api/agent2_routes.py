@@ -1,6 +1,6 @@
 """Agent2 단독 실행 엔드포인트 (화면·BE 연동 확인용). 공통 오케스트레이션(/cases)과 별개다.
 
-AGENT2_MODE=llm(또는 AGENT_MODE=llm)이면 실제 에이전트, 아니면 데이터셋 정답(fixture)을 돌려준다.
+AGENT_MODE=llm이면 실제 에이전트, 아니면 데이터셋 정답(fixture)을 돌려준다.
 결과 ID·생성 시각은 호출부인 이 API가 발급한다 (공통기준: LLM은 실행 ID를 만들지 않는다).
 결과는 저장하지 않는다 — 저장은 BE 담당이며 DB 연결 전이다.
 """
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/agent2", tags=["Agent2"])
 
 @lru_cache
 def get_agent2():
-    if "llm" in (settings.agent_mode, settings.agent2_mode):
+    if settings.agent_mode == "llm":
         from app.agents.registry import build_agent2
         from app.llm.client import build_llm
         return build_agent2(build_llm(settings))

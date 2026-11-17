@@ -51,7 +51,6 @@ def _warn_local_env_drift() -> None:
         name for name, val in (
             ("AGENT_MODE", settings.agent_mode),
             ("AGENT1_MODE", settings.agent1_mode),
-            ("AGENT2_MODE", settings.agent2_mode),
         )
         if val == "fixture"
     ]
