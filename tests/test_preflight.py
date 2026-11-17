@@ -21,3 +21,30 @@ def test_pending_review_waits_instead_of_calling():
     # FX-01: 검토 전이면 오류가 아니라 대기
     c = next(c for c in jl(EVAL / "agent3" / "contract_cases.jsonl") if c["fixture_id"] == "FX-01-PENDING")
     assert preflight_a3(c["input"]).code == "WAITING_REVIEW"
+
+
+def test_accepts_backend_uuid_item_ids():
+    import copy
+    from uuid import uuid4
+
+    c = next(c for c in jl(EVAL / "agent3" / "contract_cases.jsonl") if c["invoke_agent3"])
+    raw = copy.deepcopy(c["input"])
+    case_uuid = str(uuid4())
+    id_map = {it["item_id"]: str(uuid4()) for it in raw["items"]}
+    raw["context"]["case_id"] = case_uuid
+    raw["a2_result"]["context"]["case_id"] = case_uuid
+    for it in raw["items"]:
+        it["case_id"] = case_uuid
+        it["item_id"] = id_map[it["item_id"]]
+    for cst in raw.get("constraints", []):
+        cst["case_id"] = case_uuid
+        cst["item_id"] = str(uuid4())
+    for a in raw["a2_result"]["assessments"]:
+        a["item_id"] = id_map[a["item_id"]]
+    for q in raw["a2_result"].get("questions", []):
+        q["case_id"] = case_uuid
+        q["item_ids"] = [id_map.get(i, i) for i in q["item_ids"]]
+    for r in raw["pm_review"]["items"]:
+        r["item_id"] = id_map[r["item_id"]]
+
+    assert preflight_a3(raw) is None

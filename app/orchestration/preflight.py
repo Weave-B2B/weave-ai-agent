@@ -5,11 +5,23 @@
   WAITING_REVIEW → PM 검토 전. 오류가 아니라 대기
 """
 from dataclasses import dataclass
+from uuid import UUID
 
 from schema.schemas import Agent3Input
 from app.agents.agent3.contracts import ProvisionalAgent3Input
 
 from app.kb.loader import baselines, documents, superseded_by
+
+
+def _belongs_to_case(item_id: str, case_id: str) -> bool:
+    """Allow both legacy '{case_id}-...' fixture IDs and backend-issued UUID item IDs."""
+    if item_id.startswith(case_id + "-"):
+        return True
+    try:
+        UUID(item_id)
+        return True
+    except ValueError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -33,7 +45,7 @@ def preflight_a3(raw: dict | Agent3Input) -> Gate | None:
     if bl is None or bl["project_id"] != ctx.project_id or bl["as_of"] != ctx.baseline_as_of:
         return Gate("INVALID_INPUT", "baseline 불일치")
     for it in inp.items + inp.constraints:
-        if it.case_id != ctx.case_id or not it.item_id.startswith(ctx.case_id + "-"):
+        if it.case_id != ctx.case_id or not _belongs_to_case(it.item_id, ctx.case_id):
             return Gate("INVALID_INPUT", f"다른 case 항목 {it.item_id}")
     for a in a2.assessments:
         for ev in a.evidence:  # 모든 문서 유형(변경합의서 포함)을 기준선 문서 목록과 프로젝트로 격리
@@ -72,7 +84,7 @@ def preflight_provisional(inp: ProvisionalAgent3Input) -> Gate | None:
     if len(assessed) != len(set(assessed)) or not set(assessed) <= ids:
         return Gate("INVALID_INPUT", "unknown or duplicate assessment")
     for item in inp.items + inp.constraints:
-        if item.case_id != ctx.case_id or not item.item_id.startswith(ctx.case_id + "-"):
+        if item.case_id != ctx.case_id or not _belongs_to_case(item.item_id, ctx.case_id):
             return Gate("INVALID_INPUT", "foreign case item")
     for question in a2.questions:
         if question.case_id != ctx.case_id or not set(question.item_ids) <= ids:
