@@ -120,7 +120,7 @@ Google AI Studio의 OpenAI 호환 API를 Local provider로 사용할 때는 `.en
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `AGENT_MODE` | `fixture` | 에이전트 실행 모드. 현재 정상적으로 사용할 수 있는 모드는 `fixture`입니다. |
+| `AGENT_MODE` | `fixture` | 에이전트 실행 모드. `fixture`는 데이터셋 정답, `llm`은 Agent1·2·3 모두 실제 LLM 호출 |
 | `DATA_DIR` | `data/` | 기준선, 요율표, 일정 및 문서 데이터 경로 |
 | `EVAL_DIR` | `eval/dataset/` | Fixture가 읽는 평가 데이터셋 경로 |
 | `STAGE_TIMEOUT_SEC` | `60` | 오케스트레이션 단계별 제한 시간(초) |
@@ -128,8 +128,6 @@ Google AI Studio의 OpenAI 호환 API를 Local provider로 사용할 때는 `.en
 | `LLM_MODEL` | 빈 문자열 | 향후 실제 LLM 연결을 위한 설정값. |
 | `LLM_API_KEY` | 빈 문자열 | 향후 실제 LLM 연결을 위한 설정값. |
 | `DATABASE_URL` | 빈 문자열 | 향후 DB 체크포인터·영속 저장소 연결을 위한 설정값. 현재 미사용 |
-
-`AGENT_MODE`를 `llm`로 설정해도 실제 LLM 연동이 완료된 것은 아닙니다. 실제 에이전트 구현 및 LLM 클라이언트 연결 전에는 기본값인 `fixture`를 사용하세요.
 
 `AGENT_MODE`는 에이전트를 fixture로 쓸지(`fixture`) 실제 LLM 에이전트로 쓸지(`llm`)를 고르고, `LLM_PROVIDER`는 실제 에이전트가 쓸 LLM(`fake`·`local`·`bedrock`)을 고릅니다. 서로 다른 축입니다.
 

@@ -190,8 +190,7 @@ flowchart TD
 
 | 설정 | 의미 |
 |---|---|
-| `AGENT_MODE` | `fixture`이면 데이터셋 정답을 반환, `llm`이면 실제 에이전트 |
-| `AGENT1_MODE` | fixture 모드에서 Agent 1만 `llm`으로 실행 |
+| `AGENT_MODE` | `fixture`이면 데이터셋 정답을 반환, `llm`이면 Agent 1·2·3 모두 실제 에이전트 |
 | `VECTOR_STORE` | `pgvector`이면 `psycopg`, `pgvector` 패키지와 DB가 필요 |
 | `RETRIEVAL_MODE` | `hybrid`, `vector`, `lexical` |
 

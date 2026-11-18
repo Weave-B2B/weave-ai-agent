@@ -47,15 +47,8 @@ def _warn_local_env_drift() -> None:
         missing = sorted(_parse_env_keys(example_path) - _parse_env_keys(env_path))
         if missing:
             _log.warning("[ENV WARNING] .env.example 대비 누락된 키가 있습니다: %s", ", ".join(missing))
-    fixture_modes = [
-        name for name, val in (
-            ("AGENT_MODE", settings.agent_mode),
-            ("AGENT1_MODE", settings.agent1_mode),
-        )
-        if val == "fixture"
-    ]
-    if fixture_modes:
-        _log.warning("[ENV WARNING] fixture 모드로 실행 중입니다 (%s). 실제 LLM 테스트 시 llm으로 변경하세요.", ", ".join(fixture_modes))
+    if settings.agent_mode == "fixture":
+        _log.warning("[ENV WARNING] fixture 모드로 실행 중입니다 (AGENT_MODE). 실제 LLM 테스트 시 llm으로 변경하세요.")
 
 
 @asynccontextmanager

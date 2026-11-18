@@ -213,7 +213,7 @@ POST /agent1/items
 
 실행 모드는 다음 우선순위로 결정한다.
 
-1. `agent_mode=llm` 또는 `agent1_mode=llm`이면 실제 LLM Agent 1 실행
+1. `agent_mode=llm`이면 실제 LLM Agent 1 실행
 2. 그 외에는 fixture Agent 1 실행
 
 `/prototype-lab/agent1`은 로컬 프로토타입 전용 공급자 선택 API이며, `/agent1/items`는 일반 백엔드 연동용 공개 라우터이다.
