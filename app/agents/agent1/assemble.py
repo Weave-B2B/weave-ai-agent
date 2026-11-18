@@ -115,7 +115,7 @@ def normalize_confirmation_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1
                 question.quote or "",
             ) if part
         )
-        if not is_confirmation_request(question_text) and not is_confirmation_request(source):
+        if not is_confirmation_request(question_text):
             filtered_questions.append(question)
     normalized.questions = filtered_questions
     return normalized
