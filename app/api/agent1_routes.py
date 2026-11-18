@@ -21,7 +21,7 @@ router = APIRouter(prefix="/agent1", tags=["Agent1"])
 
 @lru_cache
 def get_agent1():
-    if "llm" in (settings.agent_mode, settings.agent1_mode):
+    if settings.agent_mode == "llm":
         from app.agents.agent1.agent import LlmAgent1
         return LlmAgent1(build_llm(settings))
     from app.agents.fixture import FixtureAgent1, load_chain

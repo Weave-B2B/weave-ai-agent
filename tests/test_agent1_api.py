@@ -39,7 +39,6 @@ DRAFT = {
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(settings, "agent_mode", "fixture")
-    monkeypatch.setattr(settings, "agent1_mode", "fixture")
     cached = agent1_routes.get_agent1
     cached.cache_clear()
     yield TestClient(app)

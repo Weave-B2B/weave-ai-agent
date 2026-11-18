@@ -5,12 +5,7 @@ from app.core.config import settings
 def build_agents() -> AgentSet:
     if settings.agent_mode == "fixture":
         from app.agents.fixture import fixture_agents
-        agents = fixture_agents()
-        if settings.agent1_mode == "llm":               # ①만 실제 LLM으로 (②③은 정답 fixture)
-            from app.agents.agent1.agent import LlmAgent1
-            from app.llm.client import build_llm
-            agents.agent1 = LlmAgent1(build_llm(settings))
-        return agents
+        return fixture_agents()
     from app.agents.agent1.agent import LlmAgent1
     from app.llm.client import build_llm
     from app.agents.agent3.agent import LlmAgent3
