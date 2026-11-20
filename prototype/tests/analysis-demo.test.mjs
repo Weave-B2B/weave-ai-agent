@@ -374,3 +374,17 @@ test('calc-v1 list and final review display supply amount rather than labor subt
   assert.match(html,/1,650,000원/);
   assert.match(html,/잠정/);
 });
+
+test('schedule plan summary shows backend completion date and impact, or the reason it was not calculated', async () => {
+  const { planSummary } = await import('../analysis-demo.js');
+  const html = planSummary({ plan: { formula_version: 'schedule-v1', change_start_date: '2026-11-24', estimated_end_date: '2026-12-01',
+    baseline: { end: '2026-11-26' }, planned_end: '2026-11-26', impact_business_days: 2, impact_vs_baseline_business_days: 2, change_hours: '20',
+    changed: { tasks: [{ id: 'E1L1', person: 'be-1', hours: '16', start: '2026-11-24', end: '2026-11-25' }] } } });
+  assert.match(html, /2026-12-01 \(기존 2026-11-26\)/);
+  assert.match(html, /2영업일 \(계획 완료일 2026-11-26 기준\)/);
+  assert.match(html, /be-1/);
+  const missing = planSummary({ plan: null, unavailable_reason: '인력 미배정', unassigned: ['리뷰 API(BE): 담당자 미지정'] });
+  assert.match(missing, /미계산: 인력 미배정/);
+  assert.match(missing, /담당자 미지정/);
+  assert.equal(planSummary(null), '');
+});
