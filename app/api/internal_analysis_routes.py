@@ -64,16 +64,29 @@ def request_analysis(req: AnalysisRequest, background: BackgroundTasks,
                      x_internal_token: Optional[str] = Header(None)) -> AnalysisAccepted:
     _require_token(x_internal_token)
     try:
-        inp = INPUT_MODELS[req.analysis_type].model_validate(req.input)
-    except ValidationError as exc:
-        raise HTTPException(422, f"input이 {req.analysis_type} 입력 스키마와 맞지 않습니다: {exc.errors()[:3]}") from None
-    # 항목 분해는 요청 원문만 보므로 기준선이 없어도 된다. 범위 분석·영향 산정은 기준선 문서로 판단한다
-    if req.analysis_type != "DECOMPOSITION" and not inp.context.baseline_id:
-        raise HTTPException(422, "context.baseline_id가 필요합니다.")
-    task = {"DECOMPOSITION": run_decomposition, "SCOPE": run_scope_analysis,
-            "IMPACT": run_impact_analysis}[req.analysis_type]
+        task, inp = resolve(req)
+    except InvalidAnalysisRequest as exc:
+        raise HTTPException(422, str(exc)) from None
     background.add_task(task, req.ai_analysis_id, inp)
     return AnalysisAccepted(ai_analysis_id=req.ai_analysis_id)
+
+
+class InvalidAnalysisRequest(ValueError):
+    """다시 보내도 처리할 수 없는 요청 (입력 스키마 불일치 등)"""
+
+
+def resolve(req: AnalysisRequest):
+    """요청 → (실행 함수, 검증된 입력). HTTP 입구와 SQS 워커가 같이 쓴다."""
+    try:
+        inp = INPUT_MODELS[req.analysis_type].model_validate(req.input)
+    except ValidationError as exc:
+        raise InvalidAnalysisRequest(f"input이 {req.analysis_type} 입력 스키마와 맞지 않습니다: {exc.errors()[:3]}") from None
+    # 항목 분해는 요청 원문만 보므로 기준선이 없어도 된다. 범위 분석·영향 산정은 기준선 문서로 판단한다
+    if req.analysis_type != "DECOMPOSITION" and not inp.context.baseline_id:
+        raise InvalidAnalysisRequest("context.baseline_id가 필요합니다.")
+    task = {"DECOMPOSITION": run_decomposition, "SCOPE": run_scope_analysis,
+            "IMPACT": run_impact_analysis}[req.analysis_type]
+    return task, inp
 
 
 def run_decomposition(ai_analysis_id: UUID, inp: Agent1Input) -> None:
@@ -183,6 +196,9 @@ def run_impact_analysis(ai_analysis_id: UUID, inp: Agent3Input) -> None:
 
 
 def _report(ai_analysis_id: UUID, output: Optional[dict], failure: Optional[tuple[str, bool]]) -> None:
+    if settings.result_transport == "sqs":
+        _publish(ai_analysis_id, output, failure)
+        return
     try:
         client = build_client(settings)
     except ValueError:
@@ -207,3 +223,16 @@ def _report(ai_analysis_id: UUID, output: Optional[dict], failure: Optional[tupl
                 time.sleep(REPORT_BACKOFF_SEC * attempt)
     finally:
         client.close()
+
+
+def _publish(ai_analysis_id: UUID, output: Optional[dict], failure: Optional[tuple[str, bool]]) -> None:
+    """결과 큐로 보낸다. 발행 실패는 그대로 던진다 — 워커가 요청 메시지를 지우지 않아 큐가 다시 처리한다."""
+    from app.messaging import sqs
+
+    client = sqs.shared_client(settings)
+    try:
+        sqs.publish(client, settings.sqs_analysis_result_url, sqs.analysis_result(ai_analysis_id, output, failure))
+    except sqs.MessageTooLarge as e:                  # 결과가 너무 크면 QUEUED로 남지 않게 실패로 알린다
+        log.error("분석 결과가 큐 한도를 넘음 ai_analysis_id=%s: %s", ai_analysis_id, e)
+        sqs.publish(client, settings.sqs_analysis_result_url,
+                    sqs.analysis_result(ai_analysis_id, None, ("OUTPUT_INVALID", False)))
