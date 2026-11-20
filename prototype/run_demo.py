@@ -77,6 +77,7 @@ def apply_environment(config: RunConfig, responses: Path | None = None) -> None:
     """Configure the shared factory for the selected provider and enable real Agent execution."""
     os.environ.update({
         "AGENT_MODE": "llm" if config.mode in ("gemini", "openai", "ollama") else "fixture",
+        "CALCULATION_MODE": "fixture" if config.mode == "fake" else "backend",
         "LLM_PROVIDER": "local" if config.provider == "gemini" else ("openai" if config.provider == "openai" else ("ollama" if config.provider == "ollama" else "fake")),
         "LLM_MODEL": config.model,
         "LLM_BASE_URL": GEMINI_BASE_URL if config.provider == "gemini" else "",
@@ -138,7 +139,7 @@ def main(argv=None) -> None:
 
         print(f"Local prototype: http://{args.host}:{args.port}/prototype/")
         print("Offline synthetic AI responses." if config.mode == "fake" else "API mode: prototype Agent 1-3 execution uses configured provider credentials; no fake fallback.")
-        print("Code calculation, PM review, and model-generated internal draft; Agent 1-3 are real in API mode." if config.mode != "fake" else "Code calculation, PM review, and Agent responses use dataset fixtures in fake mode.")
+        print("Backend calculation, PM review, and model-generated internal draft; Agent 1-3 are real in API mode." if config.mode != "fake" else "Offline fixed calculation and Agent responses; unsupported inputs require the real Backend.")
         print("Agent 1-3: real API agents." if config.mode != "fake" else "Agent 1-3: dataset fixtures.")
         uvicorn.run(
             "app.main:app",

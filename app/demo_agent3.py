@@ -14,6 +14,7 @@ from app.agents.base import AgentFailure
 from app.core.config import ROOT, Settings, settings as env_settings
 from app.llm.client import FakeLlm, build_llm
 from app.tools.errors import ToolInputError
+from app.tools.backend_calc import BackendCalcError
 from schema.schemas import Agent3Input
 
 PREFIX = "agent3_demo_"
@@ -123,7 +124,7 @@ def _edit_form(workflow: Agent3Workflow, view: dict, changed: bool) -> None:
                 st.session_state.pop(PREFIX + "ack_schedule", None)
                 st.session_state[PREFIX + "notice"] = "수정 내용을 반영하고 금액을 다시 계산했습니다. 최신 결과를 승인해주세요."
                 st.rerun()
-            except (ValueError, ToolInputError) as error:
+            except (ValueError, ToolInputError, BackendCalcError) as error:
                 st.error(str(error))
 
 
@@ -138,7 +139,7 @@ def _review_form(workflow: Agent3Workflow, view: dict, changed: bool) -> None:
                 st.rerun()
             except AgentFailure as error:
                 st.error(f"{error.error.code}: {error.error.message}")
-            except (ValueError, ToolInputError) as error:
+            except (ValueError, ToolInputError, BackendCalcError) as error:
                 st.error(str(error))
         return
     if view["phase"] == "DRAFT_READY":
@@ -165,7 +166,7 @@ def _review_form(workflow: Agent3Workflow, view: dict, changed: bool) -> None:
             st.session_state[PREFIX + "view"] = new_view
             st.session_state[PREFIX + "notice"] = "PM 산정 승인이 완료됐습니다. 협의안을 생성해 주세요." if approve else "반려 사유를 기록했습니다. 공수를 수정하거나 검토 후 다시 승인할 수 있습니다."
             st.rerun()
-        except (ValueError, ToolInputError) as error:
+        except (ValueError, ToolInputError, BackendCalcError) as error:
             st.error(str(error))
 
 
@@ -225,7 +226,7 @@ def render_agent3() -> None:
             st.session_state[PREFIX + "fingerprint"] = fingerprint
         except AgentFailure as error:
             st.error(f"{error.error.code}: {error.error.message}")
-        except (ValueError, ToolInputError, OSError) as error:
+        except (ValueError, ToolInputError, BackendCalcError, OSError) as error:
             st.error(f"입력·설정을 확인해주세요: {type(error).__name__}")
     view = st.session_state.get(PREFIX + "view")
     if view is None:

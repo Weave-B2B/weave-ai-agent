@@ -359,3 +359,18 @@ test('PM question dialog offers contextual quick choices and submits immediately
   await new Promise(resolve=>setTimeout(resolve,10));
   assert.deepEqual(submitted,{question_id:'Q-REUSE',text:'기존 기능을 재사용할 수 있습니다 (기존 모듈 활용)',state_revision:3});
 });
+
+test('calc-v1 list and final review display supply amount rather than labor subtotal',()=>{
+  const session={id:'CR-UI-CALC',text:'조정 견적',created:'2026-11-18',events:[],step:6,ready:true,analysisId:'calc',
+    realA3:{contract_version:'agent3-run/2',status:'IMPACT_DRAFT_READY',estimates:[{totals:{md:2,price:1400000,cost:1000000},lines:[]}],
+      pricing:{formula_version:'calc-v1',total_md:'2',total_hours:'16',hours_per_md:'8',labor_price:1400000,direct_cost:null,
+        supply_amount:1500000,vat_amount:150000,total_with_vat:1650000,provisional:true,provisional_reasons:['cost:NOT_ENTERED'],lines:[]}}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  assert.equal(h.records[0].price,'1,500,000원');
+  h.demo.enter(session.id);h.click('final');
+  assert.match(h.demo.page(),/판매가 1,500,000원/);
+  assert.doesNotMatch(h.demo.page(),/판매가 1,400,000원/);
+  const html=h.demo.resultPreview(session.id,'impact');
+  assert.match(html,/1,650,000원/);
+  assert.match(html,/잠정/);
+});
