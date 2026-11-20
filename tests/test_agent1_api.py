@@ -105,9 +105,48 @@ def test_malformed_body_is_422(client):
     assert client.post("/agent1/items", json={"context": {}}).status_code == 422
 
 
-def test_unknown_fixture_case_is_404(client, monkeypatch):
+@pytest.mark.parametrize("sentences", [
+    ["고객 원문 비밀 요청입니다."],
+    ["리뷰를 추가해주세요", "사진 첨부는 제외해주세요"],
+])
+def test_unknown_fixture_case_returns_request_items(client, monkeypatch, sentences):
     from app.agents.fixture import FixtureAgent1, load_chain
     _use(monkeypatch, FixtureAgent1(load_chain()))
 
-    inp = {**INPUT, "context": {**INPUT["context"], "case_id": "CR-NOPE"}}
-    assert client.post("/agent1/items", json=inp).status_code == 404
+    inp = {
+        **INPUT,
+        "context": {**INPUT["context"], "case_id": "CR-NOPE"},
+        "message_text": "。".join(sentences),
+    }
+    response = client.post("/agent1/items", json=inp)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "READY"
+    assert body["context"] == {
+        **inp["context"],
+        "baseline_id": None,
+        "baseline_as_of": None,
+        "scenario_id": None,
+    }
+    assert [item["text"] for item in body["items"]] == sentences
+    for index, item in enumerate(body["items"], 1):
+        assert item["item_id"] == f"CR-NOPE-{index}"
+        assert item["case_id"] == "CR-NOPE"
+        assert item["display_no"] == f"R{index}"
+        assert item["item_type"] == "function"
+        assert item["intent"] == "change_request"
+    assert body["meta"]["result_id"].startswith("A1-CR-NOPE-")
+    assert body["meta"]["created_at"]
+
+
+def test_fixture_lookup_failure_maps_to_404(client, monkeypatch):
+    class MissingFixture:
+        def run(self, inp):
+            raise KeyError(inp.context.case_id)
+
+    _use(monkeypatch, MissingFixture())
+    response = client.post("/agent1/items", json=INPUT)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "fixture에 없는 case: CASE-TEST"

@@ -8,11 +8,24 @@ from schema.schemas import (
 )
 
 
-def test_schema_unmodified():
-    manifest = json.loads((EVAL / "manifest.json").read_text(encoding="utf-8"))
+def test_schema_matches_runtime_manifest():
+    manifest = json.loads((ROOT / "schema" / "runtime-manifest.json").read_text(encoding="utf-8"))
     sha = hashlib.sha256((ROOT / "schema" / "schemas.py").read_bytes()).hexdigest()
-    assert sha == manifest["schema_sha256"], "공통 스키마를 수정했다. 변경 절차(공통기준 13장)를 따를 것"
-    assert SCHEMA_VERSION == manifest["shared_schema_version"]
+    assert manifest["schema_path"] == "schema/schemas.py"
+    assert sha == manifest["schema_sha256"], (
+        "기록되지 않은 공통 스키마 변경: 변경 절차(공통기준 13장)에 따라 검토한 뒤 "
+        "schema/runtime-manifest.json의 지문과 변경 이력을 갱신할 것"
+    )
+    assert SCHEMA_VERSION == manifest["schema_version"]
+
+
+def test_runtime_manifest_preserves_dataset_baseline():
+    runtime = json.loads((ROOT / "schema" / "runtime-manifest.json").read_text(encoding="utf-8"))
+    dataset = json.loads((EVAL / "manifest.json").read_text(encoding="utf-8"))
+    baseline = runtime["dataset_baseline"]
+    assert baseline["manifest_path"] == "eval/dataset/manifest.json"
+    assert baseline["schema_sha256"] == dataset["schema_sha256"]
+    assert baseline["schema_version"] == dataset["shared_schema_version"]
 
 
 def test_core_counts():
