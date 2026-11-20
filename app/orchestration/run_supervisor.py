@@ -11,6 +11,10 @@ from app.agents.agent3.effort import load_effort_rules
 from app.agents.agent3.orchestration import Agent3Orchestration, DraftDocuments, Reestimate
 from app.agents.agent3.orchestrator_adapter import Agent3CaseSnapshot
 from app.agents.agent3.workflow import _hash, _rate_hash
+from app.tools.calculation_snapshot import validate_output_pricing
+from app.tools.errors import ToolInputError
+from app.tools.backend_calc import BackendCalcError
+from app.core.config import settings
 from app.agents.base import AgentFailure
 from app.orchestration.coordinated_execution import CoordinatedAgentRunner
 from app.orchestration.decision import choose_action, InvalidDecision
@@ -207,6 +211,7 @@ class RunSupervisorRuntime:
                           and a3.source.answer_ids == [a.answer_id for a in inp.answers]
                           and a3.source.quote_links == run.coordination.quote_links)
         if a3_current and a3.documents and not any(n.blocking for n in a3.needs):
+            self._validate_review_pricing(a3)
             target = ReviewBundle(result_ids={s: a.current_result_id for s, a in run.state.agents.items()},
                 document_fingerprint=payload_fingerprint({k: v.model_dump(mode="json") for k, v in a3.documents.items()}))
             self.state.request_final_review(self._request(RequestFinalReview, run, bundle=target))
@@ -359,7 +364,7 @@ class RunSupervisorRuntime:
             if not view or selected == set(current.target_item_ids):
                 if selected != set(current.target_item_ids):
                     raise InvalidStateTransition("First estimation requires all targets")
-                view = tools.estimate_impact(current)
+                view = tools.estimate_impact(current, previous_pricing=old.pricing if old else None)
             else:
                 view = tools.reestimate(view["session_id"], Reestimate(state_revision=view["state_revision"],
                     input=current, item_ids=choice.args["item_ids"]))
@@ -379,7 +384,7 @@ class RunSupervisorRuntime:
         raw["source"] = Agent3Source(a1_result_id=run.state.agents["agent1"].current_result_id,
             a2_result_id=run.state.agents["agent2"].current_result_id, answer_ids=[a.answer_id for a in inp.answers],
             rate_card_id=rate, quote_links=run.coordination.quote_links, rate_hash=_rate_hash(rate),
-            effort_hash=_hash(load_effort_rules()),
+            effort_hash=_hash(load_effort_rules()), policy_hash=(raw.get("pricing") or {}).get("policy_hash"),
             pm_edit_id=old.source.pm_edit_id if old and old.source else None).model_dump()
         return Agent3RunOutput.model_validate(raw)
 
@@ -397,9 +402,18 @@ class RunSupervisorRuntime:
                 return {**outcome, "events": events}
         raise InvalidStateTransition("Supervisor failed to stop at its execution limit", run_id=run_id)
 
+    @staticmethod
+    def _validate_review_pricing(output):
+        try:
+            validate_output_pricing(output, require_confirmed=settings.calc_require_confirmed_policy)
+        except (ToolInputError, BackendCalcError) as err:
+            raise InvalidStateTransition(str(err)) from err
+
     def review(self, request: FinalReviewDecision):
         run = self.state.get_coordinated_run(request.run_id)
         output = self._result(run, "agent3", Agent3RunOutput)
+        if request.decision == "approve" and output:
+            self._validate_review_pricing(output)
         if output and output.source:
             if (output.source.rate_hash != _rate_hash(output.source.rate_card_id)
                     or output.source.effort_hash != _hash(load_effort_rules())):

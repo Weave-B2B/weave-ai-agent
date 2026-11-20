@@ -54,7 +54,9 @@ class LlmAgent3:
         targets = inp.targets()
         if not targets:
             return Output(context=inp.context, status="NOT_REQUIRED", estimates=[])
-        prompt = build_user_prompt(inp)
+        from app.tools.impact_workbook import load_workbook
+        workbook = load_workbook(inp.context.project_id)
+        prompt = build_user_prompt(inp, schedule_context=workbook)
         result = self.llm.complete_structured(
             system=PLAN_SYSTEM, user=prompt,
             schema=Agent3ImpactDraft, tool_name="submit_impact",
@@ -158,14 +160,14 @@ class LlmAgent3:
         out = Output(
             context=inp.context,
             meta=Meta(model=result.label, latency_ms=result.latency_ms, agent_version="agent3-0.1.0",
-                debug={"prompt_version": PROMPT_VERSION, "retried": result.retried,
+                debug={"impact_workbook": workbook, "prompt_version": PROMPT_VERSION, "retried": result.retried,
                        "effort_rule_version": effort_rules["version"],
                        "effort_rule_retry": rule_retry,
                        "assumption_retry": assumption_retry,
                        "input_tokens": result.usage.input_tokens, "output_tokens": result.usage.output_tokens}),
             status="NEEDS_INPUT" if any(q.blocking for q in questions) or any(e.status == "not_estimable" for e in estimates) or (provisional and any(n.blocking for n in needs)) else "IMPACT_DRAFT_READY",
             estimates=estimates, questions=questions, draft=None,
-            **({"needs": needs} if provisional else {}),
+            **({"needs": needs, "impact_workbook": workbook} if provisional else {}),
         )
         return finalize_estimates(out, inp.rate_card_id)
 

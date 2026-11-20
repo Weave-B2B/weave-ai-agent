@@ -248,6 +248,14 @@ class FakeCoordinatedRunStateClient(FakeRunStateClient):
                 or any(n.blocking for n in output.needs)
                 or any(q.blocking and q.status != "resolved" for q in output.questions)):
             raise InvalidStateTransition("Agent 3 still requires input", run_id=run.run_id)
+        from app.core.config import settings
+        from app.tools.calculation_snapshot import validate_output_pricing
+        from app.tools.errors import ToolInputError
+        from app.tools.backend_calc import BackendCalcError
+        try:
+            validate_output_pricing(output, require_confirmed=settings.calc_require_confirmed_policy)
+        except (ToolInputError, BackendCalcError) as err:
+            raise InvalidStateTransition(str(err), run_id=run.run_id) from err
         documents = output.documents
         if not documents or not any(d.body.strip() for d in documents.values()):
             raise InvalidStateTransition("Final review requires a customer document draft", run_id=run.run_id)

@@ -15,6 +15,8 @@ def reject_llm_amounts(raw: dict) -> None:
             raise OutputInvalid("LLM 출력에 totals 포함")
     if (raw.get("draft") or {}).get("cost") is not None:
         raise OutputInvalid("LLM 출력 draft.cost 포함")
+    if raw.get("pricing") is not None or raw.get("schedule_detail") is not None:
+        raise OutputInvalid("LLM 출력에 pricing·schedule_detail 포함")
 
 
 def finalize_estimates(out: Agent3Output, rate_card_id: str) -> Agent3Output:
@@ -26,7 +28,7 @@ def finalize_estimates(out: Agent3Output, rate_card_id: str) -> Agent3Output:
         e["totals"], e["totals_source"] = None, None
         if e["status"] != "draft":
             continue
-        res = calc_cost(e["lines"], rate_card_id)  # 입력 오류는 ToolInputError(INVALID_INPUT)로 올라감
+        res = calc_cost(e["lines"], rate_card_id, project_id=out.context.project_id)
         if res.get("status") == "NEEDS_INPUT":
             missing += res["missing"]
             continue

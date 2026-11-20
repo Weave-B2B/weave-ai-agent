@@ -344,6 +344,10 @@ def test_backend_pm_edit_snapshot_regenerates_documents_without_estimation_call(
     estimate = raw["estimates"][0]
     estimate["lines"][0]["md"] += 0.5
     estimate["totals"] = calc_cost(estimate["lines"], raw["source"]["rate_card_id"])
+    from app.tools.calc_pricing import calc_pricing
+    raw["pricing"] = calc_pricing(
+        [{"key":f"E1L{i+1}", "role":l["role"], "md":l["md"]} for i,l in enumerate(estimate["lines"])],
+        raw["source"]["rate_card_id"], project_id=raw["context"]["project_id"], as_of=raw["context"]["baseline_as_of"])["pricing"]
     raw["meta"]["result_id"] = "pm-result"
     raw["source"]["pm_edit_id"] = "pm-result"
     raw["documents"] = {}
@@ -366,3 +370,26 @@ def test_backend_pm_edit_snapshot_regenerates_documents_without_estimation_call(
     assert out["documents"]["agreement"]["body"]
     assert f'{estimate["totals"]["price"]:,}' in out["documents"]["agreement"]["body"]
     assert after.review_bundle.document_fingerprint != before.review_bundle.document_fingerprint
+
+
+@pytest.mark.parametrize("failure", ["missing", "policy", "amount", "unconfirmed"])
+def test_integrated_final_review_rechecks_calculation_snapshot(setup, monkeypatch, failure):
+    from app.kb import loader
+    from app.core.config import settings
+    from app.orchestration.run_state import InvalidStateTransition
+    state, _, _, _ = setup
+    for _ in range(6): runtime(setup).step("run-1")
+    run = state.get_coordinated_run("run-1")
+    payload = state._get("run-1").results[run.state.agents["agent3"].current_result_id].result_payload
+    if failure == "missing": payload["pricing"] = None
+    elif failure == "amount": payload["pricing"]["total_with_vat"] += 1
+    elif failure == "unconfirmed": monkeypatch.setattr(settings, "calc_require_confirmed_policy", True)
+    else:
+        policy = copy.deepcopy(loader.calc_policy()); policy["vat"]["ratio"] = "0.20"
+        monkeypatch.setattr(loader, "calc_policy", lambda: policy)
+    req = FinalReviewDecision(run_id="run-1", operation_id="blocked-calc", expected_state_revision=run.state.state_revision,
+        bundle=run.review_bundle, reviewed_by="pm", decision="approve")
+    with pytest.raises(InvalidStateTransition): runtime(setup).review(req)
+    # Direct persistence API cannot bypass the runtime guard either.
+    with pytest.raises(InvalidStateTransition): state.final_review(req)
+    assert state.get_state("run-1").status != "COMPLETED"
