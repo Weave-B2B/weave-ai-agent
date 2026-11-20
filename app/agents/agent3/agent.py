@@ -3,7 +3,7 @@
 from collections.abc import Callable
 
 from app.agents.agent3.contracts import (ProvisionalAgent3Input, ProvisionalLine,
-    ProvisionalEstimate, ProvisionalAgent3Output, Agent3Need)
+    ProvisionalEstimate, ProvisionalAgent3Output, Agent3Need, ScheduleHint)
 from app.agents.agent3.draft import Agent3ImpactDraft
 from app.agents.agent3.effort import load_effort_rules, matches_rule as _matches_rule
 from app.agents.agent3.guards import finalize_estimates
@@ -118,7 +118,12 @@ class LlmAgent3:
                     continue
                 used_rules.add(line.rule_id)
                 marker = "작업 유형별 임시 기준 · 적용 적합성 PM 확인 필요" if rule.get("kind") == "general_test" else "테스트 공수 기준"
-                lines.append(TaskLine(**({"shared_work_key": line.shared_work_key} if provisional else {}), task=line.task, item_ids=line_ids, role=line.role,
+                extra = {"shared_work_key": line.shared_work_key} if provisional else {}
+                if provisional and workbook and (line.assignee or line.after or line.before or line.extends_task):
+                    # 이름 대조·계산은 일정 계산 단계(schedule_plan)에서 한다. 모델 제안을 그대로 보존한다.
+                    extra["schedule_hint"] = ScheduleHint(assignee=line.assignee, after=line.after,
+                                                          before=line.before, extends_task=line.extends_task)
+                lines.append(TaskLine(**extra, task=line.task, item_ids=line_ids, role=line.role,
                                   md=rule["md"], assumption=f"{line.assumption} [{marker} {effort_rules['version']}:{line.rule_id}]"))
             if invalid_rule:
                 missing_rules.extend(item_ids)

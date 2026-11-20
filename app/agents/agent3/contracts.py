@@ -71,8 +71,22 @@ class Agent3Need(BaseModel):
         return self
 
 
+class ScheduleHint(BaseModel):
+    """작업 행의 일정 배치 제안. 모델이 제안하고 엑셀 이름과 대조한 값만 남긴다. 계산은 Backend가 한다.
+
+    assignee: 새 작업 담당자(엑셀 '사람과 근무일'의 담당자). after/before: 이 작업의 선행·후속 기존 작업명.
+    extends_task: 새 작업이 아니라 기존 작업의 남은 시간이 늘어나는 경우 그 작업명(담당자는 기존 작업 담당자).
+    """
+    model_config = ConfigDict(extra="forbid")
+    assignee: str | None = None
+    after: list[str] = Field(default_factory=list)
+    before: list[str] = Field(default_factory=list)
+    extends_task: str | None = None
+
+
 class ProvisionalLine(Line):
     shared_work_key: str | None = Field(None, min_length=1, max_length=120)
+    schedule_hint: ScheduleHint | None = None
 
 
 class ProvisionalEstimate(Estimate):
@@ -116,7 +130,8 @@ class ProvisionalAgent3Output(Agent3Output):
     needs: list[Agent3Need] = Field(default_factory=list)
     pricing: PricingSnapshot | None = Field(None, description="요청 전체 계산식 v1 결과. 미산정·단가 누락이 있으면 null")
     impact_workbook: dict | None = Field(None, description="승인된 일정·공수 자료의 버전·해시와 구조화 입력. 계약 근거 아님")
-    schedule_detail: dict | None = Field(None, description="소요 영업일(37)·남은 영업일(42). 시작·완료일·일정 영향은 null")
+    schedule_detail: dict | None = Field(None, description="소요 영업일(37)·남은 영업일(42). 엑셀이 있으면 plan_detail에 완료일·일정 영향(38~41)")
+    plan_detail: dict | None = Field(None, description="schedule-v1 일정 계산 결과(Backend) 또는 미계산 사유. 엑셀 자료가 없으면 null")
 
     def _status_rules(self, ok):
         blocked = any(n.blocking for n in self.needs)

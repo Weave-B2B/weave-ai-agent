@@ -19,6 +19,11 @@ class ProposedLine(_Proposal):
     rule_id: str = ""
     md: float | None = Field(default=None, ge=0)  # Legacy model value is never used for calculation.
     assumption: str = ""
+    # 일정 계산용 제안(operational_schedule이 있을 때만). 이름은 엑셀의 담당자·기존 작업명을 그대로 쓴다.
+    assignee: str | None = Field(default=None, max_length=120)
+    after: list[str] = Field(default_factory=list, max_length=20)
+    before: list[str] = Field(default_factory=list, max_length=20)
+    extends_task: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def check_md(self):
