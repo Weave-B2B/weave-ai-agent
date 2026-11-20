@@ -40,6 +40,14 @@ def load_rate_cards(path: Path) -> dict[str, dict]:
             raise ToolInputError("rate card currency must be KRW")
         if "synthetic" in card and not isinstance(card["synthetic"], bool):
             raise ToolInputError("rate card synthetic flag must be a JSON boolean")
+        hours = card.get("hours_per_md")
+        if hours is not None:
+            try:
+                valid = 0 < float(hours) <= 24 and not isinstance(hours, bool)
+            except (TypeError, ValueError):
+                valid = False
+            if not valid:
+                raise ToolInputError("hours_per_md must be within (0, 24]")
         rates = card.get("rates")
         if not isinstance(rates, dict):
             raise ToolInputError("rates must be an object")

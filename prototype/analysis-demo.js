@@ -12,10 +12,30 @@ function eventHtml(x, id, active) {
 }
 const tabs = [['original', 'Agent 1 · 요청 분석'], ['scope', 'Agent 2 · 범위 검토'], ['impact', 'Agent 3 · 영향 산정'], ['draft', '문서 초안']];
 const won = n => typeof n === 'number' && Number.isFinite(n) ? `${n.toLocaleString('ko-KR')}원` : '미산정';
+// 계산식 v1 요청 전체 금액 요약. 값은 계산기 결과를 그대로 표시하고 화면에서 다시 계산하지 않는다.
+export const pricingSummary = a3 => {
+  const p = a3?.pricing;
+  if (!p) return a3?.estimates?.length ? `<div class="notice">${a3?.meta?.debug?.calc?.error ? `금액 계산 실패: ${esc(a3.meta.debug.calc.error)}. 재계산 전에는 승인할 수 없습니다.` : '계산식 v1 금액(공급가액·부가세)은 모든 항목이 산정된 뒤 표시됩니다.'}</div>` : '';
+  const row = (label, value) => `<tr><th scope="row">${esc(label)}</th><td>${esc(value)}</td></tr>`;
+  const optional = [['경비 청구액', p.expense_billable], ['별도 견적 항목', p.separate_amount], ['할인', p.discount_amount ? -p.discount_amount : 0], ['예비비', p.contingency_amount]]
+    .filter(([, v]) => v).map(([label, v]) => row(label, won(v))).join('');
+  const lines = (p.lines || []).map(l => `<tr><td>${esc(l.role)}</td><td>${esc(l.md)}</td><td>${won(l.sell_rate)}</td><td>${won(l.amount)}</td></tr>`).join('');
+  const d = a3.schedule_detail || {};
+  const days = Object.entries(d.work_business_days_by_role || {}).map(([role, n]) => `${esc(role)} ${esc(n)}일`).join(', ');
+  const remaining = d.remaining_business_days == null ? '산정 불가' : `${esc(d.remaining_business_days)}일 (${d.remaining_basis === 'planned_end' ? '계획 완료일' : '계약 종료일'} 기준)`;
+  return `<h3 style="margin-top:16px">금액 요약 · 계산식 ${esc(p.formula_version)}${p.provisional ? ' · 잠정' : ''}</h3>`
+    + (p.provisional ? `<div class="notice">계산 기준 미확정: ${esc((p.provisional_reasons || []).join(', '))}</div>` : '')
+    + `<table class="rate-card-table"><tbody>${row('추가 공수', `${p.total_md} MD (${p.total_hours}시간 · 1MD=${p.hours_per_md}시간)`)}${row('인건비 견적', won(p.labor_price))}${optional}${row('공급가액 · VAT 별도', won(p.supply_amount))}${row('부가세', won(p.vat_amount))}${row('총액 · VAT 포함', won(p.total_with_vat))}</tbody></table>`
+    + (lines ? `<table class="rate-card-table"><thead><tr><th>직군</th><th>공수 MD</th><th>단가</th><th>금액</th></tr></thead><tbody>${lines}</tbody></table>` : '')
+    + `<p class="caption">작업 소요 영업일${d.assumed_full_time ? ' (전일 투입 가정)' : ''}: ${days || '산정 불가'} · 남은 영업일: ${remaining} · 착수일·완료일·일정 영향: 산정 불가</p>`;
+};
 const realRun = s => !!s.analysisId || !!s.realA1 || !!s.realA2 || !!s.realA3 || !!s.supervisor;
 function totalsFor(s) {
+  const p=s.realA3?.pricing;
+  if (p) return {md:p.total_md == null ? null : Number(p.total_md),cost:p.direct_cost ?? null,price:p.supply_amount ?? null};
   const rows = s.realA3?.estimates || [];
   if (!rows.length || rows.some(row => !row.totals)) return null;
+  if (s.realA3?.contract_version === 'agent3-run/2') return {md:rows.reduce((sum,r)=>sum+(r.totals?.md||0),0),cost:null,price:null};
   return Object.fromEntries(['md', 'cost', 'price'].map(key => [key, rows.every(row => typeof row.totals[key] === 'number' && Number.isFinite(row.totals[key])) ? rows.reduce((sum, row) => sum + row.totals[key], 0) : null]));
 }
 const MODELS = { gpt: { label: 'GPT', model: 'gpt-6-luna' }, local: { label: '로컬 LLM', model: 'gpt-oss:20b' } };
@@ -530,7 +550,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       const margin = t.price && typeof t.cost === 'number' ? ((t.price - t.cost) / t.price * 100).toFixed(1) : null;
       const rate = estimate.rate_card_id ? `<button type="button" class="rate-card-link" data-rate-card="${esc(estimate.rate_card_id)}" aria-label="${esc(estimate.rate_card_id)} 단가표 보기">${esc(estimate.rate_card_id)}</button>` : '미선택';
       const lines = (s.realA3.estimates.flatMap(row => row.lines || [])).map(l => `<tr><td>${esc(l.task)}</td><td>${esc(l.role)}</td><td>${esc(l.md)}</td></tr>`).join('');
-      return `<h2>영향 산정 결과</h2><div class="analysis-numbers"><div><small>총 공수</small><strong>${t.md ?? '미산정'} <small>MD</small></strong></div><div><small>예상 직접원가 · 내부 확인용</small><strong>${typeof t.cost === 'number' ? won(t.cost) : '미산정'}</strong></div><div><small>고객 제안가 · VAT 별도</small><strong>${t.price != null ? won(t.price) : '미산정'}</strong></div></div><p class="caption">단가표 ${rate}${margin !== null ? ` · 예상 마진 ${margin}%` : ''}</p>${lines ? `<table class="rate-card-table"><thead><tr><th>작업</th><th>직군</th><th>MD</th></tr></thead><tbody>${lines}</tbody></table>` : ''}<p class="caption">Orchestration Agent 3 결과입니다.</p>`;
+      return `<h2>영향 산정 결과</h2><div class="analysis-numbers"><div><small>총 공수</small><strong>${t.md ?? '미산정'} <small>MD</small></strong></div><div><small>예상 직접원가 · 내부 확인용</small><strong>${typeof t.cost === 'number' ? won(t.cost) : '미산정'}</strong></div><div><small>고객 제안가 · VAT 별도</small><strong>${t.price != null ? won(t.price) : '미산정'}</strong></div></div><p class="caption">단가표 ${rate}${margin !== null ? ` · 예상 마진 ${margin}%` : ''}</p>${pricingSummary(s.realA3)}${lines ? `<table class="rate-card-table"><thead><tr><th>작업</th><th>직군</th><th>MD</th></tr></thead><tbody>${lines}</tbody></table>` : ''}<p class="caption">Orchestration Agent 3 결과입니다.</p>`;
     }
     if (realRun(s)) {
       const draft = s.emailDraft;

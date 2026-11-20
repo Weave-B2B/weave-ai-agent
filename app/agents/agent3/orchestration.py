@@ -13,15 +13,21 @@ from uuid import uuid4
 from pydantic import Field, field_validator
 
 from app.agents.agent3.contracts import (ProvisionalAgent3Input, upstream_ids, Agent3Need,
-    ProvisionalAgent3Output as Agent3Output, ProvisionalEstimate as Estimate)
+    ProvisionalAgent3Output as Agent3Output, ProvisionalEstimate as Estimate, PricingSnapshot)
 from app.agents.agent3.guards import finalize_estimates
 from app.agents.agent3.effort import load_effort_rules
 from app.agents.agent3.workflow import (
     _Request, _hash, _rate_hash, DraftNarrative, WorkflowConflict,
 )
 from app.agents.base import AgentFailure
+from app.core.config import settings
 from schema.schemas import AgentError
 from app.orchestration.ids import new_result_id, now_iso
+from app.tools.backend_calc import BackendCalcError
+from app.tools.calc_pricing import FORMULA_VERSION, calc_pricing
+from app.tools.calculation_snapshot import validate_pricing
+from app.tools.impact_workbook import assert_workbook_current
+from app.tools.errors import ToolInputError
 from app.orchestration.preflight import preflight_provisional, provisional_selection, guarded_provisional_scope
 
 
@@ -83,7 +89,60 @@ class FinalReview(ToolRevision):
         return value.strip()
 
 
-def _finalize_partial(out, rate_id):
+def _request_pricing(out, rate_id, previous=None):
+    """계산식 v1 요청 전체 집계. 그룹별 Totals 계산 뒤, 공유 작업이 병합된 전체 라인에 한 번만 적용한다.
+
+    경비·할인·예비비·부가세가 산정 그룹 수만큼 반복 적용되지 않도록 그룹 단위로 호출하지 않는다.
+    미산정 그룹이나 단가 누락이 하나라도 있으면 부분 합을 완성된 견적처럼 보이지 않게 null로 둔다.
+    """
+    out.pricing, out.schedule_detail = None, None
+    if not out.estimates or any(e.status != "draft" or e.totals is None for e in out.estimates):
+        return out
+    lines = [{"key": f"E{n + 1}L{m + 1}", "role": line.role, "md": line.md}
+             for n, e in enumerate(out.estimates) for m, line in enumerate(e.lines)]
+    before = None if previous is None else {"total_md": getattr(previous, "total_md", None),
+                                            "supply_amount": previous.supply_amount}
+    try:
+        adjustments = (previous.inputs or {}).get("request", {}).get("adjustments") if previous is not None else None
+        result = calc_pricing(lines, rate_id, project_id=out.context.project_id, adjustments=adjustments,
+                              previous=before, as_of=out.context.baseline_as_of)
+    except (ToolInputError, BackendCalcError) as err:
+        # 공식 계산기를 쓸 수 없으면 로컬 값으로 대체하지 않는다. pricing이 없으면 최종 승인이 막힌다.
+        out.meta.debug = {**(out.meta.debug or {}), "calc": {"formula_version": FORMULA_VERSION, "error": str(err)[:300]}}
+        return out
+    if result.get("status") != "OK" or not result.get("pricing"):
+        return out
+    pricing = dict(result["pricing"])
+    out.pricing = PricingSnapshot(**pricing)
+    # 일정도 Backend 응답만 사용하며 AI에서 다시 계산하지 않는다.
+    out.schedule_detail = result.get("schedule")
+    out.meta.debug = {**(out.meta.debug or {}), "calc": {"formula_version": FORMULA_VERSION, "calculated_at": now_iso()}}
+    return out
+
+
+def _customer_pricing_lines(out) -> list[str]:
+    """고객 문서용 금액·일정 사실. 원가·이익·마크업과 내부 잠정 사유는 넣지 않는다."""
+    pricing, lines = out.pricing, []
+    if pricing is None:
+        return lines
+    extras = [("경비 청구액", getattr(pricing, "expense_billable", 0)), ("별도 견적 항목", getattr(pricing, "separate_amount", 0)),
+              ("할인", -pricing.discount_amount), ("예비비", pricing.contingency_amount)]
+    lines.append(f"- 인건비 견적: {pricing.labor_price:,}원")
+    lines += [f"- {label}: {amount:,}원" for label, amount in extras if amount]
+    lines.append(f"- 공급가액: {pricing.supply_amount:,}원 (VAT 별도)")
+    lines.append(f"- 부가세: {pricing.vat_amount:,}원 / 합계: {pricing.total_with_vat:,}원 (VAT 포함)")
+    if pricing.provisional:
+        lines.append("- 위 금액은 계산 기준 확정 전의 잠정 금액입니다.")
+    detail = out.schedule_detail or {}
+    days = detail.get("work_business_days_by_role") or {}
+    if days:
+        basis = "전일 투입 가정" if detail.get("assumed_full_time") else f"일 {detail.get('daily_effective_hours')}시간 투입 기준"
+        lines.append("- 작업 소요 영업일(" + basis + "): " + ", ".join(f"{role} {count}일" for role, count in days.items()))
+        lines.append("- 착수일·완료일과 일정 영향은 인력 배정과 계획 확인 후 협의합니다. 소요 영업일은 완료 기간이 아닙니다.")
+    return lines
+
+
+def _finalize_partial(out, rate_id, previous=None):
     """Keep valid item subtotals; do not present a partial sum as a complete quote."""
     out = out.model_copy(deep=True)
     out.questions = [q for q in out.questions if not re.search(r"-A3Q9(?:-[a-z0-9]+)*$", q.question_id)]
@@ -109,7 +168,9 @@ def _finalize_partial(out, rate_id):
         else:
             questions[q.question_id] = q
     out.questions = list(questions.values())
-    return Agent3Output.model_validate(out.model_dump())
+    out = Agent3Output.model_validate(out.model_dump())
+    # 그룹별 계산이 끝난 뒤 요청 전체 집계를 한 번만 다시 만든다(부분 재산정·재계산 포함).
+    return Agent3Output.model_validate(_request_pricing(out, rate_id, previous).model_dump())
 
 
 def _combine(estimates: list[Estimate]) -> list[Estimate]:
@@ -228,7 +289,7 @@ class Agent3Orchestration:
                         "target": q.target, "source": "agent2", "question_id": q.question_id})
         return inp, allowed, [Agent3Need.model_validate(n).model_dump() for n in deferred]
 
-    def _calculate(self, inp, allowed):
+    def _calculate(self, inp, allowed, previous_pricing=None):
         if not allowed:
             return Agent3Output(context=inp.context, status="NOT_REQUIRED", estimates=[])
         selected = inp.model_copy(update={"target_item_ids": allowed})
@@ -247,13 +308,13 @@ class Agent3Orchestration:
             out.estimates = _combine(out.estimates)
         except ValueError as err:
             raise AgentFailure(AgentError(code="OUTPUT_INVALID", message=str(err), stage="agent3"))
-        out = _finalize_partial(out, inp.rate_card_id)
+        out = _finalize_partial(out, inp.rate_card_id, previous=previous_pricing)
         return out
 
-    def estimate_impact(self, raw: ProvisionalAgent3Input):
+    def estimate_impact(self, raw: ProvisionalAgent3Input, *, previous_pricing=None):
         inp, allowed, deferred = self._selection(raw)
         before = _rate_hash(inp.rate_card_id)
-        out = self._calculate(inp, allowed)
+        out = self._calculate(inp, allowed, previous_pricing=previous_pricing)
         if before != _rate_hash(inp.rate_card_id):
             raise WorkflowConflict("standards changed during estimation")
         out.meta.result_id = new_result_id("agent3-provisional", inp.context.case_id)
@@ -286,6 +347,12 @@ class Agent3Orchestration:
             raise WorkflowConflict("stale state revision")
         if standards and s["rate_hash"] != _rate_hash(s["input"].rate_card_id):
             raise WorkflowConflict("standards changed; recalculate first")
+        if standards:
+            try: assert_workbook_current(s["impact"])
+            except (ToolInputError, BackendCalcError) as err: raise WorkflowConflict(str(err)) from err
+        if standards and s["impact"].pricing is not None:
+            try: validate_pricing(s["impact"].pricing, s["input"].rate_card_id)
+            except (ToolInputError, BackendCalcError) as err: raise WorkflowConflict(str(err)) from err
         gate = preflight_provisional(s["input"].model_copy(update={"target_item_ids": []}))
         if gate:
             raise WorkflowConflict(f"upstream context changed: {gate.reason}")
@@ -331,6 +398,11 @@ class Agent3Orchestration:
             ctx = s["input"].context
             current = self._current[(ctx.project_id, ctx.case_id)] == sid
             standards_current = s["rate_hash"] == _rate_hash(s["input"].rate_card_id)
+            if s["impact"].pricing is not None:
+                try: validate_pricing(s["impact"].pricing, s["input"].rate_card_id)
+                except (ToolInputError, BackendCalcError): standards_current = False
+            try: assert_workbook_current(s["impact"])
+            except (ToolInputError, BackendCalcError): standards_current = False
             context_current = preflight_provisional(s["input"].model_copy(update={"target_item_ids": []})) is None
             needs = s["deferred"] + [n.model_dump() for n in s["impact"].needs]
             # Rules/rates and unanswered questions are distinct from document research.
@@ -343,6 +415,10 @@ class Agent3Orchestration:
             needs = [Agent3Need.model_validate(n).model_dump() for n in needs]
             ready = bool(s["documents"]) and not any(n["blocking"] for n in needs)
             ready = ready and all(e.totals is not None for e in s["impact"].estimates)
+            if s["impact"].estimates:
+                ready = ready and s["impact"].pricing is not None
+                if settings.calc_require_confirmed_policy:
+                    ready = ready and not bool(s["impact"].pricing and s["impact"].pricing.provisional)
             phase = "FINAL_APPROVED" if s["approval"] else "WAITING_FINAL_REVIEW" if ready else "WAITING_INPUT" if any(n["blocking"] for n in needs) else "PROVISIONAL"
             if s["last_review"] and s["last_review"]["decision"] in ("hold", "reject"):
                 phase = "ON_HOLD" if s["last_review"]["decision"] == "hold" else "REJECTED"
@@ -384,7 +460,7 @@ class Agent3Orchestration:
             # Q9 is produced by the rate calculator and can be resolved only by recalculation.
             out.questions = [q for q in out.questions if not q.question_id.endswith("A3Q9")]
             out.status = "NEEDS_INPUT" if any(q.blocking and q.status == "open" for q in out.questions) else "IMPACT_DRAFT_READY" if out.estimates else "NOT_REQUIRED"
-            out = _finalize_partial(out, rate_id)
+            out = _finalize_partial(out, rate_id, previous=s["impact"].pricing)
             for estimate in out.estimates:
                 estimate.rate_card_id = rate_id
             if rate_hash != _rate_hash(rate_id):
@@ -459,7 +535,7 @@ class Agent3Orchestration:
             out.questions = [q for q in previous.questions if q.item_ids and not affected & set(q.item_ids)] + out.questions
             out.needs = [n for n in previous.needs if not affected & set(n.item_ids)] + out.needs
             out.status = "NEEDS_INPUT" if any(q.blocking and q.status == "open" for q in out.questions) else "IMPACT_DRAFT_READY" if out.estimates else "NOT_REQUIRED"
-            out = _finalize_partial(out, inp.rate_card_id)
+            out = _finalize_partial(out, inp.rate_card_id, previous=previous.pricing)
             if rate_hash != _rate_hash(inp.rate_card_id):
                 raise WorkflowConflict("standards changed during reestimation")
             self._replace(s, "item reestimation")
@@ -491,8 +567,11 @@ class Agent3Orchestration:
                 facts.append(f"- {line.task}: {line.md:g} MD (가정: {assumption or '없음'})")
             facts.append(f"- 판매 제안가: {estimate.totals.price:,}원 (VAT 별도)" if estimate.totals else "- 공수·금액: 미산정 또는 추가 확인 필요")
             facts.append(f"- 일정 영향: {estimate.schedule.business_days:g} 영업일" if estimate.schedule.business_days is not None else "- 일정 영향: 인력·선행 작업 확인 후 협의 필요")
-        if out.estimates and all(e.totals for e in out.estimates):
-            facts.append(f"총 예상 공수: {sum(e.totals.md for e in out.estimates):g} MD / 총 판매 제안가: {sum(e.totals.price for e in out.estimates):,}원 (VAT 별도)")
+        if out.pricing is not None:
+            facts.append(f"총 예상 공수: {float(out.pricing.total_md):g} MD")
+            facts.extend(_customer_pricing_lines(out))
+        elif out.estimates and all(e.totals for e in out.estimates):
+            facts.append("요청 전체 금액: 공식 계산 결과 확인 필요")
         facts.extend(f"조건: {i.text}" for i in inp.constraints)
         # Only customer-facing questions should appear in customer facts, not internal PM questions or server warnings
         questions = list(inp.customer_questions) + [
@@ -550,8 +629,11 @@ class Agent3Orchestration:
 
         parts.append("\n3. 예상 견적 및 일정")
         if out.estimates and all(estimate.totals is not None for estimate in out.estimates):
-            parts.append(f"- 총 예상 공수: {sum(e.totals.md for e in out.estimates):g} MD")
-            parts.append(f"- 고객 제안 금액: {sum(e.totals.price for e in out.estimates):,}원 (VAT 별도)")
+            if out.pricing is not None:
+                parts.append(f"- 총 예상 공수: {float(out.pricing.total_md):g} MD")
+                parts.extend(_customer_pricing_lines(out))
+            else:
+                parts.append("- 고객 제안 금액: 공식 계산 결과 확인 필요")
         elif out.estimates:
             parts.append("- 공수 및 금액: 추가 확인 후 안내 예정")
         else:
@@ -668,6 +750,11 @@ class Agent3Orchestration:
             if req.snapshot_hash != self._snapshot(s):
                 raise WorkflowConflict("stale final snapshot")
             if req.decision == "approve":
+                pricing = s["impact"].pricing
+                if s["impact"].estimates and pricing is None:
+                    raise ValueError("recalculate the estimate with calc-v1 before approval")
+                if pricing is not None and pricing.provisional and settings.calc_require_confirmed_policy:
+                    raise ValueError("confirm the calculation policy and expenses before approval")
                 view = self.get(sid)
                 if not view["can_final_review"]:
                     raise ValueError("resolve all blocking items and generate documents before approval")
@@ -675,8 +762,18 @@ class Agent3Orchestration:
                     raise ValueError("final approval requires the complete document bundle")
                 if any(e.schedule.business_days is None for e in s["impact"].estimates) and not req.acknowledge_unknown_schedule:
                     raise ValueError("acknowledge the unestimated schedule")
+                pricing = s["impact"].pricing
+                if s["impact"].estimates and pricing is None:
+                    # 계산식 v1 결과가 없는 과거(/1) 결과는 승인 전에 재계산해야 한다.
+                    raise ValueError("recalculate the estimate with calc-v1 before approval")
+                if pricing is not None and pricing.provisional and settings.calc_require_confirmed_policy:
+                    raise ValueError("confirm the calculation policy and expenses before approval: "
+                                     + ", ".join(pricing.provisional_reasons))
             elif not req.reason.strip():
                 raise ValueError("hold or rejection needs a reason")
+            if req.decision == "approve" and s["impact"].estimates:
+                validate_pricing(s["impact"].pricing, s["input"].rate_card_id,
+                                 require_confirmed=settings.calc_require_confirmed_policy)
             review = {**req.model_dump(), "review_id": f"final-review-{uuid4().hex}",
                 "reviewed_at": now_iso(), "request_hash": _hash(req.model_dump()),
                 "impact_result_id": s["impact"].meta.result_id,

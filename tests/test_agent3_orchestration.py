@@ -82,7 +82,8 @@ def test_customer_email_is_sectioned_without_raw_contract_dump(tools, provisiona
         assert heading in email
     assert "검토 요지:" in email and "확인 근거:" in email
     assert "- 총 예상 공수: 8 MD" in email
-    assert "- 고객 제안 금액: 5,150,000원 (VAT 별도)" in email
+    assert "- 공급가액: 5,150,000원 (VAT 별도)" in email
+    assert "- 부가세: 515,000원 / 합계: 5,665,000원 (VAT 포함)" in email
     assert "고객 협의 전 잠정 검토안" in email
     assert "원가" not in email and "마진" not in email and "RC-SYNTH" not in email
     # Full verified clause quotes remain in the separate agreement; email shows references.
@@ -496,3 +497,156 @@ def test_model_customer_need_retains_routing_and_appears_in_draft(provisional, a
     view = documents(service, view)
     assert "고객 담당자를 지정해 주세요." in view["documents"]["email"]["body"]
     assert not view["can_final_review"]
+
+
+# ---- 계산식 v1: 요청 전체 집계 ----
+def _two_group_tools(provisional, rate_card_id="RC-SYNTH-2026H2-v2"):
+    second = provisional.items[0].model_copy(deep=True)
+    second.item_id = provisional.context.case_id + "-2"
+    second.intent = provisional.items[0].intent = "estimate_request"
+    provisional.items.append(second)
+    provisional.target_item_ids.append(second.item_id)
+    add_verified_assessment(provisional, second.item_id)
+    provisional.rate_card_id = rate_card_id
+    from app.agents.agent3.effort import load_effort_rules
+    rules = load_effort_rules()["rules"]
+    def rule(role):
+        return next(k for k, v in rules.items() if v.get("kind") == "general_test" and v["role"] == role)
+    payload = {"estimates": [{"item_numbers": [n], "status": "draft", "lines": [{"task": role,
+        "item_numbers": [n], "role": role, "rule_id": rule(role)}]} for n, role in [(1, "BE"), (2, "QA")]], "questions": []}
+    return Agent3Orchestration(LlmAgent3(FakeLlm([payload])),
+        draft_llm=FakeLlm([copy.deepcopy(FAKE_EMAIL) for _ in range(4)]))
+
+
+def test_request_pricing_is_applied_once_across_estimate_groups(provisional):
+    view = _two_group_tools(provisional).estimate_impact(provisional)
+    impact = view["impact"]
+    pricing = impact["pricing"]
+    assert len(impact["estimates"]) == 2 and pricing["formula_version"] == "calc-v1"
+    # 요청 전체 인건비 = 그룹 Totals의 합. 부가세·공급가액은 그룹 수와 무관하게 한 번만 계산된다.
+    assert pricing["labor_price"] == sum(e["totals"]["price"] for e in impact["estimates"])
+    assert pricing["labor_cost"] == sum(e["totals"]["cost"] for e in impact["estimates"])
+    assert pricing["supply_amount"] == pricing["labor_price"]
+    assert pricing["vat_amount"] == round(pricing["supply_amount"] * 0.1)
+    assert pricing["total_with_vat"] == pricing["supply_amount"] + pricing["vat_amount"]
+    assert [line["key"] for line in pricing["lines"]] == ["E1L1", "E2L1"]
+    assert pricing["provisional"] and pricing["inputs"]["request"]["lines"] and pricing["input_hash"]
+    assert impact["meta"]["debug"]["calc"]["calculated_at"]
+
+
+def test_request_pricing_is_null_when_any_group_cannot_be_priced(provisional):
+    view = _two_group_tools(provisional, "RC-SYNTH-2026H2-noQA").estimate_impact(provisional)
+    assert view["impact"]["estimates"][0]["totals"] and view["impact"]["estimates"][1]["totals"] is None
+    assert view["impact"]["pricing"] is None and view["impact"]["schedule_detail"] is None
+
+
+def test_schedule_detail_reports_work_days_but_no_dates(tools, provisional):
+    impact = tools.estimate_impact(provisional)["impact"]
+    detail = impact["schedule_detail"]
+    assert sum(detail["work_business_days_by_role"].values()) >= 1 and detail["assumed_full_time"]
+    assert detail["start_date"] is None and detail["estimated_end_date"] is None and detail["impact_business_days"] is None
+    # 기존 business_days는 '지연 영업일' 의미로 고정하며 소요 영업일을 넣지 않는다.
+    assert all(e["schedule"]["business_days"] is None for e in impact["estimates"])
+
+
+def test_recalculation_rebuilds_pricing_and_reports_delta(tools, provisional):
+    view = tools.estimate_impact(provisional)
+    before = view["impact"]["pricing"]
+    edited = tools.recalculate(view["session_id"], Recalculate(state_revision=view["state_revision"],
+        edits=[{"work_id": "0:0", "md": 4.5}], reason="PM 공수 수정"))
+    after = edited["impact"]["pricing"]
+    assert after["labor_price"] == sum(e["totals"]["price"] for e in edited["impact"]["estimates"])
+    assert after["input_hash"] != before["input_hash"]
+    assert after["supply_delta"] == after["supply_amount"] - before["supply_amount"]
+    assert float(after["md_delta"]) == float(after["total_md"]) - float(before["total_md"])
+
+
+def test_customer_documents_show_supply_vat_total_without_internal_figures(tools, provisional):
+    view = documents(tools, tools.estimate_impact(provisional))
+    pricing = view["impact"]["pricing"]
+    facts = tools._facts(tools._sessions[view["session_id"]])
+    assert f"공급가액: {pricing['supply_amount']:,}원" in facts and f"합계: {pricing['total_with_vat']:,}원" in facts
+    assert "소요 영업일" in facts
+    assert str(pricing["labor_cost"]) not in facts.replace(",", "") and "이익" not in facts and "마크업" not in facts
+
+
+def test_final_approval_requires_calc_v1_pricing(tools, provisional):
+    view = documents(tools, tools.estimate_impact(provisional))
+    tools._sessions[view["session_id"]]["impact"].pricing = None  # 계산식 v1 이전(/1) 결과 복원 상황
+    stale = tools.get(view["session_id"])
+    with pytest.raises(ValueError, match="calc-v1"):
+        tools.review(stale["session_id"], review(stale))
+
+
+def test_provisional_pricing_blocks_approval_only_when_policy_gate_is_on(tools, provisional, monkeypatch):
+    from app.agents.agent3 import orchestration
+    view = documents(tools, tools.estimate_impact(provisional))
+    monkeypatch.setattr(orchestration.settings, "calc_require_confirmed_policy", True)
+    with pytest.raises(ValueError, match="calculation policy"):
+        tools.review(view["session_id"], review(view))
+    monkeypatch.setattr(orchestration.settings, "calc_require_confirmed_policy", False)
+    assert tools.review(view["session_id"], review(view))["approval"]
+
+
+def test_unavailable_official_calculator_leaves_pricing_empty_and_blocks_approval(tools, provisional, monkeypatch):
+    from app.agents.agent3 import orchestration
+    from app.tools.backend_calc import BackendCalcError
+
+    def down(*args, **kwargs):
+        raise BackendCalcError("백엔드 계산 API 오류 503")
+
+    monkeypatch.setattr(orchestration, "calc_pricing", down)
+    view = documents(tools, tools.estimate_impact(provisional))
+    assert view["impact"]["estimates"][0]["totals"] and view["impact"]["pricing"] is None
+    assert "503" in view["impact"]["meta"]["debug"]["calc"]["error"]
+    with pytest.raises(ValueError, match="calc-v1"):
+        tools.review(view["session_id"], review(view))
+
+
+def test_md_recalculation_preserves_saved_discount_and_expenses(tools, provisional):
+    from app.agents.agent3.contracts import PricingSnapshot
+    from app.tools.calc_pricing import calc_pricing
+    view=tools.estimate_impact(provisional)
+    s=tools._sessions[view["session_id"]]
+    old=s["impact"].pricing
+    adjustments={"expenses_state":"ENTERED","expenses":[{"name":"API","internal_cost":100000,
+        "billable":True,"billable_amount":100000}],"discount":{"amount":50000}}
+    s["impact"].pricing=PricingSnapshot(**calc_pricing(old.inputs["request"]["lines"],provisional.rate_card_id,
+        project_id=provisional.context.project_id,as_of=provisional.context.baseline_as_of,adjustments=adjustments)["pricing"])
+    edited=tools.recalculate(view["session_id"],Recalculate(state_revision=view["state_revision"],
+        edits=[{"work_id":"0:0","md":4.5}],reason="공수 수정"))
+    p=edited["impact"]["pricing"]
+    assert p["expense_billable"]==100000 and p["discount_amount"]==50000
+    assert p["supply_amount"]==p["labor_price"]+50000
+    assert edited["documents"]=={} and edited["approval"] is None
+
+
+def test_uploaded_workbook_is_agent3_context_and_survives_run_payload(provisional,a3_payload,monkeypatch):
+    import json
+    import app.tools.impact_workbook as wb
+    from app.orchestration.run_agent3_payload import Agent3RunOutput
+    from app.orchestration.payload import to_commit_payload
+    context={'source':{'documentVersionId':'uploaded-v1','sha256':'a'*64},'data':{'tasks':[{'name':'기존 검색','remaining_hours':88}],'people':[{'name':'FE','daily_hours':8}],'calendar':{'planned_end':None},'note':'운영자료'}}
+    monkeypatch.setattr(wb,'load_workbook',lambda _:copy.deepcopy(context))
+    model=FakeLlm([copy.deepcopy(a3_payload)])
+    output=LlmAgent3(model).run(provisional)
+    assert json.loads(model.calls[0]['user'])['operational_schedule']==context['data']
+    assert output.impact_workbook==context
+    assert output.estimates[0].totals.md==8  # existing 88h are not added to change effort
+    assert output.estimates[0].schedule.business_days is None
+    committed=to_commit_payload(Agent3RunOutput.model_validate(output.model_dump()))
+    assert committed['meta']['debug']=={}
+    assert committed['impact_workbook']==context
+
+
+def test_workbook_changed_after_estimation_blocks_documents_and_final_review(tools,provisional,monkeypatch):
+    import app.tools.impact_workbook as wb
+    view=tools.estimate_impact(provisional)
+    view=documents(tools,view)
+    monkeypatch.setattr(wb,'current_source',lambda _: {'documentVersionId':'new','sha256':'new'})
+    invalid=tools.get(view['session_id'])
+    assert not invalid['standards_current']
+    with pytest.raises(WorkflowConflict,match='재산정'):
+        tools.review(view['session_id'],review(view))
+    with pytest.raises(WorkflowConflict,match='재산정'):
+        documents(tools,view)

@@ -11,7 +11,7 @@ import time
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Header
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -36,12 +36,16 @@ class IngestAccepted(BaseModel):
 def request_ingest(req: IndexRequest, background: BackgroundTasks,
                    x_internal_token: Optional[str] = Header(None)) -> IngestAccepted:
     _require_token(x_internal_token)
+    if req.document_type == "IMPACT_WORKBOOK" or req.mime_type != "application/pdf":
+        raise HTTPException(422, "일정·공수 XLSX는 임베딩 대상이 아닙니다.")
     background.add_task(run_ingest, req)
     return IngestAccepted(request_id=req.request_id, document_version_id=req.document_version_id)
 
 
 def run_ingest(req: IndexRequest) -> None:
     """색인 1건을 실행하고 결과를 백엔드에 보낸다. 예외를 밖으로 던지지 않는다 (백그라운드 작업)."""
+    if req.document_type == "IMPACT_WORKBOOK" or req.mime_type != "application/pdf":
+        return  # 잘못 전송된 일정 자료에는 임베딩·벡터 저장·콜백도 실행하지 않는다.
     from app.embed import build_embedder
     from app.indexing.objects import S3Store
     from app.indexing.pipeline import index_document

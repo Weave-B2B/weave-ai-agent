@@ -21,6 +21,7 @@ from app.agents.base import Agent3
 from app.kb.loader import rate_cards
 from app.orchestration.ids import new_result_id, now_iso
 from app.tools.trace import current_result_id
+from app.tools.calc_cost import calc_cost
 from schema.schemas import Agent3Input, Agent3Output, Draft, Line
 
 
@@ -81,8 +82,12 @@ def _customer_facts(inp: Agent3Input, out: Agent3Output) -> str:
     scope = [f"- {item.text} ({labels.get(str(reviews[item.item_id].pm_label).lower(), 'PM 검토 결과 확인 필요')})"
              for item in inp.items if item.item_id in selected]
     tasks = list(dict.fromkeys(line.task for estimate in out.estimates for line in estimate.lines))
-    total_md = sum(estimate.totals.md for estimate in out.estimates if estimate.totals)
-    total_price = sum(estimate.totals.price for estimate in out.estimates if estimate.totals)
+    # 레거시 문서도 그룹별 표시 금액을 AI에서 합산하지 않고 Backend에 전체 라인을 전달한다.
+    total = calc_cost([line.model_dump() for estimate in out.estimates for line in estimate.lines],
+                      inp.rate_card_id, project_id=inp.context.project_id)
+    total_md, total_price = total.get("md"), total.get("price")
+    amount_text = (f"예상 공수: 총 {total_md:g} MD\n추가 비용 제안: {total_price:,}원 (부가세 별도)"
+                   if total_md is not None and total_price is not None else "공수·금액: 공식 계산 결과 확인 필요")
     schedule = "일정 영향은 담당 인력과 선행 작업 확인 후 협의가 필요합니다."
     if all(estimate.schedule.business_days is not None for estimate in out.estimates):
         schedule = "일정 영향: " + ", ".join(f"{estimate.schedule.business_days} 영업일" for estimate in out.estimates)
@@ -90,7 +95,7 @@ def _customer_facts(inp: Agent3Input, out: Agent3Output) -> str:
     questions = "\n".join(f"- {q.text}" for q in out.questions if q.status in ("open", "answered"))
     return ("요청 내용 및 범위 검토\n" + "\n".join(scope) +
             "\n\n예상 작업\n" + "\n".join(f"- {task}" for task in tasks) +
-            f"\n\n예상 공수: 총 {total_md:g} MD\n추가 비용 제안: {total_price:,}원 (부가세 별도)" +
+            "\n\n" + amount_text +
             "\n\n일정\n" + schedule + ("\n" + constraints if constraints else "") +
             ("\n\n확인 사항\n" + questions if questions else ""))
 
@@ -110,6 +115,7 @@ def _rate_hash(rate_card_id: str) -> str:
 def _snapshot_hash(out: Agent3Output) -> str:
     return _hash({"context": out.context.model_dump(mode="json"),
         "upstream_result_ids": out.meta.upstream_result_ids,
+        "impact_workbook": (out.meta.debug or {}).get("impact_workbook"),
         "estimates": [e.model_dump(mode="json") for e in out.estimates],
         "questions": [q.model_dump(mode="json") for q in out.questions]})
 
@@ -339,6 +345,11 @@ class Agent3Workflow:
 
     @staticmethod
     def _check_rates(s: _Session):
+        from app.tools.impact_workbook import assert_workbook_current
+        from app.tools.errors import ToolInputError
+        from app.tools.backend_calc import BackendCalcError
+        try: assert_workbook_current(Agent3Output.model_validate(s.view["impact"]))
+        except (ToolInputError, BackendCalcError) as e: raise WorkflowConflict(str(e)) from e
         if _rate_hash(s.inp.rate_card_id) != s.rate_hash:
             raise WorkflowConflict("rate card changed; recalculate and review the new result")
 

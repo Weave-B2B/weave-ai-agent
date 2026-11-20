@@ -35,7 +35,7 @@ def test_demo_runs_repeatedly_without_exhausting_the_fake_client():
     assert app.title[0].value == "에이전트 3"
     first = run_impact(app)
     assert first["phase"] == "WAITING_IMPACT_APPROVAL" and first["draft"] is None
-    assert [m.value for m in app.metric][:3] == ["10 MD", "6,425,000원", "4,480,000원"]
+    assert [m.value for m in app.metric][:3] == ["10 MD", "6,500,000원", "4,560,000원"]
     second = run_impact(app)
     assert second["session_id"] != first["session_id"] and second["draft"] is None
     assert not app.error
@@ -45,7 +45,7 @@ def test_pm_approval_shows_draft_and_preserves_result_on_rerun():
     app = page()
     run_impact(app)
     view = approve(app)
-    assert view["phase"] == "DRAFT_READY" and "6,425,000원" in view["draft"]["cost"]
+    assert view["phase"] == "DRAFT_READY" and "6,500,000원" in view["draft"]["cost"]
     assert any("협의안 초안 · 내부 검토용" in item.value for item in app.markdown)
     draft_id = view["draft_result_id"]
     app.run()
@@ -72,7 +72,7 @@ def test_pm_edit_recalculates_and_requires_approval_again():
     edited = app.session_state[PREFIX + "view"]
     assert edited["phase"] == "WAITING_IMPACT_APPROVAL"
     assert edited["draft"] is None and edited["approval"] is None
-    assert edited["impact"]["estimates"][0]["totals"]["price"] == 7175000
+    assert edited["impact"]["estimates"][0]["totals"]["price"] == 7250000
     assert edited["impact"]["meta"]["result_id"] != approved["impact"]["meta"]["result_id"]
     assert not app.checkbox(key=PREFIX + "ack_schedule").value
 

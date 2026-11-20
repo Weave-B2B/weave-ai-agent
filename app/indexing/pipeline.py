@@ -56,7 +56,7 @@ def index_document(req: IndexRequest, objects: ObjectStore, embedder: Embedder, 
 
 def _run(req, objects, embedder, store, source_bucket, result_bucket, profile) -> tuple[ObjectRef, int]:
     bucket = req.bucket or source_bucket
-    if req.mime_type != "application/pdf":
+    if req.document_type == "IMPACT_WORKBOOK" or req.mime_type != "application/pdf":
         raise _Fail("EXTRACT", "UNSUPPORTED_MIME_TYPE", False, f"PDF만 지원: {req.mime_type}")
     try:
         pdf = objects.get(bucket, req.object_key)

@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,17 @@ sys.path.insert(0, str(ROOT))
 from app.core.config import settings  # noqa: E402
 
 EVAL = settings.eval_dir
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _record_calculation_fixtures():
+    if os.environ.get("WEAVE_RECORD_CALCULATIONS") == "1":
+        from support.calculation_recorder import install
+        with pytest.MonkeyPatch.context() as patch:
+            install(patch)
+            yield
+    else:
+        yield
 
 
 def jl(path) -> list[dict]:
@@ -33,6 +45,7 @@ def _no_embedding_api(monkeypatch):
     monkeypatch.setattr(settings, "embed_provider", "none")
     monkeypatch.setattr(settings, "vector_store", "local")     # .env의 VECTOR_STORE=pgvector가 테스트에 섞이지 않게
     monkeypatch.setattr(settings, "agent_mode", "fixture")     # .env의 AGENT_MODE=llm이 실제 LLM을 부르지 않게
+    monkeypatch.setattr(settings, "calculation_mode", "fixture")
     doc_tools.vector_backend.cache_clear()
     yield
     doc_tools.vector_backend.cache_clear()

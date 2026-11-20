@@ -11,6 +11,7 @@ from app.agents.base import AgentFailure
 from app.core.config import settings
 from app.llm.client import build_llm
 from app.tools.errors import ToolInputError
+from app.tools.backend_calc import BackendCalcError
 from schema.schemas import Agent3Input
 from app.agents.agent3.contracts import ProvisionalAgent3Input
 from app.agents.agent3.orchestration import (
@@ -39,6 +40,8 @@ def _guard(call):
         raise HTTPException(409, str(exc)) from None
     except AgentFailure as exc:
         raise HTTPException(502, exc.error.model_dump(mode="json")) from None
+    except BackendCalcError:
+        raise HTTPException(502, "공식 계산 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해주세요.") from None
     except (ToolInputError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from None
     except OSError:

@@ -58,6 +58,10 @@ def ready(flow):
     out.meta.result_id = "impact-1"
     out.documents = {}
     raw = out.model_dump(mode="json")
+    from app.tools.calc_pricing import calc_pricing
+    raw["pricing"] = calc_pricing(
+        [{"key":f"E{i+1}L{j+1}","role":l.role,"md":l.md} for i,e in enumerate(out.estimates) for j,l in enumerate(e.lines)],
+        out.estimates[0].rate_card_id, project_id=out.context.project_id, as_of=out.context.baseline_as_of)["pricing"]
     raw["documents"] = {"email": {"result_id": "doc-1", "impact_result_id": "impact-1",
         "a2_result_id": "a2", "model": "fake", "subject": "변경 검토", "body": "고객 협의 전 초안입니다."}}
     out = Agent3RunOutput.model_validate(raw)

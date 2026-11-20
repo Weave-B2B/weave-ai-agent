@@ -22,6 +22,7 @@ class Agent3Source(_M):
     quote_links: dict[str, list[str]] = Field(default_factory=dict)
     rate_hash: str
     effort_hash: str
+    policy_hash: str | None = None
     pm_edit_id: str | None = None
 
 
@@ -36,6 +37,7 @@ class CustomerDocumentDraft(_M):
 
 
 class Agent3RunOutput(ProvisionalAgent3Output):
-    contract_version: Literal["agent3-run/1"] = "agent3-run/1"
+    # /2 = 계산식 v1 pricing·schedule_detail 포함. /1 결과는 읽을 수 있지만 승인 전 재계산이 필요하다.
+    contract_version: Literal["agent3-run/1", "agent3-run/2"] = "agent3-run/2"
     documents: dict[Literal["email", "agreement", "scope_reply"], CustomerDocumentDraft] = Field(default_factory=dict)
     source: Agent3Source | None = None
