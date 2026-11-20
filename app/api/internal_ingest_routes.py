@@ -68,6 +68,10 @@ def run_ingest(req: IndexRequest) -> None:
 
 
 def _report(document_version_id: UUID, result: IndexResult) -> None:
+    if settings.result_transport == "sqs":           # 결과 큐로 보낸다. 발행 실패는 던져서 워커가 요청을 다시 처리하게 한다
+        from app.messaging import sqs
+        sqs.publish(sqs.shared_client(settings), settings.sqs_index_result_url, result.to_json())
+        return
     try:
         client = build_client(settings)
     except ValueError:

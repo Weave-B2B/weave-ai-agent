@@ -57,6 +57,21 @@ class Settings(BaseSettings):
     s3_source_bucket: str = "weave-dev-files"
     s3_result_bucket: str = "weave-dev-files"
 
+    # 백엔드 ↔ AI 결과 전달 방식. http: 백엔드 내부 API로 바로 보낸다 (로컬 기본)
+    # sqs: 결과 큐로 보낸다. 요청은 워커(python -m app.worker)가 요청 큐에서 받는다
+    result_transport: Literal["http", "sqs"] = "http"
+    sqs_endpoint: str = ""           # 로컬 LocalStack: http://localhost:4566. 배포는 비운다 (Pod IAM 역할)
+    sqs_region: str = "ap-northeast-2"
+    sqs_index_request_url: str = ""
+    sqs_index_result_url: str = ""
+    sqs_analysis_request_url: str = ""
+    sqs_analysis_result_url: str = ""
+    # 워커가 받을 요청 큐 (index·analysis). 나중에 색인·분석 워커를 나눠 배포할 때 하나만 고른다
+    worker_queues: str = "index,analysis"
+    worker_concurrency: int = Field(default=2, ge=1)          # 동시에 처리할 메시지 수
+    worker_visibility_sec: int = Field(default=120, ge=30)   # 처리하는 동안 이 시간만큼 계속 연장한다
+    worker_max_receive_count: int = Field(default=3, ge=1)   # 큐의 DLQ 최대 수신 횟수와 같게 둔다
+
     data_dir: Path = ROOT / "data"
     rate_card_file: Path | None = None  # Defaults to data/kb/rate_cards.json; replace with a supplied file later.
     eval_dir: Path = ROOT / "eval" / "dataset"

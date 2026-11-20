@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from schema.schemas import AgentError
 
 from app.agents.base import AgentFailure
-from app.api import agent2_routes, internal_analysis_routes
+from app.api import agent1_routes, agent2_routes, internal_analysis_routes
 from app.core.config import settings
 from app.main import app
 from app.services.analysis_result_client import AnalysisReportError, AnalysisResultClient
@@ -43,10 +43,12 @@ def env(monkeypatch):
     monkeypatch.setattr(settings, "agent_mode", "fixture")
     monkeypatch.setattr(internal_analysis_routes, "build_client", lambda _s: rec)
     monkeypatch.setattr(internal_analysis_routes, "REPORT_BACKOFF_SEC", 0)
-    cached = agent2_routes.get_agent2                    # 테스트가 monkeypatch로 바꿔도 원본 캐시를 비운다
-    cached.cache_clear()
+    cached = (agent1_routes.get_agent1, agent2_routes.get_agent2)   # 테스트가 monkeypatch로 바꿔도 원본 캐시를 비운다
+    for c in cached:
+        c.cache_clear()
     yield TestClient(app), rec
-    cached.cache_clear()
+    for c in cached:
+        c.cache_clear()
 
 
 def _body(case_input=None):
@@ -177,3 +179,51 @@ def test_impact_runs_agent3_and_reports(env, monkeypatch):
 class _Stub:
     class context:
         baseline_id = "BL"
+
+
+# ---- 항목 분해 (Agent1, DECOMPOSITION) ----
+A1_INPUT = {
+    "context": {"project_id": "P-TEST", "case_id": CASE, "request_revision": 1},   # 백엔드는 기준선을 보내지 않는다
+    "received_at": "2026-10-28T10:00:00+09:00",
+    "sender_role": "고객",
+    "message_text": "회원가입 화면에 소셜 로그인을 추가해 주세요.",
+}
+
+
+def _a1_body(case_input=None):
+    return {"aiAnalysisId": str(uuid4()), "analysisType": "DECOMPOSITION", "input": case_input or A1_INPUT}
+
+
+def test_decomposition_runs_agent1_without_baseline_and_reports_complete(env):
+    client, rec = env
+    body = _a1_body()
+    r = client.post("/internal/v1/analyses", json=body, headers={"X-Internal-Token": TOKEN})
+    assert r.status_code == 202
+    (kind, ai_id, output), = rec.calls
+    assert kind == "complete" and str(ai_id) == body["aiAnalysisId"]
+    assert output["meta"]["result_id"].startswith(f"A1-{CASE}-") and output["meta"]["created_at"]
+    assert output["items"]
+
+
+def test_decomposition_rejects_agent2_shaped_input(env):
+    client, rec = env
+    bad = {**_a1_body(), "input": INPUTS[CASE]}               # message_text 등 Agent1 필수 값이 없다
+    assert client.post("/internal/v1/analyses", json=bad, headers={"X-Internal-Token": TOKEN}).status_code == 422
+    assert rec.calls == []
+
+
+@pytest.mark.parametrize("error,expected", [
+    (AgentFailure(AgentError(code="MODEL_TIMEOUT", message="t", stage="agent1", retryable=True)), ("MODEL_TIMEOUT", True)),
+    (ValueError("빈 원문"), ("INVALID_INPUT", False)),
+    (RuntimeError("bug"), ("INTERNAL_ERROR", True)),
+])
+def test_decomposition_failure_reports_fail(env, monkeypatch, error, expected):
+    client, rec = env
+
+    class Boom:
+        def run(self, inp):
+            raise error
+
+    monkeypatch.setattr(agent1_routes, "get_agent1", lambda: Boom())
+    client.post("/internal/v1/analyses", json=_a1_body(), headers={"X-Internal-Token": TOKEN})
+    assert rec.calls == [("fail", rec.calls[0][1], expected)]
