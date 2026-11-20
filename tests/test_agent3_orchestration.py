@@ -650,3 +650,99 @@ def test_workbook_changed_after_estimation_blocks_documents_and_final_review(too
         tools.review(view['session_id'],review(view))
     with pytest.raises(WorkflowConflict,match='재산정'):
         documents(tools,view)
+
+
+# ---- 일정 계산(schedule-v1): 엑셀 + 작업 행 일정 제안 → Backend 일정 계산 → 문서·승인 ----
+def _scheduled_tools(a3_payload, monkeypatch, plan_response, *, hints=True):
+    import app.tools.impact_workbook as wb
+    from app.agents.agent3 import orchestration
+    from app.tools import backend_calc
+    workbook = {"source": {"documentVersionId": "wb-v1", "sha256": "a" * 64}, "data": {
+        "tasks": [{"name": "기존 상세 화면", "owner": "프론트 김", "remaining_hours": 8, "predecessors": []},
+                  {"name": "기존 상품 API", "owner": "백엔드 이", "remaining_hours": 8, "predecessors": []},
+                  {"name": "통합 테스트", "owner": "QA 박", "remaining_hours": 8, "predecessors": ["기존 상세 화면", "기존 상품 API"]}],
+        "people": [{"name": "프론트 김", "daily_hours": 4, "available_from": "2026-11-23"},
+                   {"name": "백엔드 이", "daily_hours": 8, "available_from": "2026-11-23"},
+                   {"name": "QA 박", "daily_hours": 4, "available_from": "2026-11-23"}],
+        "calendar": {"start_date": "2026-11-23", "planned_end": "2026-11-26", "working_weekdays": "월,화,수,목,금",
+                     "exceptions": [{"person": "전체", "date": "2026-11-27", "hours": 0}]}, "missing": []}}
+    monkeypatch.setattr(wb, "load_workbook", lambda _: copy.deepcopy(workbook))
+    monkeypatch.setattr(orchestration, "assert_workbook_current", lambda _: None)
+    payload = copy.deepcopy(a3_payload)
+    if hints:
+        be, fe, qa = payload["estimates"][0]["lines"]
+        be.update(assignee="백엔드 이", after=["기존 상품 API"], before=["통합 테스트"])
+        fe.update(assignee="프론트 김", after=["기존 상세 화면"], before=["통합 테스트"])
+        qa.update(extends_task="통합 테스트")
+    calls = {"schedule": [], "validate": []}
+    original = backend_calc.calculation_client
+
+    class Client:
+        """일정 계산만 가짜로 바꾸고 금액 계산·검증은 기존 클라이언트(고정 응답)를 그대로 쓴다."""
+        def __init__(self, rate):
+            self._real = original(rate)
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+        def schedule(self, body):
+            calls["schedule"].append(body)
+            return copy.deepcopy(plan_response)
+
+        def validate_schedule(self, plan):
+            calls["validate"].append(plan)
+            if plan != plan_response:
+                raise backend_calc.BackendCalcError("일정 결과가 입력 스냅샷과 일치하지 않습니다.")
+            return {"valid": True, "snapshot_id": plan["snapshot"]["snapshot_id"]}
+
+    monkeypatch.setattr(backend_calc, "calculation_client", lambda rate: Client(rate))
+    tools = Agent3Orchestration(LlmAgent3(FakeLlm([payload])),
+        draft_llm=FakeLlm([copy.deepcopy(FAKE_EMAIL) for _ in range(4)]))
+    return tools, calls
+
+
+PLAN = {"formula_version": "schedule-v1", "start_date": "2026-11-23", "planned_end": "2026-11-26",
+        "baseline": {"end": "2026-11-26", "tasks": [], "allocations": []},
+        "changed": {"end": "2026-12-03", "tasks": [], "allocations": []},
+        "change_start_date": "2026-11-24", "estimated_end_date": "2026-12-03", "impact_business_days": 4,
+        "impact_vs_baseline_business_days": 4, "change_hours": "64", "assumptions": [],
+        "snapshot": {"inputs": {"start_date": "2026-11-23"}, "input_hash": "h", "snapshot_id": "h"}}
+
+
+def test_workbook_hints_produce_backend_schedule_plan_documents_and_validated_approval(provisional, a3_payload, monkeypatch):
+    tools, calls = _scheduled_tools(a3_payload, monkeypatch, PLAN)
+    view = tools.estimate_impact(provisional)
+    impact = view["impact"]
+    assert impact["plan_detail"]["plan"]["estimated_end_date"] == "2026-12-03"
+    sent = calls["schedule"][0]
+    assert sent["change"]["change_hours"] == impact["pricing"]["total_hours"]
+    assert [a["person"] for a in sent["change"]["added"]] == ["백엔드 이", "프론트 김"]
+    assert sent["change"]["added"][0]["successors"] == ["통합 테스트"]
+    assert [e["task_id"] for e in sent["change"]["extended"]] == ["통합 테스트"]
+    assert [t["id"] for t in sent["baseline_tasks"]] == ["기존 상세 화면", "기존 상품 API", "통합 테스트"]
+    view = documents(tools, view)
+    facts = tools._facts(tools._sessions[view["session_id"]])
+    assert "예상 완료일: 2026-12-03" in facts and "2026-11-26 대비 4영업일" in facts
+    # 계산된 일정이 있으면 '일정 미산정 확인' 없이 승인할 수 있고, 승인 때 Backend로 결과를 재검증한다.
+    approved = tools.review(view["session_id"], review(view, acknowledge_unknown_schedule=False))
+    assert approved["approval"] and len(calls["validate"]) == 1
+
+
+def test_tampered_schedule_plan_cannot_be_approved(provisional, a3_payload, monkeypatch):
+    tools, _ = _scheduled_tools(a3_payload, monkeypatch, PLAN)
+    view = documents(tools, tools.estimate_impact(provisional))
+    tools._sessions[view["session_id"]]["impact"].plan_detail["plan"]["impact_business_days"] = 0
+    view = tools.get(view["session_id"])
+    from app.tools.backend_calc import BackendCalcError
+    with pytest.raises((BackendCalcError, ValueError, WorkflowConflict)):
+        tools.review(view["session_id"], review(view))
+
+
+def test_unassigned_lines_skip_schedule_and_still_require_acknowledgement(provisional, a3_payload, monkeypatch):
+    tools, calls = _scheduled_tools(a3_payload, monkeypatch, PLAN, hints=False)
+    view = documents(tools, tools.estimate_impact(provisional))
+    detail = view["impact"]["plan_detail"]
+    assert detail["plan"] is None and calls["schedule"] == []
+    assert len(detail["unassigned"]) == 3 and all("담당자 미지정" in x for x in detail["unassigned"])
+    with pytest.raises(ValueError, match="unestimated schedule"):
+        tools.review(view["session_id"], review(view, acknowledge_unknown_schedule=False))

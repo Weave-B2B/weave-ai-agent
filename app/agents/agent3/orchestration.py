@@ -25,8 +25,9 @@ from schema.schemas import AgentError
 from app.orchestration.ids import new_result_id, now_iso
 from app.tools.backend_calc import BackendCalcError
 from app.tools.calc_pricing import FORMULA_VERSION, calc_pricing
-from app.tools.calculation_snapshot import validate_pricing
+from app.tools.calculation_snapshot import validate_pricing, validate_plan
 from app.tools.impact_workbook import assert_workbook_current
+from app.tools.schedule_plan import calculate_plan, customer_lines as schedule_customer_lines
 from app.tools.errors import ToolInputError
 from app.orchestration.preflight import preflight_provisional, provisional_selection, guarded_provisional_scope
 
@@ -95,7 +96,7 @@ def _request_pricing(out, rate_id, previous=None):
     경비·할인·예비비·부가세가 산정 그룹 수만큼 반복 적용되지 않도록 그룹 단위로 호출하지 않는다.
     미산정 그룹이나 단가 누락이 하나라도 있으면 부분 합을 완성된 견적처럼 보이지 않게 null로 둔다.
     """
-    out.pricing, out.schedule_detail = None, None
+    out.pricing, out.schedule_detail, out.plan_detail = None, None, None
     if not out.estimates or any(e.status != "draft" or e.totals is None for e in out.estimates):
         return out
     lines = [{"key": f"E{n + 1}L{m + 1}", "role": line.role, "md": line.md}
@@ -116,6 +117,8 @@ def _request_pricing(out, rate_id, previous=None):
     out.pricing = PricingSnapshot(**pricing)
     # 일정도 Backend 응답만 사용하며 AI에서 다시 계산하지 않는다.
     out.schedule_detail = result.get("schedule")
+    # 승인된 일정·공수 엑셀이 있으면 완료일·일정 영향(38~41)도 Backend 일정 계산기로 계산한다.
+    out.plan_detail = calculate_plan(out, rate_id)
     out.meta.debug = {**(out.meta.debug or {}), "calc": {"formula_version": FORMULA_VERSION, "calculated_at": now_iso()}}
     return out
 
@@ -133,6 +136,9 @@ def _customer_pricing_lines(out) -> list[str]:
     lines.append(f"- 부가세: {pricing.vat_amount:,}원 / 합계: {pricing.total_with_vat:,}원 (VAT 포함)")
     if pricing.provisional:
         lines.append("- 위 금액은 계산 기준 확정 전의 잠정 금액입니다.")
+    planned = schedule_customer_lines(out.plan_detail)
+    if planned:
+        return lines + planned
     detail = out.schedule_detail or {}
     days = detail.get("work_business_days_by_role") or {}
     if days:
@@ -760,7 +766,9 @@ class Agent3Orchestration:
                     raise ValueError("resolve all blocking items and generate documents before approval")
                 if "email" not in s["documents"] or (s["impact"].estimates and "agreement" not in s["documents"]):
                     raise ValueError("final approval requires the complete document bundle")
-                if any(e.schedule.business_days is None for e in s["impact"].estimates) and not req.acknowledge_unknown_schedule:
+                planned = bool((s["impact"].plan_detail or {}).get("plan"))
+                if (any(e.schedule.business_days is None for e in s["impact"].estimates) and not planned
+                        and not req.acknowledge_unknown_schedule):
                     raise ValueError("acknowledge the unestimated schedule")
                 pricing = s["impact"].pricing
                 if s["impact"].estimates and pricing is None:
@@ -774,6 +782,7 @@ class Agent3Orchestration:
             if req.decision == "approve" and s["impact"].estimates:
                 validate_pricing(s["impact"].pricing, s["input"].rate_card_id,
                                  require_confirmed=settings.calc_require_confirmed_policy)
+                validate_plan(s["impact"].plan_detail, s["input"].rate_card_id)
             review = {**req.model_dump(), "review_id": f"final-review-{uuid4().hex}",
                 "reviewed_at": now_iso(), "request_hash": _hash(req.model_dump()),
                 "impact_result_id": s["impact"].meta.result_id,

@@ -1,6 +1,6 @@
 # 일정·공수 엑셀 업로드와 Agent 3 연결
 
-작성일: 2026-11-19. 로컬 구현. 고급 일정 계산기 연결은 후속 작업이다.
+작성일: 2026-11-19. 2026-11-20 갱신: 엑셀 기반 일정 계산(schedule-v1) 연결. 규칙은 [schedule-calculator.md](schedule-calculator.md).
 
 ## 사용자 흐름
 
@@ -46,9 +46,9 @@
 
 ## 적용과 검증 범위
 
-Backend 수동 마이그레이션 `src/main/resources/db/manual/V20261119__a_impact_workbook.sql`은 문서 유형·파일 용도·처리 상태의 DB CHECK 허용값을 확장한다. 로컬 DB에 적용했다. 배포 DB는 Backend 배포 전에 별도로 적용해야 한다.
+문서 유형·파일 용도·처리 상태의 허용값은 Backend Flyway `V5__estimate_calculation_snapshot_and_impact_workbook.sql`이 맞춘다. V1 기준과 같도록 세 컬럼의 값 목록 CHECK를 제거하고 허용값은 애플리케이션 enum이 검사한다. 앱 기동 시 자동 적용되며 수동 DDL은 필요 없다.
 
 Frontend·Backend·AI를 함께 재시작해야 새 유형과 내부 조회 경로가 반영된다. 새 환경변수나 Jira 연결은 필요 없다. 실제 UUID 프로젝트는 Backend 조회 경로가 준비되어 있어야 한다.
 
 이번 범위: 업로드·격리·승인 자료 선택·구조화 파싱·Agent 3 컨텍스트·버전 보호.
-후속 범위: 엑셀 입력 즉시 미리보기/오류 검증, 작업별 실제 완료일·지연 계산, 신규 작업의 담당자 연결, Jira/Git 동기화. 현 금액 계산기의 단순 소요 영업일을 이 엑셀 기반 확정 일정으로 표현하지 않는다.
+후속 범위: 엑셀 입력 즉시 미리보기/오류 검증, Jira/Git 동기화, PM 공수 수정 뒤 일정 자동 재계산(지금은 비우고 재산정 안내).

@@ -44,6 +44,21 @@ def validate_pricing(pricing, rate_card_id, *, require_confirmed=False, current=
         "require_confirmed": require_confirmed or is_backend_rate_id(rate_card_id)})
 
 
+def validate_plan(plan_detail, rate_card_id):
+    """저장된 일정 계산 결과가 입력 스냅샷으로 재현되는지 Backend에 확인한다. 계획이 없으면 검사하지 않는다."""
+    plan = (plan_detail or {}).get("plan") if isinstance(plan_detail, dict) else None
+    if not plan:
+        return
+    snapshot = plan.get("snapshot") or {}
+    if not snapshot.get("inputs") or snapshot.get("input_hash") != snapshot.get("snapshot_id"):
+        raise ToolInputError('일정 계산 스냅샷이 없거나 변경되었습니다. 재산정해주세요.')
+    from app.tools.backend_calc import calculation_client
+    client = calculation_client(rate_card_id)
+    if not hasattr(client, "validate_schedule"):
+        raise ToolInputError('일정 계산 결과는 Backend 공식 계산기에서만 검증할 수 있습니다.')
+    client.validate_schedule(plan)
+
+
 def validate_output_pricing(output, *, require_confirmed=False, current=True):
     if current:
         from app.tools.impact_workbook import assert_workbook_current
@@ -57,3 +72,4 @@ def validate_output_pricing(output, *, require_confirmed=False, current=True):
     actual = sorted((x.role, Decimal(str(x.md))) for e in output.estimates for x in e.lines)
     if expected != actual or p['inputs'].get('project_id') != output.context.project_id:
         raise ToolInputError('산정 항목과 계산 입력이 다릅니다. 재계산해주세요.')
+    validate_plan(getattr(output, 'plan_detail', None), rate)

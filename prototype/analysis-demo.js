@@ -27,7 +27,27 @@ export const pricingSummary = a3 => {
     + (p.provisional ? `<div class="notice">계산 기준 미확정: ${esc((p.provisional_reasons || []).join(', '))}</div>` : '')
     + `<table class="rate-card-table"><tbody>${row('추가 공수', `${p.total_md} MD (${p.total_hours}시간 · 1MD=${p.hours_per_md}시간)`)}${row('인건비 견적', won(p.labor_price))}${optional}${row('공급가액 · VAT 별도', won(p.supply_amount))}${row('부가세', won(p.vat_amount))}${row('총액 · VAT 포함', won(p.total_with_vat))}</tbody></table>`
     + (lines ? `<table class="rate-card-table"><thead><tr><th>직군</th><th>공수 MD</th><th>단가</th><th>금액</th></tr></thead><tbody>${lines}</tbody></table>` : '')
-    + `<p class="caption">작업 소요 영업일${d.assumed_full_time ? ' (전일 투입 가정)' : ''}: ${days || '산정 불가'} · 남은 영업일: ${remaining} · 착수일·완료일·일정 영향: 산정 불가</p>`;
+    + `<p class="caption">작업 소요 영업일${d.assumed_full_time ? ' (전일 투입 가정)' : ''}: ${days || '산정 불가'} · 남은 영업일: ${remaining}${a3.plan_detail?.plan ? '' : ' · 착수일·완료일·일정 영향: 산정 불가'}</p>`
+    + planSummary(a3.plan_detail);
+};
+// 일정 계산(schedule-v1) 결과. 값은 Backend 결과를 그대로 표시하고 화면에서 다시 계산하지 않는다.
+export const planSummary = detail => {
+  if (!detail) return '';
+  const plan = detail.plan;
+  if (!plan) {
+    const items = (detail.unassigned || []).map(x => `<li>${esc(x)}</li>`).join('');
+    return `<div class="notice">완료일·일정 영향 미계산: ${esc(detail.unavailable_reason || '사유 없음')}${items ? `<ul>${items}</ul>` : ''}</div>`;
+  }
+  const impact = plan.impact_business_days == null
+    ? `현재 계획 완료일 미입력 · 기존 작업 일정 대비 ${esc(plan.impact_vs_baseline_business_days)}영업일`
+    : `${esc(plan.impact_business_days)}영업일 (계획 완료일 ${esc(plan.planned_end)} 기준)`;
+  const rows = (plan.changed?.tasks || []).map(t => `<tr><td>${esc(t.id)}</td><td>${esc(t.person)}</td><td>${esc(t.hours)}</td><td>${esc(t.start ?? '-')}</td><td>${esc(t.end ?? '-')}</td></tr>`).join('');
+  return `<h3 style="margin-top:16px">일정 영향 · ${esc(plan.formula_version)}</h3>`
+    + `<table class="rate-card-table"><tbody><tr><th scope="row">변경 작업 착수</th><td>${esc(plan.change_start_date ?? '-')}</td></tr>`
+    + `<tr><th scope="row">예상 완료일</th><td>${esc(plan.estimated_end_date ?? '-')} (기존 ${esc(plan.baseline?.end ?? '-')})</td></tr>`
+    + `<tr><th scope="row">일정 영향</th><td>${impact}</td></tr><tr><th scope="row">추가 시간</th><td>${esc(plan.change_hours)}시간</td></tr></tbody></table>`
+    + (rows ? `<table class="rate-card-table"><thead><tr><th>작업</th><th>담당자</th><th>시간</th><th>시작</th><th>완료</th></tr></thead><tbody>${rows}</tbody></table>` : '')
+    + `<p class="caption">업로드된 일정·공수 자료의 가용 시간·선행 관계를 전제로 한 예상입니다.</p>`;
 };
 const realRun = s => !!s.analysisId || !!s.realA1 || !!s.realA2 || !!s.realA3 || !!s.supervisor;
 function totalsFor(s) {
