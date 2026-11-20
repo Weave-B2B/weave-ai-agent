@@ -37,9 +37,11 @@ def test_rate_card_forbids_nonlocal_client():
         assert client.get('/prototype-data/rate-cards/anything').status_code == 403
 
 
-def test_local_edit_creates_new_persistent_version_and_recalculates(tmp_path, monkeypatch):
+def test_local_edit_creates_new_version_but_does_not_invent_fixture_prices(tmp_path, monkeypatch):
     from app.kb.loader import rate_cards
+    from app.tools.backend_calc import BackendCalcError
     from app.tools.calc_cost import calc_cost
+    import pytest
     source = tmp_path / 'source.json'
     original = {'rate_cards': {'TEST': {'synthetic': True, 'unit': 'KRW/MD', 'vat_included': False,
         'rates': {'PM': {'cost': 100, 'price': 200}, 'QA': {'cost': 60, 'price': 100}}}}}
@@ -66,8 +68,9 @@ def test_local_edit_creates_new_persistent_version_and_recalculates(tmp_path, mo
         assert new_id.startswith('RC-LOCAL-') and new_id != 'TEST'
         assert json.loads(source.read_text()) == original
         assert rate_cards()[new_id]['source_rate_card_id'] == 'TEST'
-        assert calc_cost([{'role': 'PM', 'md': 2}], new_id)['price'] == 600
-        assert calc_cost([{'role': 'PM', 'md': 2}], 'TEST')['price'] == 400
+        # 임의 편집 단가에 대해 fake 계산기를 새로 실행하지 않는다.
+        with pytest.raises(BackendCalcError, match='예시 계산 정책'):
+            calc_cost([{'role': 'PM', 'md': 2}], new_id)
         assert client.get('/prototype-data/rate-cards/' + new_id).json()['rates']['PM']['price'] == 300
         assert len(list((tmp_path / '.prototype-rate-cards').glob('*.json'))) == 1
     monkeypatch.setenv('PROTOTYPE_LAB', '0')

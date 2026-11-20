@@ -79,9 +79,44 @@ class ProvisionalEstimate(Estimate):
     lines: list[ProvisionalLine] = Field(default_factory=list)
 
 
+class PricingSnapshot(BaseModel):
+    """계산식 v1 요청 전체 금액 스냅샷. 백엔드 공식 계산기만 채우고 LLM은 쓰지 않는다.
+
+    금액은 KRW·VAT 별도. supply_amount가 견적액(공급가액)이며 비율은 0.3 형태다.
+    기존 Totals(산정 그룹 인건비)와 달리 경비·할인·예비비·부가세를 요청 전체에 한 번만 적용한다.
+    """
+    model_config = ConfigDict(extra="allow")
+    formula_version: str
+    rate_card_id: str | None = None
+    hours_per_md: str
+    labor_price: int
+    labor_cost: int
+    direct_cost: int | None
+    subtotal: int
+    discount_amount: int
+    contingency_amount: int
+    supply_amount: int
+    vat_amount: int
+    total_with_vat: int
+    profit: int | None
+    profit_ratio: str | None = None
+    markup_ratio: str | None = None
+    policy_status: str
+    expenses_state: str
+    provisional: bool
+    provisional_reasons: list[str] = Field(default_factory=list)
+    calculated_at: str | None = None
+    calculated_by: str | None = None
+    input_hash: str | None = None
+    inputs: dict | None = None
+
+
 class ProvisionalAgent3Output(Agent3Output):
     estimates: list[ProvisionalEstimate]
     needs: list[Agent3Need] = Field(default_factory=list)
+    pricing: PricingSnapshot | None = Field(None, description="요청 전체 계산식 v1 결과. 미산정·단가 누락이 있으면 null")
+    impact_workbook: dict | None = Field(None, description="승인된 일정·공수 자료의 버전·해시와 구조화 입력. 계약 근거 아님")
+    schedule_detail: dict | None = Field(None, description="소요 영업일(37)·남은 영업일(42). 시작·완료일·일정 영향은 null")
 
     def _status_rules(self, ok):
         blocked = any(n.blocking for n in self.needs)

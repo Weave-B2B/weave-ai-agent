@@ -273,6 +273,11 @@ def schedules() -> dict[str, dict]:
     return _read_json("schedules.json")["projects"]
 
 
+def calc_policy() -> dict:
+    """계산식 v1 로컬 정책(합성). 파일 교체가 바로 반영되도록 캐시하지 않는다."""
+    return _read_json("calc_policy.json")
+
+
 def retrieval_sources() -> list[Path]:
     """색인에 쓸 수 있는 실제 파일 목록 (테스트가 eval/ 포함 여부를 검사한다)."""
     out: list[Path] = []

@@ -1,0 +1,20 @@
+{
+  "_note": "합성 계산 정책 — 계산식 v1 흐름 테스트용 가정값. 실제 회사 정책이 아니며 status가 CONFIRMED가 아니면 결과는 잠정이다.",
+  "formula_version": "calc-v1",
+  "status": "SYNTHETIC",
+  "hours_per_md": "8",
+  "vat": {
+    "taxable": true,
+    "ratio": "0.10",
+    "rounding": "HALF_UP"
+  },
+  "contingency": {
+    "ratio": null,
+    "base": "DISCOUNTED"
+  },
+  "schedule": {
+    "daily_effective_hours": null,
+    "workdays": [1, 2, 3, 4, 5],
+    "holidays": []
+  }
+}

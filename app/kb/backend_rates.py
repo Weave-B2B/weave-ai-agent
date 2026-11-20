@@ -97,5 +97,6 @@ def to_card(resp: dict) -> dict:
         "currency": resp.get("rateCurrency", "KRW"),
         "vat_included": False,
         "synthetic": False,
+        "hours_per_md": str(resp["hoursPerMd"]) if resp.get("hoursPerMd") is not None else None,
         "rates": rates
     }

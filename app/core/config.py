@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +25,12 @@ class Settings(BaseSettings):
     backend_analysis_result_path: str = "/internal/v1/ai-analyses/{ai_analysis_id}"
     backend_rate_card_path: str = "/internal/v1/rate-cards/{rate_card_id}"
     backend_project_rate_card_path: str = "/internal/v1/projects/{project_id}/rate-card"
+    # 계산식 v1 공식 계산기(백엔드). 백엔드 단가표(UUID)로 산정할 때 호출한다.
+    backend_calculation_path: str = "/internal/v1/estimates/calculations"
+    # 공식 연결이 기본. fixture는 합성 ID의 저장된 예시 응답만 재생한다.
+    calculation_mode: Literal["backend", "fixture"] = "backend"
+    # true면 계산 정책 미확정·경비 미입력(잠정) 결과의 최종 승인을 막는다. 합성 테스트 흐름은 false.
+    calc_require_confirmed_policy: bool = False
     prototype_run_db: Path = ROOT / ".prototype-runs" / "runs.sqlite3"
 
     # fixture: 데이터셋 정답을 에이전트 대신 돌려줌 (오케스트레이션 개발·계약 테스트용)

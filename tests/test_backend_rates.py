@@ -1,5 +1,6 @@
 """KB_SOURCE=backend: 백엔드 단가표를 지식베이스로 읽어 Agent3 산정 도구(calc_cost)가 그대로 쓰는지 검증."""
 from uuid import uuid4
+import json
 
 import httpx
 import pytest
@@ -81,18 +82,30 @@ def test_loader_fetches_remote_rate_card_on_demand(rate_backend):
     assert card["rates"]["BE"]["price"] == 700000
 
 
-def test_calc_cost_tool_uses_backend_rate_card(rate_backend):
+def test_calc_cost_tool_uses_backend_rate_card(rate_backend, monkeypatch):
+    import httpx
+    from app.tools import backend_calc
+    seen = {}
+    def handler(request):
+        seen.update(path=request.url.path, body=json.loads(request.content))
+        return httpx.Response(200, json={"md": 7.0, "md_by_role": {"BE": 5.0, "FE": 2.0},
+            "cost": 3400000, "price": 4800000, "margin": 0.2917, "currency": "KRW",
+            "vat_included": False, "rate_card_id": RATE_CARD_ID})
+    monkeypatch.setattr(backend_calc, "build_calc_client", lambda _: backend_calc.CalcClient("http://backend", "token",
+        http=httpx.Client(base_url="http://backend", transport=httpx.MockTransport(handler))))
     lines = [
         {"task": "PG 결제 연동", "role": "BE", "md": 5.0},
         {"task": "결제 화면 개발", "role": "FE", "md": 2.0}
     ]
     # BE 5.0 MD * 70만 = 350만, FE 2.0 MD * 65만 = 130만 -> 총 판매가 480만
     # BE 5.0 MD * 50만 = 250만, FE 2.0 MD * 45만 = 90만 -> 총 원가 340만
-    totals = calc_cost(lines, RATE_CARD_ID)
+    totals = calc_cost(lines, RATE_CARD_ID, project_id=PROJECT_ID)
     assert totals["md"] == 7.0
     assert totals["cost"] == 3400000
     assert totals["price"] == 4800000
     assert totals["currency"] == "KRW"
+    assert seen["path"] == "/internal/v1/estimates/labor-totals"
+    assert seen["body"]["project_id"] == PROJECT_ID
 
 
 def test_proposal_draft_endpoint():

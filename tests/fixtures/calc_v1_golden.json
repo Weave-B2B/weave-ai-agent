@@ -1,0 +1,200 @@
+{
+  "_note": "계산식 v1 골든 벡터. 기대값은 손으로 계산했다. AI 참조 구현(Python)과 백엔드 공식 계산기(Java)가 같은 파일로 검증한다. expected에는 확인할 필드만 적는다. 단가는 합성값.",
+  "formula_version": "calc-v1",
+  "rate_cards": {
+    "G": {
+      "id": "RC-GOLDEN", "hours_per_md": "8",
+      "rates": {
+        "PM": {"cost": 520000, "price": 750000},
+        "UX": {"cost": 450000, "price": 650000},
+        "FE": {"cost": 450000, "price": 650000},
+        "BE": {"cost": 500000, "price": 700000},
+        "QA": {"cost": 350000, "price": 500000}
+      }
+    },
+    "G_NO_QA": {
+      "id": "RC-GOLDEN-NOQA", "hours_per_md": "8",
+      "rates": {
+        "FE": {"cost": 450000, "price": 650000},
+        "BE": {"cost": 500000, "price": 700000}
+      }
+    }
+  },
+  "policies": {
+    "SYNTHETIC": {"status": "SYNTHETIC", "vat": {"taxable": true, "ratio": "0.10", "rounding": "HALF_UP"}, "contingency": {"ratio": null, "base": "DISCOUNTED"}},
+    "CONFIRMED": {"status": "CONFIRMED", "vat": {"taxable": true, "ratio": "0.10", "rounding": "HALF_UP"}, "contingency": {"ratio": null, "base": "DISCOUNTED"}},
+    "CONFIRMED_CONTINGENCY": {"status": "CONFIRMED", "vat": {"taxable": true, "ratio": "0.10", "rounding": "HALF_UP"}, "contingency": {"ratio": "0.10", "base": "DISCOUNTED"}},
+    "CONFIRMED_CONTINGENCY_VAT_DOWN": {"status": "CONFIRMED", "vat": {"taxable": true, "ratio": "0.10", "rounding": "DOWN"}, "contingency": {"ratio": "0.10", "base": "DISCOUNTED"}},
+    "CONFIRMED_NON_TAXABLE": {"status": "CONFIRMED", "vat": {"taxable": false, "ratio": "0.10", "rounding": "HALF_UP"}, "contingency": {"ratio": null, "base": "DISCOUNTED"}},
+    "BAD_VAT": {"status": "CONFIRMED", "vat": {"taxable": true, "ratio": "1.5", "rounding": "HALF_UP"}, "contingency": {"ratio": null, "base": "DISCOUNTED"}}
+  },
+  "pricing_cases": [
+    {
+      "name": "labor_only_synthetic_policy",
+      "rate_card": "G", "policy": "SYNTHETIC",
+      "lines": [{"key": "L1", "role": "FE", "md": "1.0"}, {"key": "L2", "role": "BE", "md": "2.0"}, {"key": "L3", "role": "QA", "md": "0.5"}],
+      "adjustments": {"expenses_state": "NOT_ENTERED"},
+      "expected": {
+        "status": "OK",
+        "pricing": {
+          "formula_version": "calc-v1", "hours_per_md": "8",
+          "total_md": "3.5", "total_hours": "28", "md_by_role": {"FE": "1", "BE": "2", "QA": "0.5"},
+          "lines": [
+            {"key": "L1", "role": "FE", "md": "1", "hours": "8", "sell_rate": 650000, "cost_rate": 450000, "amount": 650000, "cost_amount": 450000},
+            {"key": "L2", "role": "BE", "md": "2", "hours": "16", "sell_rate": 700000, "cost_rate": 500000, "amount": 1400000, "cost_amount": 1000000},
+            {"key": "L3", "role": "QA", "md": "0.5", "hours": "4", "sell_rate": 500000, "cost_rate": 350000, "amount": 250000, "cost_amount": 175000}
+          ],
+          "labor_price": 2300000, "labor_cost": 1625000,
+          "expense_cost": 0, "expense_billable": 0, "separate_amount": 0, "separate_cost": 0,
+          "direct_cost": 1625000, "subtotal": 2300000, "discount_amount": 0, "discounted_amount": 2300000,
+          "contingency_amount": 0, "supply_amount": 2300000, "vat_ratio": "0.1", "vat_amount": 230000, "total_with_vat": 2530000,
+          "profit": 675000, "profit_ratio": "0.2935", "markup_ratio": "0.4154",
+          "md_delta": null, "supply_delta": null,
+          "policy_status": "SYNTHETIC", "expenses_state": "NOT_ENTERED",
+          "provisional": true, "provisional_reasons": ["policy:SYNTHETIC", "expenses:NOT_ENTERED"]
+        }
+      }
+    },
+    {
+      "name": "expenses_separate_discount_contingency_confirmed",
+      "rate_card": "G", "policy": "CONFIRMED_CONTINGENCY",
+      "lines": [{"key": "L1", "role": "PM", "md": "0.5"}, {"key": "L2", "role": "FE", "md": "2.0"}],
+      "adjustments": {
+        "expenses_state": "ENTERED",
+        "expenses": [
+          {"name": "외부 API 이용료", "internal_cost": 100000, "billable": true, "billable_amount": 100000, "markup_ratio": "0.10"},
+          {"name": "출장비", "internal_cost": 50000, "billable": false}
+        ],
+        "separate_items": [{"name": "라이선스", "amount": 200000, "cost": 150000}],
+        "discount": {"ratio": "0.05"}
+      },
+      "previous": {"total_md": "2.0", "supply_amount": 2000000},
+      "expected": {
+        "status": "OK",
+        "pricing": {
+          "total_md": "2.5", "total_hours": "20",
+          "labor_price": 1675000, "labor_cost": 1160000,
+          "expense_cost": 150000, "expense_billable": 110000, "separate_amount": 200000, "separate_cost": 150000,
+          "direct_cost": 1460000, "subtotal": 1985000, "discount_amount": 99250, "discounted_amount": 1885750,
+          "contingency_amount": 188575, "supply_amount": 2074325, "vat_amount": 207433, "total_with_vat": 2281758,
+          "profit": 614325, "profit_ratio": "0.2962", "markup_ratio": "0.4208",
+          "md_delta": "0.5", "supply_delta": 74325,
+          "provisional": false, "provisional_reasons": []
+        }
+      }
+    },
+    {
+      "name": "vat_rounding_down",
+      "rate_card": "G", "policy": "CONFIRMED_CONTINGENCY_VAT_DOWN",
+      "lines": [{"key": "L1", "role": "PM", "md": "0.5"}, {"key": "L2", "role": "FE", "md": "2.0"}],
+      "adjustments": {
+        "expenses_state": "ENTERED",
+        "expenses": [
+          {"name": "외부 API 이용료", "internal_cost": 100000, "billable": true, "billable_amount": 100000, "markup_ratio": "0.10"},
+          {"name": "출장비", "internal_cost": 50000, "billable": false}
+        ],
+        "separate_items": [{"name": "라이선스", "amount": 200000, "cost": 150000}],
+        "discount": {"ratio": "0.05"}
+      },
+      "expected": {"status": "OK", "pricing": {"supply_amount": 2074325, "vat_amount": 207432, "total_with_vat": 2281757}}
+    },
+    {
+      "name": "zero_supply_after_full_discount",
+      "rate_card": "G", "policy": "CONFIRMED",
+      "lines": [{"key": "L1", "role": "QA", "md": "1.0"}],
+      "adjustments": {"expenses_state": "CONFIRMED_NONE", "discount": {"amount": 500000}},
+      "expected": {
+        "status": "OK",
+        "pricing": {
+          "labor_price": 500000, "labor_cost": 350000, "subtotal": 500000, "discount_amount": 500000,
+          "supply_amount": 0, "vat_amount": 0, "total_with_vat": 0,
+          "profit": -350000, "profit_ratio": null, "markup_ratio": "-1.0000",
+          "provisional": false, "provisional_reasons": []
+        }
+      }
+    },
+    {
+      "name": "non_taxable",
+      "rate_card": "G", "policy": "CONFIRMED_NON_TAXABLE",
+      "lines": [{"key": "L1", "role": "BE", "md": "1.0"}],
+      "adjustments": {"expenses_state": "CONFIRMED_NONE"},
+      "expected": {"status": "OK", "pricing": {"supply_amount": 700000, "vat_ratio": "0", "vat_amount": 0, "total_with_vat": 700000}}
+    },
+    {
+      "name": "missing_rate_needs_input",
+      "rate_card": "G_NO_QA", "policy": "CONFIRMED",
+      "lines": [{"key": "L1", "role": "FE", "md": "1.0"}, {"key": "L2", "role": "QA", "md": "1.0"}],
+      "adjustments": {"expenses_state": "CONFIRMED_NONE"},
+      "expected": {"status": "NEEDS_INPUT", "missing": ["rate:QA"], "pricing": null}
+    },
+    {
+      "name": "line_rate_snapshot_overrides_rate_card",
+      "rate_card": "G", "policy": "CONFIRMED",
+      "lines": [{"key": "L1", "role": "FE", "md": "1.0", "sell_rate": 600000, "cost_rate": 400000}, {"key": "L2", "role": "QA", "md": "1.0"}],
+      "adjustments": {"expenses_state": "CONFIRMED_NONE"},
+      "expected": {"status": "OK", "pricing": {"labor_price": 1100000, "labor_cost": 750000, "supply_amount": 1100000, "vat_amount": 110000}}
+    },
+    {
+      "name": "zero_md_role_without_rate_is_allowed",
+      "rate_card": "G_NO_QA", "policy": "CONFIRMED",
+      "lines": [{"key": "L1", "role": "FE", "md": "1.0"}, {"key": "L2", "role": "QA", "md": "0"}],
+      "adjustments": {"expenses_state": "CONFIRMED_NONE"},
+      "expected": {"status": "OK", "pricing": {"labor_price": 650000, "total_md": "1", "supply_amount": 650000}}
+    }
+  ],
+  "pricing_error_cases": [
+    {"name": "discount_exceeds_subtotal", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "CONFIRMED_NONE", "discount": {"amount": 500001}}},
+    {"name": "discount_amount_and_ratio", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "CONFIRMED_NONE", "discount": {"amount": 1000, "ratio": "0.1"}}},
+    {"name": "negative_expense", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "ENTERED", "expenses": [{"name": "x", "internal_cost": -1, "billable": false}]}},
+    {"name": "expenses_with_confirmed_none", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "CONFIRMED_NONE", "expenses": [{"name": "x", "internal_cost": 1000, "billable": false}]}},
+    {"name": "vat_ratio_out_of_range", "rate_card": "G", "policy": "BAD_VAT", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}},
+    {"name": "md_not_half_step", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "0.25"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}},
+    {"name": "negative_md", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "-1"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}},
+    {"name": "unknown_role", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "DBA", "md": "1"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}}
+  ],
+  "schedule_cases": [
+    {
+      "name": "full_time_default_and_remaining_days",
+      "request": {
+        "hours_per_md": "8", "as_of": "2026-11-17", "end_date": "2026-11-23", "end_basis": "contract_end",
+        "calendar": {"daily_effective_hours": null, "workdays": [1, 2, 3, 4, 5], "holidays": []},
+        "lines": [{"key": "L1", "role": "FE", "md": "1.0"}, {"key": "L2", "role": "BE", "md": "2.0"}, {"key": "L3", "role": "QA", "md": "0.5"}, {"key": "L4", "role": "PM", "md": "0"}]
+      },
+      "expected": {
+        "lines": [
+          {"key": "L1", "role": "FE", "hours": "8", "work_business_days": 1},
+          {"key": "L2", "role": "BE", "hours": "16", "work_business_days": 2},
+          {"key": "L3", "role": "QA", "hours": "4", "work_business_days": 1},
+          {"key": "L4", "role": "PM", "hours": "0", "work_business_days": 0}
+        ],
+        "work_business_days_by_role": {"FE": 1, "BE": 2, "QA": 1, "PM": 0},
+        "daily_effective_hours": "8", "assumed_full_time": true, "holidays_applied": false,
+        "remaining_business_days": 4, "remaining_basis": "contract_end",
+        "start_date": null, "estimated_end_date": null, "impact_business_days": null
+      }
+    },
+    {
+      "name": "partial_allocation_and_holiday",
+      "request": {
+        "hours_per_md": "8", "as_of": "2026-11-17", "end_date": "2026-11-23", "end_basis": "planned_end",
+        "calendar": {"daily_effective_hours": "6", "workdays": [1, 2, 3, 4, 5], "holidays": ["2026-11-20"]},
+        "lines": [{"key": "L1", "role": "FE", "md": "1.0"}, {"key": "L2", "role": "FE", "md": "2.0"}, {"key": "L3", "role": "QA", "md": "0.5"}]
+      },
+      "expected": {
+        "work_business_days_by_role": {"FE": 5, "QA": 1},
+        "daily_effective_hours": "6", "assumed_full_time": false, "holidays_applied": true,
+        "remaining_business_days": 3, "remaining_basis": "planned_end"
+      }
+    },
+    {
+      "name": "no_end_date_keeps_only_that_field_null",
+      "request": {"hours_per_md": "8", "as_of": "2026-11-17", "lines": [{"key": "L1", "role": "BE", "md": "1.5"}]},
+      "expected": {"work_business_days_by_role": {"BE": 2}, "remaining_business_days": null, "remaining_basis": null}
+    },
+    {
+      "name": "end_before_as_of_is_zero",
+      "request": {"hours_per_md": "8", "as_of": "2026-11-17", "end_date": "2026-11-16", "lines": []},
+      "expected": {"remaining_business_days": 0, "remaining_basis": "contract_end"}
+    }
+  ]
+}
