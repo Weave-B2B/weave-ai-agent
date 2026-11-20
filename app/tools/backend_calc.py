@@ -52,6 +52,20 @@ class CalcClient:
             raise BackendCalcError("백엔드 인건비 응답 형식이 올바르지 않습니다.")
         return data
 
+    def schedule(self, body: dict) -> dict:
+        """일정 계산(schedule-v1). 계산 실패·형식 오류를 다른 값으로 대체하지 않는다."""
+        data = self._post(self._path.rsplit('/', 1)[0] + '/schedules', body)
+        if data.get("formula_version") != "schedule-v1" or not isinstance(data.get("changed"), dict) \
+                or not isinstance(data.get("snapshot"), dict):
+            raise BackendCalcError("백엔드 일정 계산 응답 형식이 올바르지 않습니다.")
+        return data
+
+    def validate_schedule(self, plan: dict) -> dict:
+        data = self._post(self._path.rsplit('/', 1)[0] + '/schedules/validations', plan)
+        if data.get("valid") is not True or data.get("snapshot_id") != (plan.get("snapshot") or {}).get("snapshot_id"):
+            raise BackendCalcError("백엔드 일정 검증 응답이 일치하지 않습니다.")
+        return data
+
     def validate(self, body: dict) -> dict:
         data = self._post(self._path.rsplit('/', 1)[0] + '/validations', body)
         if data.get("valid") is not True or data.get("snapshot_id") != body["pricing"].get("snapshot_id"):

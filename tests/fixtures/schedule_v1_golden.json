@@ -1,0 +1,1409 @@
+{
+ "_note": "일정 계산기(schedule-v1) 골든 벡터. 첫 사례는 AI 저장소의 손으로 배정한 샘플을 그대로 옮긴 것이다. expected에는 확인할 필드만 적는다. 합성 데이터.",
+ "formula_version": "schedule-v1",
+ "cases": [
+  {
+   "name": "sample_review_api_change",
+   "source": "weave-ai-agent data/scenarios/schedule-v1-sample.json (손으로 배정한 기대값)",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   },
+   "expected": {
+    "formula_version": "schedule-v1",
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "baseline": {
+     "end": "2026-11-26",
+     "allocations": [
+      {
+       "task_id": "T-FE",
+       "date": "2026-11-23",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-FE",
+       "date": "2026-11-24",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-BE",
+       "date": "2026-11-23",
+       "hours": "8"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-11-25",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-11-26",
+       "hours": "4"
+      }
+     ]
+    },
+    "changed": {
+     "end": "2026-12-01",
+     "allocations": [
+      {
+       "task_id": "T-FE",
+       "date": "2026-11-23",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-FE",
+       "date": "2026-11-24",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-BE",
+       "date": "2026-11-23",
+       "hours": "8"
+      },
+      {
+       "task_id": "T-REVIEW",
+       "date": "2026-11-24",
+       "hours": "8"
+      },
+      {
+       "task_id": "T-REVIEW",
+       "date": "2026-11-25",
+       "hours": "8"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-11-26",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-11-30",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-12-01",
+       "hours": "4"
+      }
+     ]
+    },
+    "change_start_date": "2026-11-24",
+    "estimated_end_date": "2026-12-01",
+    "impact_business_days": 2,
+    "impact_vs_baseline_business_days": 2,
+    "change_hours": "20"
+   }
+  },
+  {
+   "name": "no_planned_end_keeps_only_impact_null",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": null,
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   },
+   "expected": {
+    "planned_end": null,
+    "impact_business_days": null,
+    "impact_vs_baseline_business_days": 2,
+    "estimated_end_date": "2026-12-01"
+   }
+  },
+  {
+   "name": "person_day_off_pushes_successors",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     },
+     {
+      "person": "be-1",
+      "date": "2026-11-24",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   },
+   "expected": {
+    "changed": {
+     "end": "2026-12-02",
+     "allocations": [
+      {
+       "task_id": "T-FE",
+       "date": "2026-11-23",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-FE",
+       "date": "2026-11-24",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-BE",
+       "date": "2026-11-23",
+       "hours": "8"
+      },
+      {
+       "task_id": "T-REVIEW",
+       "date": "2026-11-25",
+       "hours": "8"
+      },
+      {
+       "task_id": "T-REVIEW",
+       "date": "2026-11-26",
+       "hours": "8"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-11-30",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-12-01",
+       "hours": "4"
+      },
+      {
+       "task_id": "T-QA",
+       "date": "2026-12-02",
+       "hours": "4"
+      }
+     ]
+    },
+    "impact_business_days": 3
+   }
+  },
+  {
+   "name": "work_inside_slack_has_no_delay",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-SMALL",
+       "person": "be-1",
+       "hours": 4,
+       "predecessors": [],
+       "successors": []
+      }
+     ],
+     "extended": [],
+     "change_hours": 4
+    }
+   },
+   "expected": {
+    "changed": {
+     "end": "2026-11-26"
+    },
+    "change_start_date": "2026-11-24",
+    "impact_business_days": 0,
+    "impact_vs_baseline_business_days": 0,
+    "change_hours": "4"
+   }
+  },
+  {
+   "name": "company_saturday_workday_counts",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     },
+     {
+      "person": null,
+      "date": "2026-11-28",
+      "hours": 8
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   },
+   "expected": {
+    "changed": {
+     "end": "2026-11-30"
+    },
+    "impact_business_days": 2
+   }
+  }
+ ],
+ "error_cases": [
+  {
+   "name": "cycle_via_successor",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-QA"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "unknown_person",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-9",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "unknown_predecessor",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-XX"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "negative_hours",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": -1,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "change_hours_mismatch",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 24
+    }
+   }
+  },
+  {
+   "name": "extend_unknown_task",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      },
+      {
+       "task_id": "T-NONE",
+       "hours": 2
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "duplicate_task_id",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-QA",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "no_capacity",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 0,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "missing_start_date",
+   "request": {
+    "start_date": null,
+    "planned_end": "2026-11-26",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  },
+  {
+   "name": "bad_workday",
+   "request": {
+    "start_date": "2026-11-23",
+    "planned_end": "2026-11-26",
+    "workdays": [
+     0,
+     1
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-11-27",
+      "hours": 0
+     }
+    ],
+    "people": [
+     {
+      "id": "fe-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "be-1",
+      "daily_hours": 8,
+      "available_from": "2026-11-23"
+     },
+     {
+      "id": "qa-1",
+      "daily_hours": 4,
+      "available_from": "2026-11-23"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "T-FE",
+      "person": "fe-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-BE",
+      "person": "be-1",
+      "hours": 8,
+      "predecessors": []
+     },
+     {
+      "id": "T-QA",
+      "person": "qa-1",
+      "hours": 8,
+      "predecessors": [
+       "T-FE",
+       "T-BE"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "T-REVIEW",
+       "person": "be-1",
+       "hours": 16,
+       "predecessors": [
+        "T-BE"
+       ],
+       "successors": [
+        "T-QA"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "T-QA",
+       "hours": 4
+      }
+     ],
+     "change_hours": 20
+    }
+   }
+  }
+ ]
+}
