@@ -102,7 +102,7 @@ uvicorn app.main:app --reload
 - 대화형 API 문서: <http://127.0.0.1:8000/docs>
 - OpenAPI 스키마: <http://127.0.0.1:8000/openapi.json>
 
-기본 `AGENT_MODE=fixture`에서는 평가 데이터셋에 정의된 케이스를 사용해 API와 오케스트레이션 흐름을 확인합니다. 임의의 케이스 ID는 Fixture에 없으면 처리할 수 없습니다.
+기본 `AGENT_MODE=fixture`에서는 평가 데이터셋에 정의된 케이스의 고정 결과로 API와 오케스트레이션 흐름을 확인합니다. 등록되지 않은 케이스도 Agent 1은 원문을 간단히 나눈 기능 항목으로, Agent 2는 근거 없는 범위 미확정 결과로, Agent 3은 산정 대상 없음(`NOT_REQUIRED`)으로 반환합니다. 이 대체 결과는 흐름 테스트용이며 실제 분석·견적 결과가 아닙니다. 실제 모델 분석은 `AGENT_MODE=llm`으로 실행합니다.
 
 Agent1 입력과 구조화 출력을 확인하는 Streamlit 데모는 별도 터미널에서 실행합니다.
 
