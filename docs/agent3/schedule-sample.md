@@ -30,3 +30,7 @@
 `tests/test_schedule_sample.py`는 입력과 기대 배정의 작업량 합계·휴일·선행 조건·가용시간을 검증한다.
 이 검증은 운영 스케줄러의 구현 완료를 의미하지 않는다. 다음 단계에서 이 입력을 받아 실제로 배정하고
 동일 기대값을 반환하는 계산기를 구현한 후, 문서 업로드·Jira 등 데이터 수집 경로를 붙인다.
+
+## 계산기 연결 (2026-11-20)
+
+Backend 일정 계산기(`ScheduleCalculator`, schedule-v1)가 이 입력으로 위 기대값을 그대로 낸다. 골든 벡터 첫 사례가 이 샘플이다(`tests/fixtures/schedule_v1_golden.json`, Backend `src/test/resources/calc/schedule_v1_golden.json`). 자세한 규칙은 [schedule-calculator.md](schedule-calculator.md).
