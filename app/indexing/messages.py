@@ -22,6 +22,7 @@ class IndexRequest(_Msg):
     document_version_id: UUID
     file_object_id: Optional[UUID] = None
     object_key: str
+    document_type: Optional[str] = None
     mime_type: str = "application/pdf"
     bucket: Optional[str] = None                  # 백엔드는 버킷 하나(weave-dev-files) — 비우면 설정값
     sha256: Optional[str] = Field(None, pattern=r"^[0-9a-f]{64}$")   # FileObject.sha256 (추가 요청). 있으면 검증
