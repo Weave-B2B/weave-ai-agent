@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-11-20",
+  "schema_path": "schema/schemas.py",
+  "schema_version": "0.3.0",
+  "schema_sha256": "8700e1caa2245e21b55907da801fb7e0189fc06ea52ffde12600ffa6f19e425d",
+  "source_commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
+  "dataset_baseline": {
+    "manifest_path": "eval/dataset/manifest.json",
+    "schema_version": "0.3.0",
+    "schema_sha256": "25f284e5cbb637dbab7f8cb21ec197b9bbcf781b67a44458e679555049f7facf"
+  },
+  "changes_since_dataset_baseline": [
+    {
+      "commit": "435b170d7a40c3fcfd20e6f0753fa57cb6a28314",
+      "summary": "Draft에 선택 필드 email_subject·email_body 추가"
+    },
+    {
+      "commit": "ce713e32b0c618836118ba00ca46c7c58038f403",
+      "summary": "산정 intent를 estimate_request로 정렬하고 Item.conditional_followup 및 Agent2 입력 설명 추가"
+    },
+    {
+      "commit": "3f605e7b21e9c49a9baef3856abb91087d04ceb0",
+      "summary": "Assessment.confirmation_answer 선택 필드 추가"
+    },
+    {
+      "commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
+      "summary": "ChangeKind와 Item.change_kind 선택 필드 추가"
+    }
+  ]
+}
