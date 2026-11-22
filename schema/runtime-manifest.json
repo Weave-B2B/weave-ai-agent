@@ -1,8 +1,8 @@
 {
-  "recorded_at": "2026-11-20",
+  "recorded_at": "2026-11-23",
   "schema_path": "schema/schemas.py",
   "schema_version": "0.3.0",
-  "schema_sha256": "8700e1caa2245e21b55907da801fb7e0189fc06ea52ffde12600ffa6f19e425d",
+  "schema_sha256": "014fb0e7923cdff85556be07d1b59602d5fc9d74801a15da917bd585e44c0ec5",
   "source_commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
   "dataset_baseline": {
     "manifest_path": "eval/dataset/manifest.json",
@@ -25,6 +25,10 @@
     {
       "commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
       "summary": "ChangeKind와 Item.change_kind 선택 필드 추가"
+    },
+    {
+      "commit": "feat/#72-agent1-thread-context",
+      "summary": "Agent1Input.thread_context·existing_items, Item.action·target_item_id 선택 필드 추가 (회신 맥락 분석)"
     }
   ]
 }
