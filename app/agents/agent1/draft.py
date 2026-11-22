@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from schema.schemas import ChangeKind, Intent, ItemType
+from schema.schemas import ChangeKind, Intent, ItemAction, ItemType
 
 
 class _DraftModel(BaseModel):
@@ -23,6 +23,9 @@ class DraftItem(_DraftModel):
     inferred: bool = False
     conditional_followup: str | None = None
     change_kind: ChangeKind | None = None
+    # 회신 분석 전용: existing_items와의 관계. target_item_no는 existing_items 번호(1부터)
+    action: ItemAction = "new"
+    target_item_no: int | None = None
 
 
 class DraftQuestion(_DraftModel):
