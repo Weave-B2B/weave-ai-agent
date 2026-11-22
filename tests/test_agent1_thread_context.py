@@ -66,9 +66,9 @@ def test_기존_항목이_없는_첫_메일은_action을_비운다():
     assert "action" not in out.items[0].model_dump(exclude_none=True)   # 기존 산출물·데이터셋과 동일
 
 
-def test_맥락이_없으면_프롬프트가_바뀌지_않는다():
+def test_맥락이_없으면_회신_블록을_넣지_않는다():
     prompt = build_user_prompt(_input(with_context=False))
-    assert "<thread_context>" not in prompt and "<existing_items>" not in prompt
+    assert "<thread_context>" not in prompt and "<existing_items>" not in prompt and "<thread_guide>" not in prompt
 
 
 def test_회신이면_이전_메일과_번호_붙은_기존_항목을_프롬프트에_넣는다():
@@ -78,3 +78,18 @@ def test_회신이면_이전_메일과_번호_붙은_기존_항목을_프롬프�
     assert "1. function | 영문 상품 상세페이지 추가" in prompt
     assert "2. function | 가격·브랜드 검색 필터 적용" in prompt
     assert prompt.index("</existing_items>") < prompt.index("<message_text>")
+
+
+def test_요약은_결과에_담고_빈_요약은_비운다():
+    draft = Agent1Draft(items=[_draft_item("카카오 로그인 추가", "카카오 로그인도 추가해 주세요")],
+                        summary="  영문 상세페이지를 언어 선택 방식으로 바꾸고 카카오 로그인을 추가해 달라는 요청.  ")
+    out, _ = assemble(_input(), draft, feature_search=None)
+    assert out.summary == "영문 상세페이지를 언어 선택 방식으로 바꾸고 카카오 로그인을 추가해 달라는 요청."
+
+    out, _ = assemble(_input(), Agent1Draft(items=[], summary="   "), feature_search=None)
+    assert out.summary is None
+
+
+def test_모든_메일_프롬프트에_요약_지침이_들어간다():
+    assert "<summary_guide>" in build_user_prompt(_input(with_context=False))
+    assert "<summary_guide>" in build_user_prompt(_input())

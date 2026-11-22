@@ -2,7 +2,7 @@
   "recorded_at": "2026-11-23",
   "schema_path": "schema/schemas.py",
   "schema_version": "0.3.0",
-  "schema_sha256": "014fb0e7923cdff85556be07d1b59602d5fc9d74801a15da917bd585e44c0ec5",
+  "schema_sha256": "e6ec401c10c1d53967c4128765968523b5dc9113839221e4abdaa5431879790c",
   "source_commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
   "dataset_baseline": {
     "manifest_path": "eval/dataset/manifest.json",
@@ -29,6 +29,10 @@
     {
       "commit": "feat/#72-agent1-thread-context",
       "summary": "Agent1Input.thread_context·existing_items, Item.action·target_item_id 선택 필드 추가 (회신 맥락 분석)"
+    },
+    {
+      "commit": "feat/#72-agent1-thread-context",
+      "summary": "Agent1Output.summary 선택 필드 추가 (메일 요약, 회신 맥락에 사용)"
     }
   ]
 }

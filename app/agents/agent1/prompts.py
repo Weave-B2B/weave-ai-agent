@@ -95,6 +95,7 @@ def build_user_prompt(
             ]
         )
 
+    lines.append(SUMMARY_GUIDE)
     lines.extend(_thread_lines(inp))
     lines.extend(
         [
@@ -109,9 +110,17 @@ def build_user_prompt(
     return "\n".join(lines)
 
 
+SUMMARY_GUIDE = """\
+<summary_guide>
+summary에 이번 message_text를 1~3개의 짧은 문장으로 요약한다. "이거", "그 건"처럼 가리키는 말과 추상적인 표현은
+원문(회신이면 thread_context·existing_items 포함)에 나온 대상으로 바꿔 구체적으로 쓴다. 원문에 없는 사실·수치·일정은 넣지 않는다.
+요청이 없는 메일도 무슨 내용인지 한 문장으로 요약한다.
+</summary_guide>"""
+
+
 THREAD_GUIDE = """\
 <thread_guide>
-이 메일은 같은 스레드의 회신이다. thread_context(이전 메일)와 existing_items(현재 등록된 항목)는 맥락일 뿐이며,
+이 메일은 같은 스레드의 회신이다. thread_context(이전 메일 요약)와 existing_items(현재 등록된 항목)는 맥락일 뿐이며,
 항목과 quotes는 message_text에서만 만든다. 각 항목의 action을 정한다.
 - new: existing_items에 없는 새 요청. target_item_no는 비운다.
 - update: 기존 항목을 구체화·수정한다. target_item_no=그 항목 번호, text는 수정 내용을 반영한 전체 문장으로 쓴다.

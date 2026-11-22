@@ -316,6 +316,7 @@ def assemble(
         "status": status,
         "items": [item.model_dump() for item in items],
         "duplicates": [],
+        "summary": (draft.summary or "").strip() or None,
     }
     try:
         return Agent1Output.model_validate(payload), report

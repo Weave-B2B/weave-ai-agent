@@ -45,3 +45,4 @@ class Agent1Draft(_DraftModel):
 
     items: list[DraftItem]
     questions: list[DraftQuestion] = Field(default_factory=list)
+    summary: str | None = None

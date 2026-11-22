@@ -161,7 +161,7 @@ class ThreadMessage(_M):
     message_id: str
     received_at: str
     sender_role: str
-    text: str = Field(description="이전 메일 본문(인용 제거)")
+    text: str = Field(description="이전 메일 요약(Agent1Output.summary). 요약이 없으면 본문(인용 제거)")
 
 
 class ExistingItem(_M):
@@ -205,6 +205,10 @@ class Agent1Output(_Out):
     status: A1Status
     items: list[Item]
     duplicates: list[dict] = Field([], description="{cr_id, similarity, reason} — MVP 이후")
+    summary: Optional[str] = Field(
+        None,
+        description="이번 메일 요약 1~3문장. 지시어·추상 표현을 원문·맥락의 대상으로 구체화하되 원문에 없는 사실은 넣지 않는다. 다음 회신의 thread_context로 쓴다",
+    )
 
     @model_validator(mode="after")
     def _chk(self):
