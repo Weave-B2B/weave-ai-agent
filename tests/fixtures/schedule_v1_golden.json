@@ -572,6 +572,846 @@
     },
     "impact_business_days": 2
    }
+  },
+  {
+   "name": "monomarket_wbs_coupon_change",
+   "source": "weave-ai-agent data/templates/impact-workbook-example.xlsx(WBS·인력 투입 계획) + CR-A-009 Agent 3 작업 행. 달별 투입률은 개인 예외일로 펼침",
+   "request": {
+    "start_date": "2026-10-12",
+    "planned_end": "2026-11-24",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-09-24",
+      "hours": "0"
+     },
+     {
+      "person": null,
+      "date": "2026-09-25",
+      "hours": "0"
+     },
+     {
+      "person": null,
+      "date": "2026-10-05",
+      "hours": "0"
+     },
+     {
+      "person": null,
+      "date": "2026-10-09",
+      "hours": "0"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-13",
+      "hours": "0"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-12",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-14",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-15",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-16",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-19",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-20",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-21",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-22",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-23",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-26",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-27",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-28",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-29",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-30",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-12",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-13",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-14",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-15",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-16",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-19",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-20",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-21",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-22",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-23",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-26",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-27",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-28",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-29",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-30",
+      "hours": "4"
+     }
+    ],
+    "people": [
+     {
+      "id": "김민서",
+      "daily_hours": "4",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "박서연",
+      "daily_hours": "0",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "이준호",
+      "daily_hours": "8",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "최지훈",
+      "daily_hours": "8",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "정수빈",
+      "daily_hours": "8",
+      "available_from": "2026-10-12"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "로그인·상품 목록/상세 API",
+      "person": "최지훈",
+      "hours": "13",
+      "predecessors": []
+     },
+     {
+      "id": "검색·필터 API",
+      "person": "최지훈",
+      "hours": "40",
+      "predecessors": [
+       "로그인·상품 목록/상세 API"
+      ]
+     },
+     {
+      "id": "장바구니·결제·쿠폰 API",
+      "person": "최지훈",
+      "hours": "64",
+      "predecessors": [
+       "검색·필터 API"
+      ]
+     },
+     {
+      "id": "관리자 주문 조회 API",
+      "person": "최지훈",
+      "hours": "16",
+      "predecessors": [
+       "장바구니·결제·쿠폰 API"
+      ]
+     },
+     {
+      "id": "로그인·상품 화면",
+      "person": "이준호",
+      "hours": "34",
+      "predecessors": []
+     },
+     {
+      "id": "검색·필터·장바구니 화면",
+      "person": "이준호",
+      "hours": "56",
+      "predecessors": [
+       "로그인·상품 화면"
+      ]
+     },
+     {
+      "id": "결제·쿠폰·관리자 화면",
+      "person": "이준호",
+      "hours": "40",
+      "predecessors": [
+       "검색·필터·장바구니 화면"
+      ]
+     },
+     {
+      "id": "배송사 조회 링크",
+      "person": "이준호",
+      "hours": "16",
+      "predecessors": [
+       "결제·쿠폰·관리자 화면"
+      ]
+     },
+     {
+      "id": "테스트 케이스 작성",
+      "person": "정수빈",
+      "hours": "40",
+      "predecessors": []
+     },
+     {
+      "id": "통합 테스트 (M4)",
+      "person": "정수빈",
+      "hours": "64",
+      "predecessors": [
+       "관리자 주문 조회 API",
+       "배송사 조회 링크",
+       "테스트 케이스 작성"
+      ]
+     },
+     {
+      "id": "결함 수정 (BE)",
+      "person": "최지훈",
+      "hours": "24",
+      "predecessors": [
+       "관리자 주문 조회 API"
+      ]
+     },
+     {
+      "id": "결함 수정 (FE)",
+      "person": "이준호",
+      "hours": "24",
+      "predecessors": [
+       "배송사 조회 링크"
+      ]
+     },
+     {
+      "id": "검수·최종 인수 (M5)",
+      "person": "김민서",
+      "hours": "20",
+      "predecessors": [
+       "통합 테스트 (M4)",
+       "결함 수정 (BE)",
+       "결함 수정 (FE)"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "E1L1",
+       "person": "김민서",
+       "hours": "4",
+       "predecessors": [],
+       "successors": []
+      },
+      {
+       "id": "E1L2",
+       "person": "이준호",
+       "hours": "8",
+       "predecessors": [
+        "결제·쿠폰·관리자 화면"
+       ],
+       "successors": [
+        "통합 테스트 (M4)"
+       ]
+      },
+      {
+       "id": "E1L3",
+       "person": "최지훈",
+       "hours": "20",
+       "predecessors": [
+        "장바구니·결제·쿠폰 API"
+       ],
+       "successors": [
+        "통합 테스트 (M4)"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "통합 테스트 (M4)",
+       "hours": "12"
+      }
+     ],
+     "change_hours": "44"
+    }
+   },
+   "expected": {
+    "formula_version": "schedule-v1",
+    "start_date": "2026-10-12",
+    "planned_end": "2026-11-24",
+    "change_start_date": "2026-10-12",
+    "estimated_end_date": "2026-12-02",
+    "impact_business_days": 6,
+    "impact_vs_baseline_business_days": 6,
+    "change_hours": "44",
+    "baseline": {
+     "end": "2026-11-24"
+    },
+    "changed": {
+     "end": "2026-12-02",
+     "tasks": [
+      {
+       "id": "로그인·상품 목록/상세 API",
+       "hours": "13",
+       "start": "2026-10-12",
+       "end": "2026-10-13"
+      },
+      {
+       "id": "검색·필터 API",
+       "hours": "40",
+       "start": "2026-10-14",
+       "end": "2026-10-20"
+      },
+      {
+       "id": "장바구니·결제·쿠폰 API",
+       "hours": "64",
+       "start": "2026-10-21",
+       "end": "2026-10-30"
+      },
+      {
+       "id": "관리자 주문 조회 API",
+       "hours": "16",
+       "start": "2026-11-02",
+       "end": "2026-11-03"
+      },
+      {
+       "id": "로그인·상품 화면",
+       "hours": "34",
+       "start": "2026-10-12",
+       "end": "2026-10-16"
+      },
+      {
+       "id": "검색·필터·장바구니 화면",
+       "hours": "56",
+       "start": "2026-10-19",
+       "end": "2026-10-27"
+      },
+      {
+       "id": "결제·쿠폰·관리자 화면",
+       "hours": "40",
+       "start": "2026-10-28",
+       "end": "2026-11-03"
+      },
+      {
+       "id": "배송사 조회 링크",
+       "hours": "16",
+       "start": "2026-11-04",
+       "end": "2026-11-05"
+      },
+      {
+       "id": "테스트 케이스 작성",
+       "hours": "40",
+       "start": "2026-10-12",
+       "end": "2026-10-23"
+      },
+      {
+       "id": "통합 테스트 (M4)",
+       "hours": "76",
+       "start": "2026-11-12",
+       "end": "2026-11-25"
+      },
+      {
+       "id": "결함 수정 (BE)",
+       "hours": "24",
+       "start": "2026-11-04",
+       "end": "2026-11-06"
+      },
+      {
+       "id": "결함 수정 (FE)",
+       "hours": "24",
+       "start": "2026-11-06",
+       "end": "2026-11-10"
+      },
+      {
+       "id": "검수·최종 인수 (M5)",
+       "hours": "20",
+       "start": "2026-11-26",
+       "end": "2026-12-02"
+      },
+      {
+       "id": "E1L1",
+       "hours": "4",
+       "start": "2026-10-12",
+       "end": "2026-10-12"
+      },
+      {
+       "id": "E1L2",
+       "hours": "8",
+       "start": "2026-11-11",
+       "end": "2026-11-11"
+      },
+      {
+       "id": "E1L3",
+       "hours": "20",
+       "start": "2026-11-09",
+       "end": "2026-11-11"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "monomarket_wbs_coupon_existing_delay",
+   "source": "모노마켓 기존 지연 회귀: 검수 잔여 공수 28h를 유지. 전체 지연 8영업일과 변경 추가 영향 6영업일을 구분",
+   "request": {
+    "start_date": "2026-10-12",
+    "planned_end": "2026-11-24",
+    "workdays": [
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "exceptions": [
+     {
+      "person": null,
+      "date": "2026-09-24",
+      "hours": "0"
+     },
+     {
+      "person": null,
+      "date": "2026-09-25",
+      "hours": "0"
+     },
+     {
+      "person": null,
+      "date": "2026-10-05",
+      "hours": "0"
+     },
+     {
+      "person": null,
+      "date": "2026-10-09",
+      "hours": "0"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-13",
+      "hours": "0"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-12",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-14",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-15",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-16",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-19",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-20",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-21",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-22",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-23",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-26",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-27",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-28",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-29",
+      "hours": "4"
+     },
+     {
+      "person": "박서연",
+      "date": "2026-10-30",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-12",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-13",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-14",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-15",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-16",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-19",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-20",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-21",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-22",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-23",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-26",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-27",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-28",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-29",
+      "hours": "4"
+     },
+     {
+      "person": "정수빈",
+      "date": "2026-10-30",
+      "hours": "4"
+     }
+    ],
+    "people": [
+     {
+      "id": "김민서",
+      "daily_hours": "4",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "박서연",
+      "daily_hours": "0",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "이준호",
+      "daily_hours": "8",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "최지훈",
+      "daily_hours": "8",
+      "available_from": "2026-10-12"
+     },
+     {
+      "id": "정수빈",
+      "daily_hours": "8",
+      "available_from": "2026-10-12"
+     }
+    ],
+    "baseline_tasks": [
+     {
+      "id": "로그인·상품 목록/상세 API",
+      "person": "최지훈",
+      "hours": "13",
+      "predecessors": []
+     },
+     {
+      "id": "검색·필터 API",
+      "person": "최지훈",
+      "hours": "40",
+      "predecessors": [
+       "로그인·상품 목록/상세 API"
+      ]
+     },
+     {
+      "id": "장바구니·결제·쿠폰 API",
+      "person": "최지훈",
+      "hours": "64",
+      "predecessors": [
+       "검색·필터 API"
+      ]
+     },
+     {
+      "id": "관리자 주문 조회 API",
+      "person": "최지훈",
+      "hours": "16",
+      "predecessors": [
+       "장바구니·결제·쿠폰 API"
+      ]
+     },
+     {
+      "id": "로그인·상품 화면",
+      "person": "이준호",
+      "hours": "34",
+      "predecessors": []
+     },
+     {
+      "id": "검색·필터·장바구니 화면",
+      "person": "이준호",
+      "hours": "56",
+      "predecessors": [
+       "로그인·상품 화면"
+      ]
+     },
+     {
+      "id": "결제·쿠폰·관리자 화면",
+      "person": "이준호",
+      "hours": "40",
+      "predecessors": [
+       "검색·필터·장바구니 화면"
+      ]
+     },
+     {
+      "id": "배송사 조회 링크",
+      "person": "이준호",
+      "hours": "16",
+      "predecessors": [
+       "결제·쿠폰·관리자 화면"
+      ]
+     },
+     {
+      "id": "테스트 케이스 작성",
+      "person": "정수빈",
+      "hours": "40",
+      "predecessors": []
+     },
+     {
+      "id": "통합 테스트 (M4)",
+      "person": "정수빈",
+      "hours": "64",
+      "predecessors": [
+       "관리자 주문 조회 API",
+       "배송사 조회 링크",
+       "테스트 케이스 작성"
+      ]
+     },
+     {
+      "id": "결함 수정 (BE)",
+      "person": "최지훈",
+      "hours": "24",
+      "predecessors": [
+       "관리자 주문 조회 API"
+      ]
+     },
+     {
+      "id": "결함 수정 (FE)",
+      "person": "이준호",
+      "hours": "24",
+      "predecessors": [
+       "배송사 조회 링크"
+      ]
+     },
+     {
+      "id": "검수·최종 인수 (M5)",
+      "person": "김민서",
+      "hours": "28",
+      "predecessors": [
+       "통합 테스트 (M4)",
+       "결함 수정 (BE)",
+       "결함 수정 (FE)"
+      ]
+     }
+    ],
+    "change": {
+     "added": [
+      {
+       "id": "E1L1",
+       "person": "김민서",
+       "hours": "4",
+       "predecessors": [],
+       "successors": []
+      },
+      {
+       "id": "E1L2",
+       "person": "이준호",
+       "hours": "8",
+       "predecessors": [
+        "결제·쿠폰·관리자 화면"
+       ],
+       "successors": [
+        "통합 테스트 (M4)"
+       ]
+      },
+      {
+       "id": "E1L3",
+       "person": "최지훈",
+       "hours": "20",
+       "predecessors": [
+        "장바구니·결제·쿠폰 API"
+       ],
+       "successors": [
+        "통합 테스트 (M4)"
+       ]
+      }
+     ],
+     "extended": [
+      {
+       "task_id": "통합 테스트 (M4)",
+       "hours": "12"
+      }
+     ],
+     "change_hours": "44"
+    }
+   },
+   "expected": {
+    "planned_end": "2026-11-24",
+    "baseline": {
+     "end": "2026-11-26"
+    },
+    "estimated_end_date": "2026-12-04",
+    "impact_business_days": 8,
+    "impact_vs_baseline_business_days": 6,
+    "change_hours": "44"
+   }
   }
  ],
  "error_cases": [

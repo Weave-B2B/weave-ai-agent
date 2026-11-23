@@ -55,6 +55,11 @@ def build_request(data: dict, lines: list[tuple[str, object]], hours_per_md, tot
     """(요청, 미배정 사유 목록). lines는 (계산 행 키, ProvisionalLine) 목록이다."""
     problems, added, extended = [], [], {}
     hours_per_md = Decimal(str(hours_per_md))
+    staffing = data.get("staffing")
+    if staffing and Decimal(str(staffing["hours_per_md"])) != hours_per_md:
+        return None, [f"엑셀의 1 MD 기준 시간({staffing['hours_per_md']:g}h)이 "
+                      f"백엔드 공식 기준({hours_per_md:g}h)과 다릅니다. "
+                      "기준 시간을 맞추고 개인별 가용시간은 월 투입률로 조절해주세요."]
     for key, line in lines:
         hint = getattr(line, "schedule_hint", None)
         problem = hints_problem(hint, data)
@@ -70,12 +75,15 @@ def build_request(data: dict, lines: list[tuple[str, object]], hours_per_md, tot
     if problems:
         return None, problems
     calendar = data["calendar"]
+    from app.tools.wbs_workbook import expand_staffing
+    base, derived = expand_staffing(data)  # WBS 양식: 달별 투입률을 기본 시간 + 개인 예외일로 펼친다
     request = {
         "start_date": calendar["start_date"], "planned_end": calendar.get("planned_end"),
         "workdays": workdays(calendar["working_weekdays"]),
         "exceptions": [{"person": None if e["person"] == "전체" else e["person"], "date": e["date"],
-                        "hours": _num(e["hours"])} for e in calendar.get("exceptions", [])],
-        "people": [{"id": p["name"], "daily_hours": _num(p["daily_hours"]), "available_from": p.get("available_from")}
+                        "hours": _num(e["hours"])} for e in [*calendar.get("exceptions", []), *derived]],
+        "people": [{"id": p["name"], "daily_hours": _num(base[p["name"]] if base else p["daily_hours"]),
+                    "available_from": p.get("available_from")}
                    for p in data["people"]],
         "baseline_tasks": [{"id": t["name"], "person": t["owner"], "hours": _num(t["remaining_hours"]),
                             "predecessors": list(t["predecessors"])} for t in data["tasks"]],
@@ -94,12 +102,13 @@ def calculate_plan(out, rate_card_id: str) -> dict | None:
     data = workbook.get("data")
     if not data or out.pricing is None:
         return None
+    assumptions = list(data.get("assumptions") or [])
     lines = [(f"E{n + 1}L{m + 1}", line) for n, e in enumerate(out.estimates) for m, line in enumerate(e.lines)]
     request, problems = build_request(data, lines, out.pricing.hours_per_md, out.pricing.total_hours)
     if request is None:
         return {"formula_version": FORMULA_VERSION, "plan": None,
                 "unavailable_reason": "인력 미배정 또는 엑셀과 맞지 않는 작업이 있어 완료일·일정 영향을 계산하지 않음",
-                "unassigned": problems}
+                "unassigned": problems, "assumptions": assumptions}
     from app.tools.backend_calc import BackendCalcError, calculation_client
     try:
         client = calculation_client(rate_card_id)
@@ -107,8 +116,10 @@ def calculate_plan(out, rate_card_id: str) -> dict | None:
             raise BackendCalcError("일정 계산은 Backend 공식 계산기에서만 지원합니다.")
         plan = client.schedule(request)
     except (ToolInputError, BackendCalcError) as err:
-        return {"formula_version": FORMULA_VERSION, "plan": None, "unavailable_reason": str(err)[:300], "unassigned": []}
-    return {"formula_version": FORMULA_VERSION, "plan": plan, "unavailable_reason": None, "unassigned": []}
+        return {"formula_version": FORMULA_VERSION, "plan": None, "unavailable_reason": str(err)[:300], "unassigned": [],
+                "assumptions": assumptions}
+    return {"formula_version": FORMULA_VERSION, "plan": plan, "unavailable_reason": None, "unassigned": [],
+            "assumptions": assumptions}
 
 
 def customer_lines(plan_detail: dict | None) -> list[str]:
@@ -116,10 +127,13 @@ def customer_lines(plan_detail: dict | None) -> list[str]:
     plan = (plan_detail or {}).get("plan")
     if not plan:
         return []
-    lines = [f"- 예상 완료일: {plan['estimated_end_date']} (현재 계획 기준 {plan['baseline']['end']})"]
+    lines = [f"- 예상 완료일: {plan['estimated_end_date']} (변경 전 작업만 계산한 완료일 {plan['baseline']['end']})"]
     if plan.get("impact_business_days") is not None:
-        lines.append(f"- 일정 영향: 현재 계획 완료일 {plan['planned_end']} 대비 {plan['impact_business_days']}영업일")
+        lines.append(f"- 전체 일정 지연: 현재 계획 완료일 {plan['planned_end']} 대비 {plan['impact_business_days']}영업일")
+        lines.append(f"- 변경 요청으로 추가되는 일정 영향: 변경 전 작업만의 완료일 대비 {plan['impact_vs_baseline_business_days']}영업일")
     else:
         lines.append(f"- 일정 영향: 현재 계획 완료일 미입력. 기존 작업 일정 대비 {plan['impact_vs_baseline_business_days']}영업일")
+    if any("진척률" in a for a in (plan_detail or {}).get("assumptions") or []):
+        lines.append("- 기존 작업의 남은 시간은 공유된 WBS의 진척률을 기준으로 추정했습니다.")
     lines.append("- 위 일정은 공유된 작업 계획·인력 가용 시간을 전제로 한 예상이며 착수 일정 확정 후 다시 안내드립니다.")
     return lines

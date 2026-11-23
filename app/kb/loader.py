@@ -112,8 +112,9 @@ def _fetch_remote_rate(card_id: str) -> bool:
             return False
         _REMOTE_RATES[card_id] = backend_rates.to_card(resp)
         return True
+    except backend_rates.BackendRateError:
+        raise
     except Exception:
-        _REMOTE_RATES_MISSING.add(card_id)
         return False
 
 

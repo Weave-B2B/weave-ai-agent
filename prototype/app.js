@@ -1,8 +1,10 @@
-import { Agent1Api, Agent2Api, Agent3Api, AnalysisApi, ApiError, KbApi, MockPreview } from "./api.js?v=orchestration-1";
+import { Agent1Api, Agent2Api, Agent3Api, AnalysisApi, ApiError, KbApi, MockPreview } from "./api.js?v=orchestration-2";
 import { records, sampleItems, scenarioInput } from "./fixtures.js?v=common-rate-2";
-import { createAnalysisDemo, analysisSnapshot, analysisTitle, pricingSummary } from "./analysis-demo.js?v=run-storage-20261111-title3";
+import { createAnalysisDemo, analysisSnapshot, analysisTitle, pricingSummary } from "./analysis-demo.js?v=backend-bridge-2";
 
 const root = document.querySelector("#app");
+const backendProjectId = decodeURIComponent(((typeof location !== "undefined" && location.search) || "").match(/[?&]projectId=([^&]+)/)?.[1] || "");
+let backendProject = null;
 const api = new Agent3Api();
 const agent2 = new Agent2Api();
 const agent1 = new Agent1Api();
@@ -40,7 +42,13 @@ const money = value => typeof value === "number" && Number.isFinite(value) ? `${
 const icon = file => `<span class="icon"><img src="./assets/${file}.svg" alt=""></span>`;
 const chip = (label, tone = "neutral") => `<span class="chip ${tone}">${icon(tone === "ai" ? "1b8e7" : tone === "success" ? "396d8" : tone === "info" ? "59318" : tone === "warning" ? "691d6" : "edb5c")}<span>${e(label)}</span></span>`;
 const button = (label, action, options = {}) => `<button type="button" class="button ${options.class || ""}" data-action="${action}" ${options.disabled ? "disabled" : ""} ${options.title ? `title="${e(options.title)}"` : ""}>${options.icon ? icon(options.icon) : ""}${e(label)}</button>`;
-const record = () => { const s=analysisDemo.byId(state.id); return s ? {...records.find(item=>item.id===s.id),id:s.id,api:true,analysisDemo:true,title:analysisTitle(s),project:'모노마켓 · 화면 테스트',requester:'직접 입력',messageText:s.text,channel:'수동',date:s.created?.slice(5,10)||'—'} : records.find(item => item.id === state.id) || records[0]; };
+const record = () => {
+  const s = analysisDemo.byId(state.id);
+  const projectLabel = backendProject ? `${backendProject.name} · ${backendProject.customer_name || '백엔드 연동'}` : '모노마켓 · 화면 테스트';
+  return s
+    ? { ...records.find(item => item.id === s.id), id: s.id, api: true, analysisDemo: true, title: analysisTitle(s), project: projectLabel, requester: s.requester || '직접 입력', messageText: s.text, channel: s.channel || '수동', date: s.created?.slice(5, 10) || '—' }
+    : records.find(item => item.id === state.id) || records[0] || { id: state.id || "—", title: "변경 요청 없음", project: projectLabel, requester: "—", channel: "—", date: "—", scope: "미분석", process: "접수", approval: "미확인", customer: "미발송", md: "미산정", price: "—", owner: "—", elapsed: "—", api: true };
+};
 const estimates = () => record().api ? state.view?.impact?.estimates || [] : [];
 const unknownSchedule = () => estimates().some(item => item.schedule?.business_days == null);
 const parsedInput = () => JSON.parse(state.inputText);
@@ -148,12 +156,20 @@ function selectCase(id) {
 }
 
 function sidebar() {
-  const nav = [["요청 분석", "a1cb9"], ["대시보드", "1d0b4"], ["프로젝트", "7626c"], ["변경 요청", "f8eec", records.length], ["승인 대기", "bfedc", 3], ["청구", "e6313", 2]];
-  return `<aside class="sidebar" aria-label="주 메뉴"><div class="brand"><span class="brand-mark">S</span><span class="brand-name">Scopeline</span><span class="mini-tag">MVP</span></div><div class="workspace"><span class="workspace-mark">한</span><div class="workspace-copy">한빛디지털<small>수행사 워크스페이스</small></div>${icon("b05aa")}</div><div class="nav-section">업무</div>${nav.map(([label, file, count]) => { const action = label === "요청 분석" ? "analysis" : label === "변경 요청" ? "list" : label === "프로젝트" && lab.enabled ? "projects" : null; const current = action && (action === "analysis" ? state.page === "analysis" : action === "projects" ? state.page === "projects" : !["projects","analysis"].includes(state.page)); return `<button class="nav ${current ? "active" : ""}" ${action ? `data-action="${action}" ${current ? 'aria-current="page"' : ""}` : 'disabled title="이번 구현 범위에 포함되지 않습니다"'}>${icon(file)}<span class="nav-label">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</button>`; }).join("")}<div class="nav-section">관리</div><button class="nav" disabled title="이번 구현 범위 밖">${icon("ed47e")}<span class="nav-label">설정</span></button><div class="sidebar-bottom"><div class="disclaimer"><strong>${icon("6bb27")}AI는 제안까지만</strong>범위 확정·가격·승인·고객 발송은 담당자가 결정합니다.</div><div class="profile"><span class="avatar large">김</span><div class="profile-copy">김서윤<small>로컬 확인 · 테스트 PM</small></div></div></div></aside>`;
+  const nav = [["요청 분석", "a1cb9"], ["대시보드", "1d0b4"], ["프로젝트", "7626c"], ["변경 요청", "f8eec", records.length], ["승인 대기", "bfedc", backendProject ? 0 : 3], ["청구", "e6313", backendProject ? 0 : 2]];
+  const wsName = backendProject ? (backendProject.company_name || "백엔드 워크스페이스") : "한빛디지털";
+  const wsMark = wsName.slice(0, 1);
+  const wsSub = backendProject ? `${backendProject.name} · 연동` : "수행사 워크스페이스";
+  const pmName = backendProject ? (backendProject.pm_name || "PM") : "김서윤";
+  const pmMark = pmName.slice(0, 1);
+  const backBtn = backendProject ? `<a class="nav" href="http://localhost:5173/#/project" style="margin-top:8px;text-decoration:none;color:inherit">${icon("ec991")}<span class="nav-label">← 프론트 화면으로</span></a>` : "";
+  return `<aside class="sidebar" aria-label="주 메뉴"><div class="brand"><span class="brand-mark">S</span><span class="brand-name">Scopeline</span><span class="mini-tag">${backendProject ? "BE 연동" : "MVP"}</span></div><div class="workspace"><span class="workspace-mark">${e(wsMark)}</span><div class="workspace-copy">${e(wsName)}<small>${e(wsSub)}</small></div>${icon("b05aa")}</div><div class="nav-section">업무</div>${nav.map(([label, file, count]) => { const action = label === "요청 분석" ? "analysis" : label === "변경 요청" ? "list" : label === "프로젝트" && (lab.enabled || backendProject) ? "projects" : null; const current = action && (action === "analysis" ? state.page === "analysis" : action === "projects" ? state.page === "projects" : !["projects","analysis"].includes(state.page)); return `<button class="nav ${current ? "active" : ""}" ${action ? `data-action="${action}" ${current ? 'aria-current="page"' : ""}` : 'disabled title="이번 구현 범위에 포함되지 않습니다"'}>${icon(file)}<span class="nav-label">${label}</span>${count ? `<span class="count">${count}</span>` : ""}</button>`; }).join("")}${backBtn}<div class="nav-section">관리</div><button class="nav" disabled title="이번 구현 범위 밖">${icon("ed47e")}<span class="nav-label">설정</span></button><div class="sidebar-bottom"><div class="disclaimer"><strong>${icon("6bb27")}AI는 제안까지만</strong>범위 확정·가격·승인·고객 발송은 담당자가 결정합니다.</div><div class="profile"><span class="avatar large">${e(pmMark)}</span><div class="profile-copy">${e(pmName)}<small>${backendProject ? "백엔드 연동 · PM" : "로컬 확인 · 테스트 PM"}</small></div></div></div></aside>`;
 }
 function topbar() {
-  const path = state.page === "analysis" ? "요청 분석 / Agent Orchestration" : state.page === "projects" ? `프로젝트 / ${kb.projectId || "목록"} / 기준 문서` : state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? "변경 요청" : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
-  return `<header class="topbar"><span class="breadcrumb">${e(path)}</span><label class="top-search">${icon("776e1")}<input id="global-search" placeholder="CR ID, 프로젝트, 문서 검색" aria-label="전체 요청 검색"></label><button class="icon-button" data-action="help" aria-label="로컬 확인 안내">${icon("c360b")}</button><button class="icon-button" data-action="help" aria-label="도움말">${icon("a340e")}</button><span class="top-separator"></span><span class="avatar large">김</span></header>`;
+  const projTitle = backendProject ? backendProject.name : (kb.projectId || "목록");
+  const path = state.page === "analysis" ? `요청 분석 / Agent Orchestration${backendProject ? ` (${backendProject.name})` : ""}` : state.page === "projects" ? `프로젝트 / ${projTitle} / 기준 문서` : state.page === "register" ? "변경 요청 / 등록" : state.page === "list" ? `변경 요청${backendProject ? ` / ${backendProject.name}` : ""}` : `변경 요청 / ${record().id} / ${{ original: "요청 원문", scope: "범위 검토", impact: "영향 산정", draft: "승인·협의" }[state.tab]}`;
+  const pmMark = (backendProject?.pm_name || "김").slice(0, 1);
+  return `<header class="topbar"><span class="breadcrumb">${e(path)}</span><label class="top-search">${icon("776e1")}<input id="global-search" placeholder="CR ID, 프로젝트, 문서 검색" aria-label="전체 요청 검색"></label>${backendProject ? `<a class="button small" href="http://localhost:5173/#/project" style="text-decoration:none">← 프론트 화면(:5173)</a>` : ""}<button class="icon-button" data-action="help" aria-label="로컬 확인 안내">${icon("c360b")}</button><button class="icon-button" data-action="help" aria-label="도움말">${icon("a340e")}</button><span class="top-separator"></span><span class="avatar large">${e(pmMark)}</span></header>`;
 }
 function filteredRecords() {
   let result = records.filter(item => `${item.id} ${item.title} ${item.project} ${item.requester}`.toLowerCase().includes(state.query.toLowerCase()));
@@ -190,7 +206,10 @@ function inbox() {
   state.pageNo = Math.min(state.pageNo, pages);
   const shown = result.slice((state.pageNo - 1) * 10, state.pageNo * 10);
   const groups = ["열린 요청", "PM 검토 필요", "내부 승인 대기", "고객 협의 중", "실행 중", "완료·종료"];
-  return `<div class="page-heading"><div><h1>변경 요청</h1><p class="subtitle">전체 프로젝트 · 합성 요청 ${records.length}건 · Agent 1 테스트 30건 포함</p></div><div class="button-group">${button("내보내기", "unused", { disabled: true, icon: "e95f2", title: "업무 내보내기는 이번 범위 밖" })}${button("변경 요청 등록", "register", { class: "primary", icon: "416f8" })}</div></div><div class="tabs" role="tablist" aria-label="요청 처리 상태">${groups.map(group => `<button class="tab" role="tab" aria-selected="${state.group === group}" data-group="${group}">${group}<small>${group === "열린 요청" ? records.length : records.filter(item => item.process === group).length}</small></button>`).join("")}</div><div class="filters"><label class="search-field">${icon("776e1")}<input id="request-search" placeholder="CR ID, 제목, 요청자 검색" aria-label="요청 검색" value="${e(state.query)}"></label><label class="filter">프로젝트<select id="project-filter" aria-label="프로젝트 필터">${["전체", ...new Set(records.map(item => item.project))].map(value => `<option ${state.project === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select></label><label class="filter">범위 판단<select id="scope-filter" aria-label="범위 판단 필터">${["전체", "범위 밖", "판단 보류", "미분석"].map(value => `<option ${state.filter === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><span class="filter">상업적 결정 · 예시</span><label class="filter last">정렬<select id="sort" aria-label="요청 정렬"><option ${state.order === "기본" ? "selected" : ""}>기본</option><option ${state.order === "최근 접수순" ? "selected" : ""}>최근 접수순</option></select></label></div><div class="table-wrap"><table class="inbox-table"><thead><tr>${["CR ID", "요청 · 프로젝트", "요청자 · 채널", "접수일", "범위 판단", "요청 처리", "내부 승인", "고객 협의", "영향 (MD · 금액)", "담당", "경과"].map(title => `<th>${title}</th>`).join("")}</tr></thead><tbody>${shown.length ? shown.map(item => `<tr><td class="id-cell"><button class="row-open" data-open="${item.id}">${item.id}${item.analysisDemo ? '<span class="api-marker">통합 화면 테스트</span>' : item.api ? '<span class="api-marker">API 연결 샘플</span>' : ""}</button></td><td class="title-cell"><button class="row-open" data-open="${item.id}"><strong>${e(item.title)}</strong><small>${e(item.project)}</small></button></td><td>${e(item.requester)}<small>${item.channel}</small></td><td>${item.date}</td><td>${chip(item.scope, item.scope.includes("가능성") ? "ai" : "neutral")}</td><td>${chip(item.process, "info")}</td><td>${chip(item.approval)}</td><td>${chip(item.customer)}</td><td class="numeric">${e(item.md)}<small>${e(item.price)}</small></td><td><span class="avatar">${item.owner}</span></td><td class="numeric">${item.elapsed}</td></tr>`).join("") : '<tr><td colspan="11"><div class="empty-state"><h3>검색 결과가 없습니다</h3><p>검색어나 필터를 바꿔 주세요.</p></div></td></tr>'}</tbody></table></div><div class="pagination"><span>${shown.length} / ${result.length}건 표시 · 범위 밖은 유상 확정을 의미하지 않습니다.</span><div class="button-group">${button("이전", "previous", { disabled: state.pageNo <= 1 })}<span>${state.pageNo} / ${pages}</span>${button("다음", "next", { disabled: state.pageNo >= pages })}</div></div>`;
+  const subtitle = backendProject
+    ? `${backendProject.name} (${backendProject.customer_name || "고객사"}) · 백엔드 연동 변경 요청 ${records.length}건`
+    : `전체 프로젝트 · 합성 요청 ${records.length}건 · Agent 1 테스트 30건 포함`;
+  return `<div class="page-heading"><div><h1>변경 요청</h1><p class="subtitle">${e(subtitle)}</p></div><div class="button-group">${button("내보내기", "unused", { disabled: true, icon: "e95f2", title: "업무 내보내기는 이번 범위 밖" })}${button("변경 요청 등록", "register", { class: "primary", icon: "416f8" })}</div></div><div class="tabs" role="tablist" aria-label="요청 처리 상태">${groups.map(group => `<button class="tab" role="tab" aria-selected="${state.group === group}" data-group="${group}">${group}<small>${group === "열린 요청" ? records.length : records.filter(item => item.process === group).length}</small></button>`).join("")}</div><div class="filters"><label class="search-field">${icon("776e1")}<input id="request-search" placeholder="CR ID, 제목, 요청자 검색" aria-label="요청 검색" value="${e(state.query)}"></label><label class="filter">프로젝트<select id="project-filter" aria-label="프로젝트 필터">${["전체", ...new Set(records.map(item => item.project))].map(value => `<option ${state.project === value ? "selected" : ""}>${e(value)}</option>`).join("")}</select></label><label class="filter">범위 판단<select id="scope-filter" aria-label="범위 판단 필터">${["전체", "범위 밖", "판단 보류", "미분석"].map(value => `<option ${state.filter === value ? "selected" : ""}>${value}</option>`).join("")}</select></label><span class="filter">${backendProject ? "백엔드 DB 연동" : "상업적 결정 · 예시"}</span><label class="filter last">정렬<select id="sort" aria-label="요청 정렬"><option ${state.order === "기본" ? "selected" : ""}>기본</option><option ${state.order === "최근 접수순" ? "selected" : ""}>최근 접수순</option></select></label></div><div class="table-wrap"><table class="inbox-table"><thead><tr>${["CR ID", "요청 · 프로젝트", "요청자 · 채널", "접수일", "범위 판단", "요청 처리", "내부 승인", "고객 협의", "영향 (MD · 금액)", "담당", "경과"].map(title => `<th>${title}</th>`).join("")}</tr></thead><tbody>${shown.length ? shown.map(item => { const s = analysisDemo.byId(item.id); const marker = s?.unstartedBackendCr ? '<span class="api-marker">백엔드 등록 · 미분석</span>' : item.analysisDemo ? `<span class="api-marker">${backendProject ? "백엔드 연동 분석" : "통합 화면 테스트"}</span>` : item.api ? '<span class="api-marker">API 연결 샘플</span>' : ""; return `<tr><td class="id-cell"><button class="row-open" data-open="${item.id}">${item.id}${marker}</button></td><td class="title-cell"><button class="row-open" data-open="${item.id}"><strong>${e(item.title)}</strong><small>${e(item.project)}</small></button></td><td>${e(item.requester)}<small>${item.channel}</small></td><td>${item.date}</td><td>${chip(item.scope, item.scope.includes("가능성") ? "ai" : "neutral")}</td><td>${chip(item.process, "info")}</td><td>${chip(item.approval)}</td><td>${chip(item.customer)}</td><td class="numeric">${e(item.md)}<small>${e(item.price)}</small></td><td><span class="avatar">${item.owner}</span></td><td class="numeric">${item.elapsed}</td></tr>`; }).join("") : '<tr><td colspan="11"><div class="empty-state"><h3>변경 요청이 없습니다</h3><p>프론트엔드에서 변경 요청을 등록하거나 ‘변경 요청 등록(신규 요청)’에서 분석을 시작해 주세요.</p></div></td></tr>'}</tbody></table></div><div class="pagination"><span>${shown.length} / ${result.length}건 표시 · 범위 밖은 유상 확정을 의미하지 않습니다.</span><div class="button-group">${button("이전", "previous", { disabled: state.pageNo <= 1 })}<span>${state.pageNo} / ${pages}</span>${button("다음", "next", { disabled: state.pageNo >= pages })}</div></div>`;
 }
 function statusStrip() {
   const actual = record().api && state.view;
@@ -690,7 +709,35 @@ function kbSelection(projectId = kb.projectId) {
   }
   return kb.selection[projectId];
 }
+async function loadBackendProjectContext() {
+  if (!backendProjectId) return;
+  const response = await fetch(`/prototype-lab/kb/backend-projects/${encodeURIComponent(backendProjectId)}`);
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.detail || `백엔드 프로젝트(${backendProjectId})를 불러오지 못했습니다.`);
+  }
+  backendProject = await response.json();
+  records.length = 0;
+  for (const b of (backendProject.baselines || [])) {
+    if (!availableBaselines.some(x => x.id === b.baseline_id)) {
+      availableBaselines.push({ id: b.baseline_id, project_id: backendProject.project_id, as_of: b.as_of });
+    }
+  }
+  state.registration.project_id = backendProject.project_id;
+  state.registration.project_name = backendProject.name;
+  state.registration.baseline_id = backendProject.active_baseline_id || "";
+  await analysisDemo.setBackendProject(backendProject);
+  if (records.length) state.id = records[0].id;
+}
+
 async function loadKb() {
+  if (backendProjectId) {
+    kb.pending = true; render();
+    try { await loadBackendProjectContext(); kb.error = null; }
+    catch (error) { kb.error = error.message; }
+    finally { kb.pending = false; render(); }
+    return;
+  }
   if (!lab.enabled || kb.pending) return;
   try { kb.data = await kbApi.projects(); kb.error = null; if (!kb.projectId || !kbProjectData(kb.projectId) || kbProjectData(kb.projectId).draft) kb.projectId = kb.data.projects.find(x => !x.draft)?.project_id || null; }
   catch (error) { kb.error = error.message; }
@@ -815,7 +862,18 @@ function newProjectView() {
 ${rows ? `<div class="table-wrap" style="margin-top:16px"><table><thead><tr><th>문서</th><th>종류</th><th>색인</th><th>첫 기준선</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
 <div class="form-actions" style="margin-top:16px">${button(`${c.project_id} 만들기 (BL-1)`, "np-create", { class: "primary", disabled: busy || !ready, icon: "6ce49" })}<span class="tiny">${ready ? `선택 ${c.include.size}개로 첫 기준선을 만듭니다.` : "계약서나 과업지시서를 하나 이상 올리고 포함해 주세요."}</span></div></section>`;
 }
+function backendProjectsPage() {
+  const p = backendProject;
+  const heading = `<div class="page-heading"><div><h1>프로젝트 · 기준 문서 (백엔드 연동)</h1><p class="subtitle">${e(p.company_name)} · <strong>${e(p.name)}</strong> (${e(p.customer_name || "고객사")}) · 프론트엔드에서 업로드한 실제 문서·기준선·산정 자료입니다.</p></div><div class="button-group">${button("새로고침", "kb-refresh", { disabled: kb.pending, icon: "e4529" })}<a class="button primary" href="http://localhost:5173/#/project" style="text-decoration:none">프론트에서 문서 추가/관리 ↗</a></div></div>`;
+  const active = p.baselines.find(b => b.baseline_id === p.active_baseline_id);
+  const name = id => { const d = p.documents.find(x => x.doc_id === id); return d ? d.title : id; };
+  const baselineRows = [...p.baselines].reverse().map(b => `<tr><td><strong>#${b.version_no}</strong> <small>${e(b.baseline_id)}</small>${b.supersedes ? `<small>${e(b.supersedes)} 대체</small>` : ""}</td><td>${e(b.as_of)}</td><td>${b.status === "ACTIVE" ? chip("현재", "success") : chip("폐기됨")}</td><td>${b.document_ids.map(id => `<span class="mini-tag">${e(name(id))}</span>`).join(" ") || "문서 없음"}</td><td>${chip("백엔드 DB", "info")}</td></tr>`).join("");
+  const docRows = p.documents.map(d => `<tr><td><strong>${e(d.raw_title || d.title)}</strong><small>${e(d.document_code)} · V${d.version_no} · ${e(d.doc_id)}</small></td><td>${e(KB_TYPE[d.doc_type] || d.doc_type)}</td><td class="numeric">${d.section_count}</td><td>${d.extraction_status === "READY" ? chip("READY · 임베딩 완료", "success") : d.extraction_status === "FAILED" ? chip("FAILED", "warning") : chip(d.extraction_status || "PENDING", "info")}</td><td>${d.approval_status === "APPROVED" ? chip("기준 적용 (APPROVED)", "success") : chip("검토 중 (DRAFT)")}</td><td>${active?.document_ids.includes(d.doc_id) ? chip("현재 기준선 포함", "info") : d.in_baseline ? "이전 기준선" : chip("미포함")}</td></tr>`).join("");
+  const wbRows = (p.impact_workbooks || []).map(w => `<tr><td><strong>${e(w.title)}</strong><small>${e(w.document_code)} · V${w.version_no} · ${e(w.doc_id)}</small></td><td>일정·공수 자료 (XLSX)</td><td>${chip("STORED · 임베딩 제외", "info")}</td><td>${w.approval_status === "APPROVED" ? chip("사용 승인됨 (APPROVED)", "success") : chip("검토 중 · 미승인 (DRAFT)", "warning")}</td><td>${e(w.effective_date || "즉시")}</td></tr>`).join("");
+  return `${heading}<div class="notice inline">${icon("73e25")}<strong>백엔드 연동 프로젝트 ID:</strong> <code>${e(p.project_id)}</code> · <strong>현재 기준선:</strong> <code>${e(p.active_baseline_id || "없음")}</code> · <strong>단가표:</strong> ${rateCardButton(p.rate_card_id)}</div><section class="card"><div class="card-heading"><div><h2>기준선 버전</h2><p class="caption">Agent 2 범위 검토는 현재(ACTIVE) 기준선에 포함된 승인 문서와 vector-db 임베딩을 검색합니다.</p></div></div><div class="table-wrap"><table><thead><tr><th>기준선</th><th>적용일</th><th>상태</th><th>포함 문서</th><th>출처</th></tr></thead><tbody>${baselineRows || '<tr><td colspan="5">등록된 기준선이 없습니다.</td></tr>'}</tbody></table></div></section><section class="card" style="margin-top:24px"><div class="card-heading"><div><h2>기준 문서 (${p.documents.length}건)</h2><p class="caption">프론트엔드(localhost:5173)에서 업로드·색인된 계약·과업·명세·견적·변경합의 문서입니다.</p></div></div><div class="table-wrap"><table><thead><tr><th>문서</th><th>종류</th><th>청크(조항) 수</th><th>색인·임베딩 상태</th><th>승인 상태</th><th>기준선 포함</th></tr></thead><tbody>${docRows || '<tr><td colspan="6">등록된 기준 문서가 없습니다.</td></tr>'}</tbody></table></div></section><section class="card" style="margin-top:24px"><div class="card-heading"><div><h2>영향 산정 자료 · 일정·공수 엑셀 (${(p.impact_workbooks || []).length}건)</h2><p class="caption">계약 기준선 및 임베딩에서 제외되며, 승인(APPROVED)된 최신 엑셀을 Agent 3 일정 계산기(schedule-v1)에서 사용합니다.</p></div></div><div class="table-wrap"><table><thead><tr><th>자료명</th><th>유형</th><th>보관 상태</th><th>사용 승인 상태</th><th>적용일</th></tr></thead><tbody>${wbRows || '<tr><td colspan="5">등록된 일정·공수 자료가 없습니다.</td></tr>'}</tbody></table></div></section>`;
+}
 function projectsPage() {
+  if (backendProject) return backendProjectsPage();
   const heading = `<div class="page-heading"><div><h1>프로젝트 · 기준 문서</h1><p class="subtitle">로컬 테스트 전용 · 실제 문서 업로드·승인·기준선 관리는 백엔드 담당입니다.</p></div><div class="button-group">${button("새 프로젝트", "kb-new-project", { class: "primary", disabled: kb.pending || !lab.enabled || !kb.data || !!kb.creating })}${button("새로고침", "kb-refresh", { disabled: kb.pending, icon: "e4529" })}${button("테스트 데이터 초기화", "kb-reset", { disabled: kb.pending || !lab.enabled })}</div></div>`;
   if (!lab.enabled) return heading + '<div class="notice">문서 추가는 <code>python prototype/run_demo.py --lab</code>로 실행한 서버에서만 사용할 수 있습니다.</div>';
   if (!kb.data) return heading + (kb.error ? `<div class="notice error">${e(kb.error)}</div>` : '<p class="loading-line" role="status"><span class="inline-spinner"></span>프로젝트를 불러오는 중입니다…</p>');
@@ -947,6 +1005,8 @@ root.addEventListener("cancel", event => { if (event.target.id === "analysis-pm-
 root.addEventListener("click", event => {
   if (analysisDemo.click(event.target)) return;
   const open = event.target.closest("[data-open]"); if (open) {
+    const targetSession = analysisDemo.byId(open.dataset.open);
+    if (targetSession?.unstartedBackendCr) { location.hash = `#/analysis/${encodeURIComponent(open.dataset.open)}`; return; }
     if (!records.some(item => item.id === open.dataset.open && (item.analysisDemo || item.api || item.datasetSample || item.id === "CR-001"))) return toast("목록 표시용 예시입니다. Agent 1 테스트 요청과 CR-001에서 원문을 확인할 수 있습니다.");
     return navigate(open.dataset.open);
   }
@@ -1079,8 +1139,15 @@ try {
   catch { /* Agent 2 입력이 없어도 나머지 화면은 동작한다 (실행 버튼만 비활성). */ }
   try { const a1Response = await fetch(new URL("./data/agent1-inputs.json", import.meta.url)); if (a1Response.ok) agent1Inputs = await a1Response.json(); }
   catch { /* Agent 1 입력이 없어도 다른 화면은 동작한다. */ }
-  selectCase("CR-A-001"); if (!location.hash) location.hash = "#/analysis"; route(); if (state.page !== "analysis" && !record().analysisDemo) await restore();
-  if (lab.enabled) loadKb();
+  if (backendProjectId) {
+    await loadBackendProjectContext();
+  } else {
+    selectCase("CR-A-001");
+  }
+  if (!location.hash) location.hash = "#/analysis";
+  route();
+  if (!backendProjectId && state.page !== "analysis" && !record().analysisDemo) await restore();
+  if (lab.enabled && !backendProjectId) loadKb();
 } catch (error) {
   root.innerHTML = `<main class="content"><h1>화면을 준비하지 못했습니다.</h1><p style="margin-top:16px">${e(error.message)}</p><p>로컬 서버와 prototype/data 파일을 확인해 주세요.</p></main>`;
 }

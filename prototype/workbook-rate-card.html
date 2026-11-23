@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>엑셀 단가표 등록 · 영향 산정 실연동 검증</title>
+  <style>
+    :root {
+      --bg: #f6f7fb; --card: #ffffff; --border: #dde2ec; --text: #161c2d;
+      --muted: #5c667a; --primary: #2457e6; --ok: #0e7c4b; --warn: #b45309; --err: #c81e1e;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+    header { background: #101727; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    header h1 { margin: 0; font-size: 18px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.ok { background: #d1fae5; color: #065f46; }
+    .badge.err { background: #fee2e2; color: #991b1b; }
+    .badge.warn { background: #fef3c7; color: #92400e; }
+    .badge.info { background: #dbeafe; color: #1e40af; }
+    main { max-width: 1120px; margin: 20px auto; padding: 0 20px 48px; display: grid; gap: 16px; }
+    section { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+    section h2 { margin: 0 0 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+    input, select, button, textarea { font: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+    button { cursor: pointer; background: #fff; font-weight: 600; }
+    button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+    th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; }
+    th { background: #f1f4f9; }
+    tr.changed td { background: #fffbeb; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .box { padding: 10px 12px; border-radius: 6px; font-size: 13px; margin-top: 10px; }
+    .box.err { background: #fef2f2; border: 1px solid #fecaca; color: var(--err); }
+    .box.warn { background: #fffbeb; border: 1px solid #fde68a; color: var(--warn); }
+    .box.ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: var(--ok); }
+    .box.info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow: auto; white-space:pre-wrap; font-size: 12px; max-height: 360px; }
+    .muted { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>엑셀 단가표 등록 · 영향 산정 실연동 검증 (AI 프로토타입)</h1>
+      <div class="muted" style="color:#94a3b8;">실제 백엔드 API(/api/v1/...)와 PostgreSQL/S3만 사용합니다. RC-LOCAL-* 및 로컬 SQLite 모드를 사용하지 않습니다.</div>
+    </div>
+    <div id="connection-badge" class="badge warn">백엔드 연결 확인 중…</div>
+  </header>
+
+  <main>
+    <section>
+      <h2>1. 백엔드 사용자 자격 및 테스트 프로젝트 선택</h2>
+      <div class="grid">
+        <label>JWT Bearer 토큰 (운영/로그인 방식)
+          <input id="auth-token" type="password" placeholder="Bearer 없이 토큰 값 입력 (또는 아래 X-Dev 헤더)" />
+        </label>
+        <label>X-Company-Id (JWT 사용 시 선택)
+          <input id="company-id-jwt" placeholder="UUID" />
+        </label>
+        <label>X-Dev-Company-Id (local 프로필)
+          <input id="dev-company-id" placeholder="회사 UUID" />
+        </label>
+        <label>X-Dev-Member-Id (local 프로필)
+          <input id="dev-member-id" placeholder="멤버 UUID" />
+        </label>
+        <label>X-Dev-Member-Role (local 프로필)
+          <select id="dev-member-role">
+            <option value="ADMIN">ADMIN (단가표 공식 등록 가능)</option>
+            <option value="PM">PM (일정 자료 승인 가능 · 단가 등록 권한 없음)</option>
+            <option value="MEMBER">MEMBER</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <button id="btn-load-projects" class="primary">프로젝트 목록 불러오기</button>
+        <select id="project-select" style="min-width:280px;"><option value="">프로젝트를 선택하세요</option></select>
+        <input id="project-id-manual" placeholder="또는 프로젝트 UUID 직접 입력" style="min-width:280px;" />
+        <button id="btn-refresh-project">현재 단가표 · 변경요청 조회</button>
+      </div>
+      <div id="current-rate-card-box" class="box info" hidden></div>
+    </section>
+
+    <section>
+      <h2>2. 일정·공수 엑셀(XLSX) 업로드 및 단가표 미리보기</h2>
+      <div class="row">
+        <input id="xlsx-file" type="file" accept=".xlsx" />
+        <input id="doc-title" value="주간 일정·공수 엑셀 자료" placeholder="문서 제목" />
+        <label style="flex-direction:row;align-items:center;gap:6px;">
+          <input id="approve-schedule" type="checkbox" /> 일정 자료 사용 승인(APPROVED) 함께 적용
+        </label>
+        <button id="btn-upload-preview" class="primary">업로드 후 단가표 미리보기</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <input id="doc-version-id-manual" placeholder="이미 업로드한 문서 버전 UUID로 바로 미리보기" style="min-width:340px;" />
+        <button id="btn-preview-existing">문서 버전 미리보기</button>
+      </div>
+      <div id="preview-area"></div>
+    </section>
+
+    <section>
+      <h2>3. 변경 요청 영향 산정 및 새 단가표 재산정</h2>
+      <div class="row">
+        <select id="cr-select" style="min-width:320px;"><option value="">변경 요청을 선택하세요</option></select>
+        <input id="cr-id-manual" placeholder="또는 변경 요청 UUID 직접 입력" style="min-width:280px;" />
+        <button id="btn-start-orch" class="primary">현재 유효 단가표로 영향 산정 실행</button>
+        <button id="btn-recalc-orch">새 단가표로 재산정 (기존 Run 갱신)</button>
+        <button id="btn-refresh-orch">현재 분석 상태 조회</button>
+      </div>
+      <div id="orch-result"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/prototype/workbook-rate-card.js"></script>
+</body>
+</html>

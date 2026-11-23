@@ -65,6 +65,50 @@ def test_new_runtime_per_step_reads_run_and_reuses_impact_for_drafting(setup):
     assert runtime(setup).step("run-1")["status"] == "completed"
 
 
+def test_calculation_context_reaches_agent3_and_is_saved_with_the_result(setup, monkeypatch):
+    from app.orchestration.run_state import CalculationContext
+    state, workers, _, _ = setup
+    get_inputs = state.get_inputs
+    def pinned_inputs(run_id):
+        original = get_inputs(run_id)
+        return original.model_copy(update={
+            "calculation_context":CalculationContext(rate_card_id=original.rate_card_id),
+            "calculation_context_revision":1})
+    monkeypatch.setattr(state,"get_inputs",pinned_inputs)
+    seen=[]
+    run_agent = workers.agent3.run
+    def capture(inp):
+        seen.append(inp.model_copy(deep=True))
+        return run_agent(inp)
+    monkeypatch.setattr(workers.agent3,"run",capture)
+    for _ in range(6):
+        result=runtime(setup).step("run-1")
+    assert result["status"] == "waiting_final_review"
+    assert seen[0].workbook_source_pinned is True and seen[0].workbook_source is None
+    run=state.get_coordinated_run("run-1")
+    payload=state.get_result("run-1",run.state.agents["agent3"].current_result_id).result_payload
+    assert payload["source"]["calculation_context_revision"] == 1
+    assert payload["source"]["workbook_source_pinned"] is True
+
+
+def test_supervisor_input_carries_the_pinned_workbook_reference(setup):
+    from app.orchestration.run_state import CalculationContext
+    from app.orchestration.run_agent3_payload import Agent2RunOutput
+    from schema.schemas import Agent1Output
+    state = setup[0]
+    runtime(setup).step("run-1")
+    runtime(setup).step("run-1")
+    run = state.get_state("run-1")
+    inp=state.get_inputs("run-1").agent1_input
+    a1=Agent1Output.model_validate(state.get_result("run-1",run.agents["agent1"].current_result_id).result_payload)
+    a2=Agent2RunOutput.model_validate(state.get_result("run-1",run.agents["agent2"].current_result_id).result_payload)
+    context=CalculationContext(rate_card_id="RC-SYNTH-2026H2-v1",workbook_document_version_id="workbook-uuid",workbook_sha256="a"*64)
+    result=runtime(setup)._agent3_input(inp,a1,a2,context.rate_card_id,{},run.agents["agent1"].current_result_id,context)
+    assert result.workbook_source_pinned is True
+    assert result.workbook_source.document_version_id == "workbook-uuid"
+    assert result.workbook_source.sha256 == "a"*64
+
+
 def test_agent2_pm_question_stops_before_agent3_and_answer_reaches_new_worker(setup):
     state, workers, decisions, draft = setup
     original = workers.agent2.run

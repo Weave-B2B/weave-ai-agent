@@ -479,8 +479,9 @@ AI Server ↔ Backend 인증 방식 (결정 필요, D-10)
 | API | 설명 |
 |---|---|
 | `POST /internal/v1/runs` | 선택 필드 `agent1_input`(객체), `rate_card_id`를 받으면 최초 입력(REQUEST_INPUT)을 **한 번만** 고정한다(이미 있으면 유지). 필드가 없으면 기존 동작 그대로 |
-| `GET /internal/v1/runs/{id}/inputs` | `{run_id, agent1_input, rate_card_id, pm_review|null, pm_review_revision|null}`. 최초 입력이 없으면 404 `RUN_INPUT_NOT_FOUND` |
+| `GET /internal/v1/runs/{id}/inputs` | `{run_id, agent1_input, rate_card_id, pm_review|null, pm_review_revision|null, calculation_context|null, calculation_context_revision|null}`. `rate_card_id`는 최신 계산 컨텍스트가 우선하며 최초 입력은 보존. 최초 입력이 없으면 404 `RUN_INPUT_NOT_FOUND` |
 | `POST /internal/v1/runs/{id}/inputs` | `{expected_state_revision, operation_id, kind:"PM_REVIEW", submitted_by, payload}`. 새 input_revision 추가 + `state_revision` +1, Agent 상태·결과는 변경 없음. `submitted_by`는 행위자와 같아야 함(아니면 403). operation_id 멱등(replay), revision 충돌 409 |
+| `POST /internal/v1/runs/{id}/calculation-context` | `{expected_state_revision, operation_id, rate_card_id, workbook_document_version_id|null, workbook_sha256|null, reason, updated_by}`. 프로젝트 단가 소속/적용일과 현재 승인 엑셀의 버전/해시 검증. 실행 중·완료 Run은 거절. 새 컨텍스트 리비전 저장, Agent 3 stale, 최종 검토 무효화. 일반 `/inputs`로 제출 불가 |
 
 - AI: `RunInputs`는 `run_state.py`로 이동(runtime에서 재노출), `RunInputsView`(응답, 모르는 필드 무시), `SubmitInputRequest`, `RunInputNotFound`, `HttpRunStateClient.get_inputs/submit_input/create_run(inputs=)`, `BackendRunInputProvider`.
 - **호환 정책**: Backend 응답 DTO(`RunStateSnapshot`, `AgentState`, `PendingReview`, `CommittedResult`, `StateChangeReceipt`, `RunInputsView`)는 `extra="ignore"`로 Backend의 필드 추가에 깨지지 않게 하고, 요청 DTO는 `extra="forbid"`를 유지한다.

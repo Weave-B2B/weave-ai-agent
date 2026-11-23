@@ -334,6 +334,20 @@ def document_lines(doc_id: str, request: Request, page: int, start: int, end: in
             "lines": [{"no": n, "text": lines[n - 1], "hit": start <= n <= end} for n in range(first, last + 1)]}
 
 
+@router.get("/backend-projects/{project_id}")
+def get_backend_project(project_id: str, request: Request):
+    """프론트엔드(?projectId=<UUID>)에서 진입한 개발자 화면용: 백엔드 PostgreSQL의 실제 프로젝트·문서·기준선·변경 요청을 조회한다."""
+    from prototype.lab import local_only
+    from app.orchestration.backend_project_bridge import load_backend_project_context
+    local_only(request)
+    try:
+        return load_backend_project_context(project_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except Exception as exc:
+        raise HTTPException(503, f"백엔드 프로젝트 조회 실패: {exc}") from None
+
+
 @router.post("/reset")
 def reset(request: Request):
     """테스트 문서·기준선과 그 벡터를 지운다. 원본 data/kb와 원본 문서 벡터는 그대로다."""

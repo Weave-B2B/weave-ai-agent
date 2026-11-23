@@ -6,7 +6,7 @@ legacy prototype Supervisor remains available until its UI is explicitly moved.
 from uuid import uuid4
 
 from app.agents.agent2.orchestrator_adapter import Agent2CaseSnapshot, Agent2OrchestratorAdapter, SCOPE_INTENTS
-from app.agents.agent3.contracts import ProvisionalAgent3Output
+from app.agents.agent3.contracts import ProvisionalAgent3Output, WorkbookReference
 from app.agents.agent3.effort import load_effort_rules
 from app.agents.agent3.orchestration import Agent3Orchestration, DraftDocuments, Reestimate
 from app.agents.agent3.orchestrator_adapter import Agent3CaseSnapshot
@@ -204,6 +204,7 @@ class RunSupervisorRuntime:
                           and run.state.agents["agent3"].status == "COMPLETED")
         if a3_current and a3.source:
             a3_current = (a3.source.rate_card_id == original.rate_card_id
+                          and a3.source.calculation_context_revision == original.calculation_context_revision
                           and a3.source.rate_hash == _rate_hash(original.rate_card_id)
                           and a3.source.effort_hash == _hash(load_effort_rules())
                           and a3.source.a1_result_id == run.state.agents["agent1"].current_result_id
@@ -336,18 +337,27 @@ class RunSupervisorRuntime:
             raise InvalidStateTransition("Agent 1 returned a different request context")
         return output
 
-    def _agent3_input(self, inp, a1, a2, rate, links, a1_id):
+    def _agent3_input(self, inp, a1, a2, rate, links, a1_id, calculation_context=None):
         items = [i for i in a1.items if i.item_type not in ("constraint", "deadline", "dependency")]
         constraints = [i for i in a1.items if i not in items]
-        return Agent3CaseSnapshot(state_revision=0, a1_input=inp, a1_result_id=a1_id,
+        result = Agent3CaseSnapshot(state_revision=0, a1_input=inp, a1_result_id=a1_id,
             items=items, constraints=constraints, a2_result=_as(Agent2Output, a2.model_dump()),
             rate_card_id=rate, answers=inp.answers, quote_links=links).input()
+        if calculation_context is not None:
+            result.workbook_source_pinned = True
+            if calculation_context.workbook_document_version_id:
+                result.workbook_source = WorkbookReference(
+                    document_version_id=calculation_context.workbook_document_version_id,
+                    sha256=calculation_context.workbook_sha256)
+        return result
 
     def _impact(self, run, inp, rate, a1, a2, old, items, constraints, choice):
         tools = Agent3Orchestration(self.agents.agent3, draft_llm=self.draft_llm)
+        run_inputs = self.state.get_inputs(run.state.run_id)
         current = self._agent3_input(inp, a1, a2, rate, run.coordination.quote_links,
-                                     run.state.agents["agent1"].current_result_id)
+                                     run.state.agents["agent1"].current_result_id, run_inputs.calculation_context)
         view, previous = None, None
+        context_changed = False
         if old and old.source:
             source = old.source
             previous_a1 = _as(Agent1Output, self.state.get_result(run.state.run_id, source.a1_result_id).result_payload)
@@ -355,12 +365,20 @@ class RunSupervisorRuntime:
             previous_inp = inp.model_copy(update={"answers": [a for a in inp.answers if a.answer_id in source.answer_ids]}, deep=True)
             previous = self._agent3_input(previous_inp, previous_a1, previous_a2, source.rate_card_id,
                                           source.quote_links, source.a1_result_id)
-            if source.rate_hash == _rate_hash(rate) and source.effort_hash == _hash(load_effort_rules()):
+            previous.workbook_source_pinned = source.workbook_source_pinned
+            previous.workbook_source = source.workbook_source
+            context_changed = (source.rate_card_id != rate
+                or source.calculation_context_revision != run_inputs.calculation_context_revision
+                or previous.workbook_source_pinned != current.workbook_source_pinned
+                or previous.workbook_source != current.workbook_source)
+            if not context_changed and source.rate_hash == _rate_hash(rate) and source.effort_hash == _hash(load_effort_rules()):
                 view = tools.restore_result(previous, _as(ProvisionalAgent3Output, old.model_dump()).model_dump(),
                     {k: d.model_dump(mode="json") for k, d in old.documents.items()},
                     rate_hash=source.rate_hash, effort_hash=source.effort_hash)
         if choice.action == "estimate_impact":
             selected = set(choice.args["item_ids"])
+            if context_changed:
+                selected = set(current.target_item_ids)
             if not view or selected == set(current.target_item_ids):
                 if selected != set(current.target_item_ids):
                     raise InvalidStateTransition("First estimation requires all targets")
@@ -385,7 +403,10 @@ class RunSupervisorRuntime:
             a2_result_id=run.state.agents["agent2"].current_result_id, answer_ids=[a.answer_id for a in inp.answers],
             rate_card_id=rate, quote_links=run.coordination.quote_links, rate_hash=_rate_hash(rate),
             effort_hash=_hash(load_effort_rules()), policy_hash=(raw.get("pricing") or {}).get("policy_hash"),
-            pm_edit_id=old.source.pm_edit_id if old and old.source else None).model_dump()
+            pm_edit_id=old.source.pm_edit_id if old and old.source else None,
+            calculation_context_revision=run_inputs.calculation_context_revision,
+            workbook_source_pinned=current.workbook_source_pinned,
+            workbook_source=current.workbook_source).model_dump()
         return Agent3RunOutput.model_validate(raw)
 
     def answer(self, request: AnswerQuestion):
@@ -415,7 +436,10 @@ class RunSupervisorRuntime:
         if request.decision == "approve" and output:
             self._validate_review_pricing(output)
         if output and output.source:
-            if (output.source.rate_hash != _rate_hash(output.source.rate_card_id)
+            original = self.state.get_inputs(request.run_id)
+            if (output.source.rate_card_id != original.rate_card_id
+                    or output.source.calculation_context_revision != original.calculation_context_revision
+                    or output.source.rate_hash != _rate_hash(output.source.rate_card_id)
                     or output.source.effort_hash != _hash(load_effort_rules())):
                 raise InvalidStateTransition("산정 기준이 변경되었습니다. 재산정 후 검토해 주세요.", run_id=request.run_id)
         return self.state.final_review(request)

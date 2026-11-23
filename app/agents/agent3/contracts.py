@@ -7,12 +7,20 @@ from schema.schemas import Agent3Input, PMReview, Line, Estimate, Agent3Output
 from pydantic import BaseModel, ConfigDict
 
 
+class WorkbookReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    document_version_id: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class ProvisionalAgent3Input(Agent3Input):
     mode: Literal["provisional"] = "provisional"
     pm_review: None = None
     target_item_ids: list[str] = Field(default_factory=list)
     conditional_item_ids: list[str] = Field(default_factory=list)
     customer_questions: list[str] = Field(default_factory=list)
+    workbook_source_pinned: bool = False
+    workbook_source: WorkbookReference | None = None
     quote_links: dict[str, list[str]] = Field(default_factory=dict,
         description="estimate_request item_id -> 견적 대상 item_ids. 오케스트레이터 에이전트가 Agent 1 결과로 채운다.")
 

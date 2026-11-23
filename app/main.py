@@ -83,7 +83,9 @@ app.include_router(prototype_rate_router)
 # The developer-only API is enabled only by the explicit local prototype runner.
 if os.environ.get("PROTOTYPE_LAB") == "1":
     from prototype.lab import router as lab_router
+    from prototype.backend_bridge_routes import router as backend_bridge_router
     app.include_router(lab_router)
+    app.include_router(backend_bridge_router)
 
 # Local confirmation UI; business APIs and workflow ownership remain unchanged.
 prototype_dir = Path(__file__).resolve().parents[1] / "prototype"

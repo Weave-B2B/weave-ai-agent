@@ -86,6 +86,8 @@ def test_load_checks_bytes_and_hash_without_embedding(monkeypatch):
     value=load_workbook('project')
     assert value['source']['sha256']==source['sha256']
     assert len(value['data']['tasks'])==1
+    assert load_workbook('project', expected_source={
+        'document_version_id':source['documentVersionId'], 'sha256':source['sha256']}) == value
     source['sha256']='0'*64
     with pytest.raises(ToolInputError,match='해시'): load_workbook('project')
 
@@ -93,6 +95,25 @@ def test_load_checks_bytes_and_hash_without_embedding(monkeypatch):
 def test_synthetic_project_never_queries_backend():
     from app.tools.impact_workbook import current_source
     assert current_source('project-demo') is None
+
+
+@pytest.mark.parametrize('expected,current', [
+    ({'document_version_id':'old','sha256':'a'*64}, {'documentVersionId':'new','sha256':'a'*64}),
+    ({'document_version_id':'same','sha256':'a'*64}, {'documentVersionId':'same','sha256':'b'*64}),
+    (None, {'documentVersionId':'new','sha256':'a'*64}),
+    ({'document_version_id':'old','sha256':'a'*64}, None),
+])
+def test_pinned_workbook_change_stops_before_reading_s3(monkeypatch, expected, current):
+    from app.tools import impact_workbook as m
+    monkeypatch.setattr(m,'current_source',lambda _:current)
+    with pytest.raises(ToolInputError,match='고정한'):
+        m.load_workbook('project',expected_source=expected)
+
+
+def test_pinned_absence_does_not_load_a_workbook(monkeypatch):
+    from app.tools import impact_workbook as m
+    monkeypatch.setattr(m,'current_source',lambda _:None)
+    assert m.load_workbook('project',expected_source=None) is None
 
 
 def test_ingest_rejects_workbook_before_background_or_embedder(monkeypatch):
