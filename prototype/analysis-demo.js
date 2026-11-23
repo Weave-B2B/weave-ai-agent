@@ -70,6 +70,11 @@ export function analysisTitle(s) {
   return `${short}${Array.from(label).length > 48 ? '…' : ''}${features.length > 1 ? ` 외 ${features.length - 1}건` : ''}`;
 }
 
+// Backend 접수 채널(EMAIL·OTHER 등)을 Agent1 입력 채널(email·manual)로 바꾼다.
+export function agent1Channel(channel) {
+  return String(channel || '').trim().toUpperCase() === 'EMAIL' ? 'email' : 'manual';
+}
+
 // Agent 1의 목록용 제목(title)과 메일 요약(summary). 둘 다 없으면 표시하지 않는다.
 export function mailSummaryHtml(a1) {
   if (!a1?.title && !a1?.summary) return '';
@@ -82,7 +87,7 @@ export function analysisSnapshot(s) {
   const meta = stage => ({ result_id: `ui-${stage}-${s.id}`, model: `화면 시연 · ${MODELS[s.provider || 'gpt'].label}`, agent_version: 'frontend-preview', debug: {} });
   const real = s.realA1?.items?.length ? s.realA1 : null;
   const items = real ? real.items : (s.items || []).map((text, i) => ({ item_id: `${s.id}-${i + 1}`, case_id: s.id, display_no: `R${i + 1}`, item_type: 'function', intent: 'change_request', text, spans: [] }));
-  const source = { context, message_text: s.text, received_at: s.created, sender_name: s.requester || '직접 입력', sender_role: 'PM', channel: s.channel || 'manual', items, constraints: real ? items.filter(item => ['constraint', 'deadline', 'dependency'].includes(item.item_type)) : [], answers: s.answers || [] };
+  const source = { context, message_text: s.text, received_at: s.created, sender_name: s.requester || '직접 입력', sender_role: 'PM', channel: agent1Channel(s.channel), items, constraints: real ? items.filter(item => ['constraint', 'deadline', 'dependency'].includes(item.item_type)) : [], answers: s.answers || [] };
   const a1 = real ? { ...real, context: real.context || context, meta: real.meta || meta('a1') } : { context, status: 'READY', items, questions: [], meta: meta('a1') };
   const a2 = s.realA2 ? { ...s.realA2, context: s.realA2.context || context, meta: s.realA2.meta || meta('a2') } : realRun(s) ? null : { context, status: 'READY_FOR_REVIEW', assessments: items.map(i => ({ item_id: i.item_id, label: 'out_of_scope', rationale: '화면 흐름 확인을 위한 범위 밖 가상 예시입니다. 실제 계약 문서를 검색한 결과가 아닙니다.', evidence_level: 'none', evidence: [], missing_info: [], uncertainties: ['실제 근거 문서 미연결'] })), questions: [], meta: meta('a2') };
   const lines = [['FE', '화면 변경 · 고정 예시', 3], ['BE', '내부 API 변경 · 고정 예시', 3], ['QA', '동작 확인 · 고정 예시', 0.5]].map(([role, task, md]) => ({ role, task, md, item_ids: items.map(i => i.item_id), assumption: s.answer || '미확정' }));
@@ -248,8 +253,8 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       received_at: s.created,
       sender_role: 'PM',
       sender_name: s.requester || '직접 입력',
-      channel: s.channel || 'manual',
-      channel_src: 'PROTOTYPE',
+      channel: agent1Channel(s.channel),
+      channel_src: s.channel ? `PROTOTYPE:${String(s.channel).toUpperCase()}` : 'PROTOTYPE',
       subject: s.title || '요청분석',
       message_text: s.text,
       answers: []

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../analysis-demo.js',import.meta.url),'utf8');
-const {createAnalysisDemo,analysisSnapshot,analysisTitle,mailSummaryHtml}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const {createAnalysisDemo,analysisSnapshot,analysisTitle,mailSummaryHtml,agent1Channel}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 
 test('Agent 1 title takes precedence over backend and item-based titles',()=>{
   assert.equal(analysisTitle({text:'원문',backendTitle:'백엔드 제목',realA1:{title:'검색 필터 확인·영문 상세 검토',items:[]}}),'검색 필터 확인·영문 상세 검토');
@@ -401,4 +401,9 @@ test('schedule plan summary shows backend completion date and impact, or the rea
   assert.match(missing, /미계산: 인력 미배정/);
   assert.match(missing, /담당자 미지정/);
   assert.equal(planSummary(null), '');
+});
+
+test('backend intake channels map to Agent 1 input channels',()=>{
+  assert.equal(agent1Channel('EMAIL'),'email');
+  for (const value of ['OTHER','MEETING','PHONE','MESSENGER','manual','',null,undefined]) assert.equal(agent1Channel(value),'manual');
 });
