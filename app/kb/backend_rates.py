@@ -5,6 +5,7 @@ RateCardResponse를 받아 loader.rate_cards() 규격으로 변환한다.
 """
 from __future__ import annotations
 
+from decimal import Decimal
 import uuid
 from typing import Optional
 
@@ -79,24 +80,35 @@ def build_rate_client(settings) -> RateCardClient:
     )
 
 
+def _rate_number(value):
+    if value is None:
+        return None
+    d = Decimal(str(value))
+    return int(d) if d == int(d) else float(d)
+
+
 def to_card(resp: dict) -> dict:
     """백엔드 RateCardResponse → loader.rate_cards() 딕셔너리 포맷."""
+    currency = resp.get("rateCurrency", "KRW")
+    unit = f"{currency}/MD"
     rates = {}
     for r in resp.get("roleRates", []):
         role_code = r.get("jobRoleCode")
         if role_code in ROLES:
             rates[role_code] = {
-                "cost": int(r["internalRate"]) if r.get("internalRate") is not None else None,
-                "price": int(r["sellingRate"]) if r.get("sellingRate") is not None else None,
-                "unit": "KRW/MD",
-                "currency": resp.get("rateCurrency", "KRW"),
+                "cost": _rate_number(r.get("internalRate")),
+                "price": _rate_number(r.get("sellingRate")),
+                "unit": unit,
+                "currency": currency,
                 "vat_included": False
             }
     return {
-        "unit": "KRW/MD",
-        "currency": resp.get("rateCurrency", "KRW"),
+        "unit": unit,
+        "currency": currency,
         "vat_included": False,
         "synthetic": False,
         "hours_per_md": str(resp["hoursPerMd"]) if resp.get("hoursPerMd") is not None else None,
+        "rate_card_version_no": resp.get("rateCardVersionNo"),
+        "rate_effective_date": resp.get("rateEffectiveDate"),
         "rates": rates
     }

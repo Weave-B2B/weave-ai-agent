@@ -61,6 +61,7 @@ function totalsFor(s) {
 const MODELS = { gpt: { label: 'GPT', model: 'gpt-6-luna' }, local: { label: '로컬 LLM', model: 'gpt-oss:20b' } };
 
 export function analysisTitle(s) {
+  if (s?.backendTitle) return s.backendTitle;
   const features = (s.realA1?.items || []).filter(i => i.item_type === 'function');
   const first = features[0]?.text || s.text?.split(/[\n。!?]/)[0] || '신규 변경 요청';
   const label = first.split(/\s+[—–]\s+/)[0].replace(/\s+/g, ' ').trim();
@@ -70,35 +71,60 @@ export function analysisTitle(s) {
 
 // View adapter only: do not submit these provisional records to an agent API.
 export function analysisSnapshot(s) {
-  const context = { project_id: 'P-COM-101', case_id: s.id, request_revision: 1, baseline_id: 'P-COM-101:BL-2', baseline_as_of: '2026-10-05', analysis_id: `UI-${s.id}` };
+  const context = s.projectContext || { project_id: 'P-COM-101', case_id: s.id, request_revision: 1, baseline_id: 'P-COM-101:BL-2', baseline_as_of: '2026-10-05', analysis_id: `UI-${s.id}` };
   const meta = stage => ({ result_id: `ui-${stage}-${s.id}`, model: `화면 시연 · ${MODELS[s.provider || 'gpt'].label}`, agent_version: 'frontend-preview', debug: {} });
   const real = s.realA1?.items?.length ? s.realA1 : null;
   const items = real ? real.items : (s.items || []).map((text, i) => ({ item_id: `${s.id}-${i + 1}`, case_id: s.id, display_no: `R${i + 1}`, item_type: 'function', intent: 'change_request', text, spans: [] }));
-  const source = { context, message_text: s.text, received_at: s.created, sender_name: '직접 입력', sender_role: 'PM', channel: 'manual', items, constraints: real ? items.filter(item => ['constraint', 'deadline', 'dependency'].includes(item.item_type)) : [], answers: s.answers || [] };
+  const source = { context, message_text: s.text, received_at: s.created, sender_name: s.requester || '직접 입력', sender_role: 'PM', channel: s.channel || 'manual', items, constraints: real ? items.filter(item => ['constraint', 'deadline', 'dependency'].includes(item.item_type)) : [], answers: s.answers || [] };
   const a1 = real ? { ...real, context: real.context || context, meta: real.meta || meta('a1') } : { context, status: 'READY', items, questions: [], meta: meta('a1') };
   const a2 = s.realA2 ? { ...s.realA2, context: s.realA2.context || context, meta: s.realA2.meta || meta('a2') } : realRun(s) ? null : { context, status: 'READY_FOR_REVIEW', assessments: items.map(i => ({ item_id: i.item_id, label: 'out_of_scope', rationale: '화면 흐름 확인을 위한 범위 밖 가상 예시입니다. 실제 계약 문서를 검색한 결과가 아닙니다.', evidence_level: 'none', evidence: [], missing_info: [], uncertainties: ['실제 근거 문서 미연결'] })), questions: [], meta: meta('a2') };
   const lines = [['FE', '화면 변경 · 고정 예시', 3], ['BE', '내부 API 변경 · 고정 예시', 3], ['QA', '동작 확인 · 고정 예시', 0.5]].map(([role, task, md]) => ({ role, task, md, item_ids: items.map(i => i.item_id), assumption: s.answer || '미확정' }));
-  const input = { ...source, rate_card_id: '', a2_result: a2, pm_review: { status: 'PENDING', items: [] } };
+  const input = { ...source, rate_card_id: s.rateCardId || '', a2_result: a2, pm_review: { status: 'PENDING', items: [] } };
   const a3 = s.realA3 ? { ...s.realA3, context: s.realA3.context || context, meta: s.realA3.meta || meta('a3') } : null;
   const view = a3 ? { session_id: `ui-${s.id}`, state_revision: 1, phase: a3.status === 'NOT_REQUIRED' ? 'NOT_REQUIRED' : 'ORCHESTRATION', approval: s.runBacked && s.approved ? {approved:true,review_id:s.supervisorReview?.review_id,reviewer_ref:'prototype-pm',target_result_id:a3.meta.result_id} : null, demo_review:!!s.approved, history:[], impact:a3, draft: s.emailDraft ? { email_subject: s.emailDraft.subject, email_body: s.emailDraft.body } : s.realA3.draft || null, draft_model: s.emailDraft?.model || a3.meta.model } : !realRun(s) && s.step >= 6 ? { session_id: `ui-${s.id}`, state_revision: 1, phase: 'FRONTEND_PREVIEW', approval: null, demo_review: !!s.approved, history: [], impact: { context, meta: meta('a3'), questions: [], estimates: [{ item_ids: items.map(i => i.item_id), status: 'draft', lines, totals: { md: 6.5, cost: null, price: 4250000 }, rate_card_id: '', schedule: { business_days: null, reason: '화면 시연용이며 실제 일정은 미산정' } }] }, draft: s.ready ? { email_subject: '[화면 시연] 변경 요청 협의 초안', email_body: `안녕하세요. 요청 사항에 대한 검토용 초안입니다.\n\n${s.text}\n\n확인 조건: ${s.answer}\n\n공수·금액은 고정 화면 시연값이며 실제 견적이 아닙니다. 고객 협의와 일정 확인이 필요합니다.` } : null, draft_model: meta('a3').model } : null;
   return { source, input, a1, a2, view };
 }
 
 export function createAnalysisDemo({ records, storage, render, updateProgress = render, navigate, openAnalysis, schedule = setTimeout, analysisApi = null }) {
-  let sessions = [], currentId = null, text = '', modal = null, selected = '', other = '', error = '', provider = 'gpt';
-  try { const saved = JSON.parse(storage.getItem(KEY) || '[]'); if (Array.isArray(saved)) sessions = saved.filter(s => s?.id?.startsWith('CR-UI-') && typeof s.text === 'string' && Array.isArray(s.events)); } catch { /* optional browser storage */ }
+  let sessions = [], currentId = null, text = '', modal = null, selected = '', other = '', error = '', provider = 'gpt', backendProject = null;
+  const storageKey = () => backendProject ? `${KEY}-backend-${backendProject.project_id}` : KEY;
+  const loadSavedSessions = () => {
+    sessions = [];
+    try {
+      const saved = JSON.parse(storage.getItem(storageKey()) || '[]');
+      if (Array.isArray(saved)) sessions = saved.filter(s => (s?.id?.startsWith('CR-UI-') || (backendProject && s?.id)) && typeof s.text === 'string' && Array.isArray(s.events));
+    } catch { /* optional browser storage */ }
+    sessions.forEach(s => { s.running = false; s.progressStep = null; });
+  };
+  loadSavedSessions();
   const current = () => sessions.find(s => s.id === currentId);
   const pendingQuestion = s => s?.supervisor ? s.supervisorQuestion : (s?.realQuestions || s?.realA3?.questions || []).find(q => q.stage === 'agent3' && q.field !== 'more_evidence' && q.blocking && ['open', 'answered'].includes(q.status));
   const pendingEvidence = s => s?.supervisor ? null : (s?.realQuestions || s?.realA3?.questions || []).find(q => q.stage === 'agent3' && q.field === 'more_evidence' && q.blocking && ['open', 'answered'].includes(q.status));
-  sessions.forEach(s => { s.running = false; s.progressStep = null; }); // Refresh restores records, never fabricates a running timer.
-  const save = () => { try { storage.setItem(KEY, JSON.stringify(sessions)); } catch { /* current page remains usable */ } };
+  const save = () => { try { storage.setItem(storageKey(), JSON.stringify(sessions)); } catch { /* current page remains usable */ } };
   const byId = id => sessions.find(s => s.id === id);
   function addRecord(s) {
-    if (!s.ready) return;
+    if (!s.ready && !s.backendCr) return;
     const totals = realRun(s) ? totalsFor(s) : { md: s.md, price: s.price };
     const absent = s.realA3?.status === 'NOT_REQUIRED';
     const labels = [...new Set((s.realA2?.assessments || []).map(a => ({ in_scope: '범위 내', out_of_scope: '범위 밖', unclear: '판단 보류' }[a.label] || '판단 확인 필요')))];
-    const row = { id: s.id, title: analysisTitle(s), project: '모노마켓 · 화면 테스트', requester: '직접 입력', channel: '수동', date: s.created.slice(5, 10), scope: realRun(s) ? (labels.join(' · ') || '미분석') : '범위 밖 · 예시', process: s.approved ? '검토 완료' : s.hold ? '보류' : 'PM 검토 필요', approval: s.approved ? 'PM 확인 · 화면 테스트' : '미확인', customer: '미발송', md: absent ? '산정 대상 없음' : totals?.md != null ? `${totals.md} MD${realRun(s) ? '' : ' · 예시'}` : '미산정', price: absent ? '—' : won(totals?.price), owner: '김', elapsed: '방금', analysisDemo: true };
+    const projectLabel = backendProject ? `${backendProject.name} · ${backendProject.customer_name || '백엔드 연동'}` : (s.projectLabel || '모노마켓 · 화면 테스트');
+    const row = {
+      id: s.id,
+      title: analysisTitle(s),
+      project: projectLabel,
+      requester: s.requester || '직접 입력',
+      channel: s.channel || '수동',
+      date: (s.created || '').slice(5, 10) || '—',
+      scope: realRun(s) ? (labels.join(' · ') || '미분석') : (s.backendCr ? '미분석' : '범위 밖 · 예시'),
+      process: s.approved ? '검토 완료' : s.hold ? '보류' : (s.unstartedBackendCr ? '접수' : 'PM 검토 필요'),
+      approval: s.approved ? 'PM 확인 · 화면 테스트' : '미확인',
+      customer: '미발송',
+      md: absent ? '산정 대상 없음' : totals?.md != null ? `${totals.md} MD${realRun(s) ? '' : ' · 예시'}` : '미산정',
+      price: absent ? '—' : won(totals?.price),
+      owner: backendProject?.pm_name?.slice(0, 1) || '김',
+      elapsed: '방금',
+      analysisDemo: true,
+    };
     const old = records.find(r => r.id === s.id); if (old) Object.assign(old, row); else records.unshift(row);
   }
   sessions.forEach(addRecord);
@@ -155,8 +181,41 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
   async function start() {
     if (!text.trim()) { error = '고객 요청 내용을 먼저 입력해 주세요.'; render(); return; }
     if (current()?.running) return;
-    const s = { id: `CR-UI-${crypto.randomUUID().slice(0, 8).toUpperCase()}`, text: text.trim(), provider, created: new Date().toISOString(), events: [], step: 0, running: true, ready: false, approved: false, answer: '', supervisor: true, runBacked: !!analysisApi };
-    sessions.unshift(s); currentId = s.id; error = ''; save(); openAnalysis(s.id); render();
+    if (backendProject && !backendProject.active_baseline_id) {
+      error = '이 백엔드 프로젝트에 활성 기준선이 없습니다. 프론트엔드에서 문서를 등록하고 기준선을 생성해 주세요.';
+      render();
+      return;
+    }
+    const existingUnstarted = current()?.unstartedBackendCr ? current() : null;
+    const defaultBackendTitle = backendProject ? (text.trim().split('\n')[0].slice(0, 40) || '신규 변경 요청') : undefined;
+    const s = existingUnstarted || {
+      id: `CR-UI-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+      text: text.trim(),
+      ...(defaultBackendTitle ? { title: defaultBackendTitle, backendTitle: defaultBackendTitle, backendCr: true } : {}),
+      provider,
+      created: new Date().toISOString(),
+      events: [],
+      step: 0,
+      running: true,
+      ready: false,
+      approved: false,
+      answer: '',
+      supervisor: true,
+      runBacked: !!analysisApi,
+      backendConnected: !!backendProject,
+    };
+    if (existingUnstarted) {
+      s.text = text.trim();
+      s.provider = provider;
+      s.running = true;
+      s.supervisor = true;
+      s.runBacked = !!analysisApi;
+      s.unstartedBackendCr = false;
+      s.events = [];
+    } else {
+      sessions.unshift(s);
+    }
+    currentId = s.id; error = ''; save(); openAnalysis(s.id); render();
     if (!analysisApi) {
       delete s.supervisor;
       advance(s);
@@ -164,53 +223,51 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
     }
     event(s, '총괄', '요청 분석을 시작합니다', '');
     render();
+    const projectContext = backendProject
+      ? {
+          project_id: backendProject.project_id,
+          case_id: s.id,
+          request_revision: 1,
+          baseline_id: backendProject.active_baseline_id,
+          baseline_as_of: backendProject.active_baseline_as_of,
+          analysis_id: `UI-${s.id}`,
+        }
+      : { project_id: 'P-COM-101', case_id: s.id, request_revision: 1, baseline_id: 'P-COM-101:BL-2', baseline_as_of: '2026-10-05', analysis_id: `UI-${s.id}` };
+    const rateCardId = backendProject ? backendProject.rate_card_id : 'RC-SYNTH-2026H2-v2';
+    s.projectContext = projectContext;
+    s.rateCardId = rateCardId;
     const inp = {
-      context: { project_id: 'P-COM-101', case_id: s.id, request_revision: 1, baseline_id: 'P-COM-101:BL-2', baseline_as_of: '2026-10-05', analysis_id: `UI-${s.id}` },
+      context: projectContext,
       received_at: s.created,
       sender_role: 'PM',
-      sender_name: '직접 입력',
-      channel: 'manual',
+      sender_name: s.requester || '직접 입력',
+      channel: s.channel || 'manual',
       channel_src: 'PROTOTYPE',
-      subject: '요청분석',
+      subject: s.title || '요청분석',
       message_text: s.text,
       answers: []
     };
     s.caseId = s.id; s.analysisId = inp.context.analysis_id;
     try {
       if (!analysisApi) throw new Error('Analysis API가 연결되지 않았습니다.');
-      const result = await supervisorRequest('', { input: inp, rate_card_id: 'RC-SYNTH-2026H2-v2', provider: s.provider }, s);
+      const result = await supervisorRequest('', { input: inp, rate_card_id: rateCardId, provider: s.provider }, s);
       s.caseId = s.id; s.analysisId = inp.context.analysis_id;
       applySupervisorState(s, result);
       finishProgress(s, 'Agent 1', '요청 항목을 구조화했습니다', `${s.realA1?.items?.length || 0}개 항목을 확인했습니다.`, 'original');
       save(); render();
       await runSupervisor(s);
       return;
-      /* Legacy sessions continue to use the original workflow below. */
-      /*
-      const result=await analysisApi.start(inp,'RC-SYNTH-2026H2-v2');
-      s.analysisId=result.analysis_id; s.caseId=result.case_id;
-      s.realA1=result.structured_request?.structured||null;
-      s.realA2=result.scope_analysis?.scope||null;
-      s.realA3=result.cost_estimation?.cost||null;
-      s.stateRevision=result.workflow?.state_revision||0;
-      s.schedule=result.schedule_reference||null;
-      s.items=(s.realA1?.items||[]).map(item=>item.text);
-      event(s,'Agent 1','요청 항목을 구조화했습니다',`${s.items.length}개 항목을 확인했습니다.`,'original');
-      s.step=2; save(); render();
-      if (result.workflow?.stage!=='pm_items') { s.running=false; event(s,'매니저','Agent 1이 추가 확인을 요청했습니다','질문에 답한 뒤 다음 단계로 진행할 수 있습니다.','original'); save(); render(); return; }
-      await runScope(s);
-      */
     } catch (err) {
       stopSupervisor(s, '실행 실패', err.message || '요청분석 실행에 실패했습니다.', !!err.retryable);
     }
   }
   function addProgress(s, events = []) {
     const changed = new Set();
-    for (const { seq, kind, agent, title, parent_seq, tool, phase, label, matches } of events) {
+    for (const { seq, kind, agent, title, body, tab, parent_seq, tool, phase, label, matches } of events) {
       if (seq <= (s.progressCursor || 0)) continue;
       s.progressCursor = seq;
       if (kind === 'step') {
-        const step = { seq, agent, title, tools: [] };
+        const step = { seq, agent, title, ...(body ? { body } : {}), ...(tab ? { tab } : {}), tools: [] };
         s.events.push(step);
         s.progressStep = seq;
         changed.add(step);
@@ -303,6 +360,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
     s.ready = !!(s.emailDraft && data.agent3?.documents);
     s.hold = !!data.hold_reason;
     s.supervisorHoldReason = data.hold_reason || null;
+    s.runStatus = data.run_status || null;
     if (data.run_status === 'FAILED') s.supervisorStop = { title: '실행이 중단되었습니다', reason: '진행 기록을 확인한 뒤 실패한 단계만 다시 시도할 수 있습니다.', retryable: (data.llm_calls || 0) < 80 };
     s.step = s.realA3 ? 6 : s.realA2 ? 3 : s.realA1 ? 2 : 0;
   }
@@ -382,10 +440,11 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
         if (!response.ok) throw new Error('최신 Run 상태를 확인하지 못했습니다.');
         applySupervisorState(s, data); s.supervisorStop = null;
       }
-      if (s.supervisorHoldReason) {
+      if (s.supervisorHoldReason || s.runStatus === 'FAILED') {
+        const wasFailed = s.runStatus === 'FAILED' && !s.supervisorHoldReason;
         const data = await supervisorRequest(`/${encodeURIComponent(s.caseId)}/resume`, { state_revision: s.stateRevision });
         applySupervisorState(s, data);
-        event(s, '총괄', '보류 상태를 해제했습니다', '최신 상태에서 다음 작업을 선택합니다.');
+        event(s, '총괄', wasFailed ? '실패 상태를 해제하고 재개합니다' : '보류 상태를 해제했습니다', '최신 상태에서 다음 작업을 선택합니다.');
       }
       s.hold = false; save(); render();
       await runSupervisor(s);
@@ -613,16 +672,85 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
   }
   function page() {
     const s = current();
-    const heading = `<div class="page-heading"><div><p class="analysis-eyebrow">MULTI-AGENT WORKSPACE <span>실행 연동</span></p><h1>고객 요청, 여기서 시작하세요</h1><p class="subtitle">요청을 분석한 뒤 Supervisor가 필요한 전문 에이전트를 선택하고, 질문과 최종 검토를 연결합니다.</p></div><button class="button" data-demo-action="new" ${s?.running ? 'disabled' : ''}>+ 새 요청</button></div>`;
-    if (!s) return heading + `<section class="analysis-compose card"><div class="card-heading"><h2>고객 요청사항</h2><span class="mini-tag">모노마켓 · 테스트 프로젝트</span></div><label class="field"><span class="sr-only">고객 요청 원문</span><textarea id="analysis-request" placeholder="고객이 보낸 메일이나 메시지를 그대로 붙여넣으세요.\n\n기능 추가, 일정 조건, 견적 요청이 함께 있어도 괜찮아요." maxlength="12000">${esc(text)}</textarea></label><div class="analysis-compose-footer"><label class="analysis-model-picker">모델 <select id="analysis-model" aria-label="분석 모델"><option value="gpt" ${provider === 'gpt' ? 'selected' : ''}>${MODELS.gpt.label}</option><option value="local" ${provider === 'local' ? 'selected' : ''}>${MODELS.local.label}</option></select></label><button class="button plain" data-demo-action="sample">예시 요청 넣기</button><button class="button primary" data-demo-action="start">요청 분석 시작 →</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</section><div class="analysis-intro">${[['01', '필요한 에이전트가 분석', '요청 정리와 문서 조사, 영향 산정의 진행 과정을 확인합니다.'], ['02', '필요한 순간에만 질문', 'PM 확인 후 범위 검토와 영향 산정을 이어서 실행합니다.'], ['03', '결과와 기록을 한곳에', 'Workflow 결과와 단계별 기록을 한 화면에서 확인합니다.']].map(([n, h, p]) => `<div><span>${n}</span><h3>${h}</h3><p>${p}</p></div>`).join('')}</div><p class="analysis-demo-note">공통 Run 실행 · 이 노트북의 SQLite에 저장합니다. 백엔드 업무 DB 저장·고객 발송은 하지 않습니다.</p>${sessions.length ? `<section class="card"><h2>이전 요청 분석</h2>${sessions.map(x => `<button class="analysis-history" data-demo-open="${esc(x.id)}"><strong>${esc(x.text.slice(0, 55))}</strong><span>${x.ready ? '결과 준비' : '진행 기록'} ↗</span></button>`).join('')}</section>` : ''}`;
-    return heading + `<div class="analysis-run-heading"><span class="mini-tag">${esc(s.id)}</span><strong>${s.running ? '진행 중' : s.hold ? '보류' : s.approved ? 'PM 확인 완료' : pendingEvidence(s) ? '추가 근거 조사 필요' : pendingQuestion(s) ? '추가 확인 필요' : s.ready ? '최종 검토 대기' : 'PM 답변 대기'}</strong><span class="caption">${esc(MODELS[s.provider || 'gpt'].label)} 선택${s.runBacked ? (s.backendConnected ? ' · 백엔드 DB 연결 (PostgreSQL)' : ' · 로컬 저장 · 백엔드 미연결') : ''}${s.llmCalls != null ? ` · 모델 호출 시도 ${s.llmCalls}회` : ''} · ${realRun(s) ? 'Orchestration 실행' : '실제 AI 호출 없음'}</span></div><div class="analysis-workspace"><section class="card analysis-feed"><div class="card-heading"><h2>진행 기록</h2><span class="caption">기록을 누르면 해당 결과로 이동합니다</span></div><div class="analysis-request-bubble"><small>고객 요청</small><p>${esc(s.text)}</p></div><div class="analysis-events" aria-live="polite">${s.events.map(x => eventHtml(x, s.id, s.running && x.seq === s.progressStep)).join('')}</div>${s.running ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>요청 분석을 진행하고 있습니다…</p>' : pendingEvidence(s) ? `<div class="notice">추가 문서 조사 필요: ${esc(pendingEvidence(s).text)}. Agent 2 재조사 자동 연결은 아직 준비 중입니다.</div>` : pendingQuestion(s) ? '<button class="button primary" data-demo-action="agent3-question">추가 질문에 답변하기</button>' : s.supervisor ? supervisorControls(s) : !s.ready ? '<button class="button primary" data-demo-action="question">진행 조건 확인하기</button>' : `<div class="form-actions"><button class="button primary" data-demo-action="final">${s.approved ? '최종 결과 다시 확인' : '최종 검토하기'}</button><button class="button" data-demo-action="list">변경 요청 목록</button></div>`}</section><aside class="analysis-result"><section class="card"><h2>단계별 결과</h2><p class="caption">완료된 작업의 결과를 열어볼 수 있습니다.</p><div class="analysis-stages">${stageLinks(s)}</div></section>${s.ready ? `<section class="card">${preview(s)}<p class="analysis-demo-note">${realRun(s) ? '메일 초안은 고객 발송 전 PM 검토가 필요합니다.' : '화면 시연용 가상 결과입니다.'}</p></section>` : `<section class="card analysis-result-empty"><span>◎</span><h3>결과가 이곳에 쌓입니다</h3><p>PM 확인 후 영향 산정과 문서 초안 미리보기가 이어집니다.</p></section>`}</aside></div>${dialog()}`;
+    const activeBl = backendProject?.baselines?.find(b => b.baseline_id === backendProject.active_baseline_id);
+    const projectBadge = backendProject
+      ? `${esc(backendProject.name)} · 기준선 ${esc(activeBl ? `#${activeBl.version_no} (${activeBl.as_of})` : '없음')} · 백엔드 연동`
+      : '모노마켓 · 테스트 프로젝트';
+    const noteText = backendProject
+      ? `백엔드 프로젝트(${esc(backendProject.name)}) 연동 모드 · 기준 문서 ${backendProject.documents?.length || 0}건 · 일정·공수 자료 ${backendProject.impact_workbooks?.length || 0}건 공유`
+      : '공통 Run 실행 · 이 노트북의 SQLite에 저장합니다. 백엔드 업무 DB 저장·고객 발송은 하지 않습니다.';
+    const heading = `<div class="page-heading"><div><p class="analysis-eyebrow">MULTI-AGENT WORKSPACE <span>${backendProject ? '백엔드 연동' : '실행 연동'}</span></p><h1>고객 요청, 여기서 시작하세요</h1><p class="subtitle">요청을 분석한 뒤 Supervisor가 필요한 전문 에이전트를 선택하고, 질문과 최종 검토를 연결합니다.</p></div><button class="button" data-demo-action="new" ${s?.running ? 'disabled' : ''}>+ 새 요청</button></div>`;
+    if (!s || s.unstartedBackendCr) {
+      return heading + `<section class="analysis-compose card"><div class="card-heading"><h2>${s?.unstartedBackendCr ? `백엔드 등록 요청 · ${esc(s.id)}` : '고객 요청사항'}</h2><span class="mini-tag">${projectBadge}</span></div><label class="field"><span class="sr-only">고객 요청 원문</span><textarea id="analysis-request" placeholder="고객이 보낸 메일이나 메시지를 그대로 붙여넣으세요.\n\n기능 추가, 일정 조건, 견적 요청이 함께 있어도 괜찮아요." maxlength="12000">${esc(s?.unstartedBackendCr ? (text || s.text) : text)}</textarea></label><div class="analysis-compose-footer"><label class="analysis-model-picker">모델 <select id="analysis-model" aria-label="분석 모델"><option value="gpt" ${provider === 'gpt' ? 'selected' : ''}>${MODELS.gpt.label}</option><option value="local" ${provider === 'local' ? 'selected' : ''}>${MODELS.local.label}</option></select></label><button class="button plain" data-demo-action="sample">예시 요청 넣기</button><button class="button primary" data-demo-action="start">요청 분석 시작 →</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</section><div class="analysis-intro">${[['01', '필요한 에이전트가 분석', '요청 정리와 문서 조사, 영향 산정의 진행 과정을 확인합니다.'], ['02', '필요한 순간에만 질문', 'PM 확인 후 범위 검토와 영향 산정을 이어서 실행합니다.'], ['03', '결과와 기록을 한곳에', 'Workflow 결과와 단계별 기록을 한 화면에서 확인합니다.']].map(([n, h, p]) => `<div><span>${n}</span><h3>${h}</h3><p>${p}</p></div>`).join('')}</div><p class="analysis-demo-note">${noteText}</p>${sessions.length ? `<section class="card"><h2>${backendProject ? '이 프로젝트의 변경 요청 · 분석 이력' : '이전 요청 분석'}</h2>${sessions.map(x => `<button class="analysis-history" data-demo-open="${esc(x.id)}"><strong>${esc(x.id)} · ${esc(x.text.slice(0, 55))}</strong><span>${x.unstartedBackendCr ? '프론트 등록 · 분석 시작하기' : x.ready ? '결과 준비' : '진행 기록'} ↗</span></button>`).join('')}</section>` : ''}`;
+    }
+    return heading + `<div class="analysis-run-heading"><span class="mini-tag">${esc(s.id)}</span><strong>${s.running ? '진행 중' : s.hold ? '보류' : s.approved ? 'PM 확인 완료' : pendingEvidence(s) ? '추가 근거 조사 필요' : pendingQuestion(s) ? '추가 확인 필요' : s.ready ? '최종 검토 대기' : 'PM 답변 대기'}</strong><span class="caption">${esc(MODELS[s.provider || 'gpt'].label)} 선택${s.runBacked ? (s.backendConnected || backendProject ? ' · 백엔드 DB 연결 (PostgreSQL)' : ' · 로컬 저장 · 백엔드 미연결') : ''}${s.llmCalls != null ? ` · 모델 호출 시도 ${s.llmCalls}회` : ''} · ${realRun(s) ? 'Orchestration 실행' : '실제 AI 호출 없음'}</span></div><div class="analysis-workspace"><section class="card analysis-feed"><div class="card-heading"><h2>진행 기록</h2><span class="caption">기록을 누르면 해당 결과로 이동합니다</span></div><div class="analysis-request-bubble"><small>고객 요청</small><p>${esc(s.text)}</p></div><div class="analysis-events" aria-live="polite">${s.events.map(x => eventHtml(x, s.id, s.running && x.seq === s.progressStep)).join('')}</div>${s.running ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>요청 분석을 진행하고 있습니다…</p>' : pendingEvidence(s) ? `<div class="notice">추가 문서 조사 필요: ${esc(pendingEvidence(s).text)}. Agent 2 재조사 자동 연결은 아직 준비 중입니다.</div>` : pendingQuestion(s) ? '<button class="button primary" data-demo-action="agent3-question">추가 질문에 답변하기</button>' : s.supervisor ? supervisorControls(s) : !s.ready ? '<button class="button primary" data-demo-action="question">진행 조건 확인하기</button>' : `<div class="form-actions"><button class="button primary" data-demo-action="final">${s.approved ? '최종 결과 다시 확인' : '최종 검토하기'}</button><button class="button" data-demo-action="list">변경 요청 목록</button></div>`}</section><aside class="analysis-result"><section class="card"><h2>단계별 결과</h2><p class="caption">완료된 작업의 결과를 열어볼 수 있습니다.</p><div class="analysis-stages">${stageLinks(s)}</div></section>${s.ready ? `<section class="card">${preview(s)}<p class="analysis-demo-note">${realRun(s) ? '메일 초안은 고객 발송 전 PM 검토가 필요합니다.' : '화면 시연용 가상 결과입니다.'}</p></section>` : `<section class="card analysis-result-empty"><span>◎</span><h3>결과가 이곳에 쌓입니다</h3><p>PM 확인 후 영향 산정과 문서 초안 미리보기가 이어집니다.</p></section>`}</aside></div>${dialog()}`;
+  }
+  async function setBackendProject(ctx) {
+    backendProject = ctx || null;
+    loadSavedSessions();
+    if (!backendProject) return;
+    for (const cr of (backendProject.change_requests || [])) {
+      if (cr.has_run) {
+        const existingIdx = sessions.findIndex(x => x.id === cr.id);
+        if (existingIdx !== -1) sessions.splice(existingIdx, 1);
+        await restoreCase(cr.id);
+        const restored = byId(cr.id);
+        if (restored) {
+          restored.backendCr = true;
+          restored.backendConnected = true;
+          restored.unstartedBackendCr = false;
+          restored.title = cr.title || restored.title;
+          restored.backendTitle = cr.title || restored.backendTitle;
+          restored.requester = cr.requester || restored.requester;
+          restored.channel = cr.channel || restored.channel;
+          addRecord(restored);
+        }
+      } else {
+        let s = byId(cr.id);
+        if (!s) {
+          s = {
+            id: cr.id,
+            caseId: cr.id,
+            title: cr.title,
+            backendTitle: cr.title,
+            text: cr.message_text || cr.title,
+            requester: cr.requester || '고객사 담당자',
+            channel: cr.channel || 'EMAIL',
+            created: cr.received_at || new Date().toISOString(),
+            provider: 'gpt',
+            events: [],
+            step: 0,
+            running: false,
+            ready: false,
+            approved: false,
+            backendCr: true,
+            unstartedBackendCr: true,
+            backendConnected: true,
+            projectContext: {
+              project_id: backendProject.project_id,
+              case_id: cr.id,
+              request_revision: 1,
+              baseline_id: backendProject.active_baseline_id || '',
+              baseline_as_of: backendProject.active_baseline_as_of || '',
+              analysis_id: `UI-${cr.id}`,
+            },
+            rateCardId: backendProject.rate_card_id || '',
+          };
+          sessions.push(s);
+        }
+        addRecord(s);
+      }
+    }
+    save();
   }
   return {
+    setBackendProject,
     refresh: refreshSession,
     page, byId, current, resultPreview(id, tab) { const s = byId(id); return s ? preview(s, tab) : ''; },
     enter(id) {
       currentId = byId(id) ? id : null; modal = null; error = '';
       const s = current();
+      if (s?.unstartedBackendCr) { text = s.text; return; }
       if (s?.supervisor && s.caseId && !s.running) {
         fetch(`${supervisorBase(s)}/${encodeURIComponent(s.caseId)}`)
           .then(async response => { const data = await response.json().catch(() => null); if (!response.ok) throw new Error(data?.detail || '서버 실행 상태를 확인할 수 없습니다.'); return data; })

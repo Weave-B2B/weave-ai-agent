@@ -72,10 +72,12 @@ class ReviewBody(RevisionBody):
 
 @lru_cache(maxsize=1)
 def get_store():
-    if settings.backend_coordination_enabled and settings.backend_base_url and settings.backend_internal_token:
+    # The synthetic compose screen stays local unless its own real identity is
+    # explicitly configured. Enabling the official Run API must not reroute it.
+    actor = os.environ.get("WEAVE_ACTOR_MEMBER_ID")
+    project_id = os.environ.get("WEAVE_PROJECT_ID")
+    if settings.backend_coordination_enabled and settings.backend_base_url and settings.backend_internal_token and actor and project_id:
         from app.orchestration.backend_run_store import BackendRunStore
-        actor = os.environ.get("WEAVE_ACTOR_MEMBER_ID", "00000000-0000-0000-0000-0000000000b1")
-        project_id = os.environ.get("WEAVE_PROJECT_ID", "00000000-0000-0000-0000-0000000000a1")
         return BackendRunStore(settings.backend_base_url, settings.backend_internal_token, actor,
                                settings.prototype_run_db, project_id=project_id)
     return LocalRunStore(settings.prototype_run_db)
@@ -117,11 +119,16 @@ def _view(store, case_id):
     if run.state.status == "WAITING_PM_REVIEW" and review and review["decision"] == "hold":
         hold = "PM 최종 검토 보류"
     is_backend = getattr(store, "is_backend_connected", False)
+    inp_obj = store.get_inputs(case_id).agent1_input
+    from app.orchestration.backend_project_bridge import is_backend_project_id, sync_local_run_to_backend
+    if is_backend_project_id(inp_obj.context.project_id):
+        is_backend = True
+        sync_local_run_to_backend(inp_obj.context.project_id, case_id, store)
     storage_type = "backend-postgresql" if is_backend else "local-sqlite"
     view = {"impact": payload, "documents": payload.get("documents", {}), "snapshot_hash": snapshot_hash,
             "can_final_review": bool(target), "storage": storage_type} if payload else None
     return {"case_id": case_id, "run_id": case_id, "state_revision": run.state.state_revision,
-        "input": store.get_inputs(case_id).agent1_input.model_dump(mode="json"),
+        "input": inp_obj.model_dump(mode="json"),
         "provider": store.provider(case_id), "run_status": run.state.status,
         "answers": [a.model_dump(mode="json") for a in run.coordination.answers],
         "a1": outputs["agent1"], "a2": outputs["agent2"], "agent3": view,
@@ -133,6 +140,7 @@ def _view(store, case_id):
 
 
 def _perform(store, case_id, operation):
+    from app.agents.agent3.workflow import WorkflowConflict
     progress = progress_for(store, case_id)
     try:
         with progress.capture():
@@ -142,6 +150,8 @@ def _perform(store, case_id, operation):
         if run.coordination.segment_llm_calls >= 40 or run.coordination.llm_calls >= 80:
             raise HTTPException(409, "모델 호출 한도에 도달했습니다. 현재 결과를 확인해 주세요.") from None
         raise HTTPException(502, {"message": exc.error.message, "retryable": exc.error.retryable}) from None
+    except WorkflowConflict as exc:
+        raise HTTPException(409, {"message": str(exc), "retryable": True}) from None
     except LlmConfigError as exc:
         raise HTTPException(422, str(exc)) from None
     finally:
@@ -150,13 +160,26 @@ def _perform(store, case_id, operation):
 
 @router.post("")
 def create(body: StartBody, store=Depends(get_store)):
+    from app.kb import loader
+    from app.orchestration.backend_project_bridge import is_backend_project_id, sync_change_request_to_backend
     context = body.input.context
+    if is_backend_project_id(context.project_id):
+        loader.refresh_remote(context.baseline_id or "")
     baseline = baselines().get(context.baseline_id or "")
     if (not baseline or baseline["project_id"] != context.project_id or baseline["as_of"] != context.baseline_as_of
             or superseded_by(context.baseline_id) or body.rate_card_id not in rate_cards()):
         raise HTTPException(422, "프로젝트·기준선·단가표를 확인해 주세요.")
     # Validate credentials/configuration before creating any durable state.
     provider_workers(body.provider)
+    if is_backend_project_id(context.project_id):
+        sync_change_request_to_backend(
+            context.project_id,
+            context.case_id,
+            body.input.subject or "",
+            body.input.message_text,
+            body.input.sender_name or "직접 입력",
+            body.input.channel or "OTHER",
+        )
     state = store.create_run(context.case_id, RunInputs(agent1_input=body.input, rate_card_id=body.rate_card_id), provider=body.provider)
     _perform(store, context.case_id, lambda: _runtime(store, context.case_id).step(context.case_id, expected_revision=state.state_revision))
     return _view(store, context.case_id)

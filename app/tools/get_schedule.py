@@ -8,6 +8,9 @@ def get_schedule(project_id: str, as_of: str | None = None) -> dict:
     """as_of 이전에 효력이 생긴 변경합의서만 종료일에 반영한다. baseline_as_of를 넘길 것."""
     p = schedules().get(project_id)
     if p is None:
+        from app.orchestration.backend_project_bridge import ensure_backend_schedule
+        p = ensure_backend_schedule(project_id)
+    if p is None:
         raise ToolInputError(f"unknown project_id {project_id}")
     end, src, applied = p["contract_end"], p["contract_end_ref"], []
     for co in p.get("change_orders", []):

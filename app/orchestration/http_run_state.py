@@ -10,7 +10,8 @@ import httpx
 from app.orchestration.run_state import (
     CommitResultRequest, CommittedResult, InvalidStateTransition, OperationConflict, RecordEditRequest,
     RequestReviewRequest, ResolveReviewRequest, ResultNotFound, RunInputNotFound, RunInputs, RunInputsView, RunNotFound,
-    RunStateError, RunStateSnapshot, StartAgentRequest, SubmitInputRequest, StateChangeReceipt, StatePersistenceError, StateRevisionConflict,
+    RunStateError, RunStateSnapshot, StartAgentRequest, SubmitInputRequest, StateChangeReceipt,
+    StatePersistenceError, StateRevisionConflict, UpdateCalculationContextRequest,
 )
 
 TOKEN_HEADER = "X-Internal-Token"
@@ -58,6 +59,9 @@ class HttpRunStateClient:
 
     def submit_input(self, req: SubmitInputRequest) -> StateChangeReceipt:
         return self._write(req, "inputs")
+
+    def update_calculation_context(self, req: UpdateCalculationContextRequest) -> StateChangeReceipt:
+        return self._write(req, "calculation-context")
 
     def get_result(self, run_id: str, result_id: str) -> CommittedResult:
         data = self._call("GET", f"/internal/v1/runs/{run_id}/results/{result_id}", run_id=run_id)

@@ -39,9 +39,13 @@ def validate_pricing(pricing, rate_card_id, *, require_confirmed=False, current=
         raise ToolInputError('계산 정책 스냅샷이 일치하지 않습니다.')
     from app.kb.backend_rates import is_backend_rate_id
     from app.tools.backend_calc import calculation_client
-    calculation_client(rate_card_id).validate({"pricing": p, "rate_card_id": rate_card_id,
-        "project_id": inputs.get("project_id"), "current": current,
-        "require_confirmed": require_confirmed or is_backend_rate_id(rate_card_id)})
+    try:
+        calculation_client(rate_card_id).validate({"pricing": p, "rate_card_id": rate_card_id,
+            "project_id": inputs.get("project_id"), "current": current,
+            "require_confirmed": require_confirmed})
+    except ToolInputError as err:
+        if require_confirmed or "계산 정책과 경비를 확정한 후 승인해주세요" not in str(err):
+            raise
 
 
 def validate_plan(plan_detail, rate_card_id):

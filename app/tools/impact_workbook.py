@@ -1,7 +1,8 @@
 """Agent 3 전용 XLSX 구조화 입력. RAG·청크·임베딩을 호출하지 않는다.
 
 백엔드가 승인한 버전과 SHA-256을 고정한다. 단가표는 참고자료이며
-LLM 입력과 공식 금액 계산에는 전달하지 않는다. 완료일 계산기는 별도 후속 작업이다.
+LLM 입력과 공식 금액 계산에는 전달하지 않는다. 완료일·일정 영향은 Backend 일정 계산기(schedule-v1)가 계산한다.
+빈 양식과 작성 예시: data/templates/impact-workbook-*.xlsx (scripts/build_impact_workbooks.py로 생성). WBS 양식 해석은 wbs_workbook.
 """
 from __future__ import annotations
 
@@ -65,7 +66,9 @@ def _sheets(data):
                     v = c.find('s:v', NS)
                     raw = v.text if v is not None else ''
                     if c.get('t') == 's': raw = strings[int(raw)]
-                    elif c.get('t') == 'inlineStr': raw = ''.join(c.find('s:is', NS).itertext())
+                    elif c.get('t') == 'inlineStr':
+                        text = c.find('s:is', NS)  # 일부 도구는 빈 문자열 칸을 <is> 없이 저장한다
+                        raw = '' if text is None else ''.join(text.itertext())
                     cells[col] = (raw or '', c.find('s:f', NS) is not None)
                 rows.append((int(row.get('r')), cells))
             result[sheet.get('name')] = rows
@@ -101,11 +104,15 @@ def _date(value, label, required=False):
 
 
 def parse_workbook(data: bytes) -> dict:
-    """공유한 간소화 양식만 지원. 모르는 양식을 빈 자료로 오인하지 않는다."""
+    """WBS·인력 투입 계획 양식(wbs-v1, 기본)과 간소화 양식(기존 작업·사람과 근무일)을 지원한다.
+    모르는 양식을 빈 자료로 오인하지 않는다."""
     try: sheets = _sheets(data)
     except ToolInputError: raise
     except (BadZipFile, ET.ParseError, KeyError, ValueError, IndexError, TypeError, AttributeError) as e:
         raise ToolInputError('XLSX 내용을 읽을 수 없습니다. 일정·공수 양식을 확인해주세요.') from e
+    from app.tools import wbs_workbook
+    if wbs_workbook.is_wbs(sheets):
+        return wbs_workbook.parse(sheets)
     if not {'기존 작업', '사람과 근무일'} <= sheets.keys():
         raise ToolInputError('기존 작업 / 사람과 근무일 시트가 필요합니다.')
     tasks, people, exceptions = [], [], []
@@ -178,7 +185,7 @@ def parse_workbook(data: bytes) -> dict:
     return {'tasks': tasks, 'people': people, 'calendar': {'start_date': start, 'planned_end': planned_end,
             'working_weekdays': weekdays, 'exceptions': exceptions},
             'missing': [] if planned_end else ['현재 계획 완료일 미입력: 지연 폭 미산정'],
-            'note': '업로드된 운영 자료. 계약 근거 아님. 단가표 시트는 참고용이며 공식 백엔드 단가표를 사용. 완료일 계산은 아직 미연결.'}
+            'note': '업로드된 운영 자료. 계약 근거 아님. 단가표 시트는 참고용이며 공식 백엔드 단가표를 사용. 완료일·일정 영향은 Backend 일정 계산기가 계산.'}
 
 
 def current_source(project_id: str):
@@ -204,8 +211,16 @@ def current_source(project_id: str):
         raise BackendCalcError('승인된 일정·공수 자료를 확인하지 못했습니다.') from e
 
 
-def load_workbook(project_id: str):
+_UNPINNED = object()
+
+
+def load_workbook(project_id: str, *, expected_source=_UNPINNED):
     source = current_source(project_id)
+    if expected_source is not _UNPINNED:
+        expected = expected_source or {}
+        if ((source or {}).get('documentVersionId') != expected.get('document_version_id')
+                or (source or {}).get('sha256') != expected.get('sha256')):
+            raise ToolInputError('고정한 일정·공수 자료가 변경되었습니다. 최신 자료로 재산정해주세요.')
     if source is None: return None
     from app.core.config import settings
     from app.indexing.objects import S3Store

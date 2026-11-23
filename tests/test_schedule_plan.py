@@ -151,6 +151,15 @@ def test_customer_lines_use_backend_values_and_state_the_assumption():
     assert schedule_plan.customer_lines({"plan": None, "unavailable_reason": "x"}) == []
 
 
+def test_customer_lines_distinguish_total_delay_from_the_change_request():
+    plan = {"estimated_end_date": "2026-12-04", "baseline": {"end": "2026-11-26"}, "planned_end": "2026-11-24",
+            "impact_business_days": 8, "impact_vs_baseline_business_days": 6}
+    text = "\n".join(schedule_plan.customer_lines({"plan": plan}))
+    assert "전체 일정 지연: 현재 계획 완료일 2026-11-24 대비 8영업일" in text
+    assert "변경 요청으로 추가되는 일정 영향: 변경 전 작업만의 완료일 대비 6영업일" in text
+    assert "변경 전 작업만 계산한 완료일 2026-11-26" in text
+
+
 def test_backend_client_validates_schedule_response_shape():
     import httpx
     from app.tools.backend_calc import CalcClient

@@ -55,7 +55,11 @@ class LlmAgent3:
         if not targets:
             return Output(context=inp.context, status="NOT_REQUIRED", estimates=[])
         from app.tools.impact_workbook import load_workbook
-        workbook = load_workbook(inp.context.project_id)
+        if isinstance(inp, ProvisionalAgent3Input) and inp.workbook_source_pinned:
+            workbook = load_workbook(inp.context.project_id,
+                expected_source=inp.workbook_source.model_dump() if inp.workbook_source else None)
+        else:
+            workbook = load_workbook(inp.context.project_id)
         prompt = build_user_prompt(inp, schedule_context=workbook)
         result = self.llm.complete_structured(
             system=PLAN_SYSTEM, user=prompt,

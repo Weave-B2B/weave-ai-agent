@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     backend_timeout_sec: float = Field(default=10.0, gt=0)
     # Backend가 추가 coordination 계약을 지원할 때만 활성화한다(기존 v2 순차 경로는 유지).
     backend_coordination_enabled: bool = False
+    # Loopback prototype only. Explicit local account; no default ADMIN fallback.
+    prototype_backend_company_id: str = ""
+    prototype_backend_member_id: str = ""
+    prototype_backend_member_role: str = ""
+    prototype_backend_actor_label: str = "로컬 개발 계정"
     # 색인 결과(A-MQ-02) 전달 경로. 로컬에서 정식 내부 API가 없으면 /dev/document-versions/{document_version_id}/ingest-result
     backend_ingest_result_path: str = "/internal/v1/document-versions/{document_version_id}/ingest-result"
     # 기준선 문서·청크 원문 출처. local: data/kb 샘플 · backend: 백엔드 내부 API(업로드·색인한 실제 문서)

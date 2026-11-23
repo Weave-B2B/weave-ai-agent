@@ -178,7 +178,11 @@
 | `SubmitInputRequest` | PM 검토 문서 제출. `state_revision`만 증가, Agent 상태·결과는 불변 |
 | `StateChangeReceipt` | 변경 후 `state_revision`, `status`, 새 `result_id`/`result_revision`, `replayed` |
 | `CommittedResult` | `result_id`, `result_revision`, `agent_type`, `result_payload`, `upstream_result_ids`, `created_at`, `is_current` |
-| `RunInputs` / `RunInputsView` | `agent1_input`, `rate_card_id`(Run 생성 시 고정), `pm_review`(최신), `pm_review_revision` |
+| `RunInputs` / `RunInputsView` | `agent1_input`(최초 입력 보존), `rate_card_id`(최신 계산 컨텍스트 우선), `pm_review`(최신), `pm_review_revision`, `calculation_context`, `calculation_context_revision` |
+
+2026-11-21 계산 컨텍스트 보완: `calculation_context`는 `rate_card_id`, `workbook_document_version_id`/`workbook_sha256`(둘 다 없거나 현재 승인 원본과 일치), `reason`, `updated_by`, `updated_at`을 가진다. 최초 `REQUEST_INPUT`을 덮어쓰지 않고 별도 입력 리비전으로 추가한다. 일반 `SubmitInputRequest`는 계속 `PM_REVIEW`만 허용하며, 계산 컨텍스트는 전용 `/calculation-context` 경로에서 검증·Agent 3 무효화·검토 번들 제거를 수행한다. 실행 중인 Agent 또는 완료된 Run에는 이 갱신을 허용하지 않는다.
+
+Supervisor의 내부 Agent 3 입력에는 `workbook_source_pinned`와 `workbook_source`(문서 버전·해시)를 전달한다. pinned=true/source=null은 원본 없음이 고정된 상태이며, 이후 파일이 추가되면 재산정이 필요하다. 실제 사용한 계산 컨텍스트 리비전과 원본 참조는 `Agent3Source`에 기록한다. 공통 `schema_version=0.3.0` 요청에 임의 필드를 추가하지 않고, 기존 `ProvisionalAgent3Input`/Run 전용 DTO를 확장했다.
 
 공통 규칙: 모든 쓰기는 `expected_state_revision`(CAS)과 `operation_id`(멱등, 같은 내용 재전송은 `replayed=true`, 다른 내용은 `OperationConflict`)를 가지며 성공 시 `state_revision`이 정확히 1 증가한다. 오류 코드·HTTP 매핑은 [Backend API 계약](./backend-api-contract.md) 참조.
 

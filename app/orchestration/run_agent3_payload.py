@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from app.agents.agent3.contracts import ProvisionalAgent3Output
+from app.agents.agent3.contracts import ProvisionalAgent3Output, WorkbookReference
 from schema.schemas import Agent2Output, _M
 
 
@@ -24,6 +24,9 @@ class Agent3Source(_M):
     effort_hash: str
     policy_hash: str | None = None
     pm_edit_id: str | None = None
+    calculation_context_revision: int | None = None
+    workbook_source_pinned: bool = False
+    workbook_source: WorkbookReference | None = None
 
 
 class CustomerDocumentDraft(_M):

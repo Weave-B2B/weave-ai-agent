@@ -22,11 +22,23 @@ class _Resp(_M):
     model_config = ConfigDict(extra="ignore")
 
 
+class CalculationContext(_Resp):
+    """Run의 최신 계산 컨텍스트(단가표 UUID·엑셀 원본 버전/해시). 최초 REQUEST_INPUT과 별도 리비전으로 관리한다."""
+    rate_card_id: str
+    workbook_document_version_id: Optional[str] = None
+    workbook_sha256: Optional[str] = None
+    reason: Optional[str] = None
+    updated_by: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 class RunInputs(_M):
-    """Run의 입력 문서 묶음. Backend run_input에 저장된다(REQUEST_INPUT은 Run 생성 시 고정, pm_review는 제출 시 추가)."""
+    """Run의 입력 문서 묶음. Backend run_input에 저장된다(REQUEST_INPUT은 Run 생성 시 고정, pm_review/calculation_context는 제출 시 추가)."""
     agent1_input: Agent1Input
     rate_card_id: str
     pm_review: Optional[PMReview] = None
+    calculation_context: Optional[CalculationContext] = None
+    calculation_context_revision: Optional[int] = None
 
 
 class RunInputsView(_Resp):
@@ -36,9 +48,34 @@ class RunInputsView(_Resp):
     rate_card_id: str
     pm_review: Optional[PMReview] = None
     pm_review_revision: Optional[int] = None
+    calculation_context: Optional[CalculationContext] = None
+    calculation_context_revision: Optional[int] = None
 
     def to_inputs(self) -> RunInputs:
-        return RunInputs(agent1_input=self.agent1_input, rate_card_id=self.rate_card_id, pm_review=self.pm_review)
+        effective_rate = (
+            self.calculation_context.rate_card_id
+            if self.calculation_context and self.calculation_context.rate_card_id
+            else self.rate_card_id
+        )
+        return RunInputs(
+            agent1_input=self.agent1_input,
+            rate_card_id=effective_rate,
+            pm_review=self.pm_review,
+            calculation_context=self.calculation_context,
+            calculation_context_revision=self.calculation_context_revision,
+        )
+
+
+class UpdateCalculationContextRequest(_M):
+    """Run 계산 컨텍스트 갱신 요청. 최초 입력은 보존하고 새 CALCULATION_CONTEXT 리비전을 추가한다."""
+    run_id: str
+    expected_state_revision: int = Field(ge=0)
+    operation_id: str = Field(min_length=1)
+    rate_card_id: str = Field(min_length=1)
+    workbook_document_version_id: Optional[str] = None
+    workbook_sha256: Optional[str] = None
+    reason: Optional[str] = None
+    updated_by: str = Field(min_length=1)
 
 
 class RunStateError(Exception):

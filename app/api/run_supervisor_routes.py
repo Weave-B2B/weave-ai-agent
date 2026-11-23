@@ -61,8 +61,10 @@ def view(backend, run_id, *, status="ready", action=None, reason=None):
     run = backend.get_coordinated_run(run_id)
     result = run.state.agents["agent3"]
     documents = {}
-    if status == "ready" and run.coordination.hold_reason:
+    if status in ("ready", "waiting_final_review") and run.coordination.hold_reason:
         status, reason = "waiting", run.coordination.hold_reason
+    elif run.coordination.hold_reason and reason is None:
+        reason = run.coordination.hold_reason
     if result.current_result_id and not result.stale:
         documents = backend.get_result(run_id, result.current_result_id).result_payload.get("documents", {})
     # Do not expose execution lease tokens or internal host state to a browser.
