@@ -35,13 +35,7 @@ def _as(model, payload):
 
 class RunSupervisorRuntime:
     def __init__(self, state, agents, llm, draft_llm):
-        from app.agents.agent1.agent import LlmAgent1
-        from app.agents.base import AgentSet
-        from app.orchestration.run_prompts import INTEGRATED_REQUEST_CONTEXT
-        if isinstance(agents.agent1, LlmAgent1):
-            a1 = agents.agent1
-            agents = AgentSet(LlmAgent1(a1.llm, feature_search=a1.feature_search,
-                system_suffix=a1.system_suffix + INTEGRATED_REQUEST_CONTEXT), agents.agent2, agents.agent3)
+        # Agent 1은 개별 호출과 같은 인스턴스·프롬프트를 그대로 쓴다(프롬프트 차이는 버전 파일로만 관리).
         self.state, self.agents, self.llm, self.draft_llm = state, agents, llm, draft_llm
         self.runner = CoordinatedAgentRunner(state)
 
