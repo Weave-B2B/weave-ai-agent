@@ -200,6 +200,15 @@ def locate_quote(
     )
 
 
+TITLE_MAX_LENGTH = 20
+
+
+def _title(raw: str | None) -> str | None:
+    """목록용 제목: 공백을 한 칸으로 줄이고 공백 포함 20자를 넘으면 자른다. 비면 None."""
+    text = " ".join((raw or "").split())
+    return text[:TITLE_MAX_LENGTH].rstrip() or None
+
+
 def assemble(
     inp: Agent1Input,
     draft: Agent1Draft,
@@ -317,6 +326,7 @@ def assemble(
         "items": [item.model_dump() for item in items],
         "duplicates": [],
         "summary": (draft.summary or "").strip() or None,
+        "title": _title(draft.title),
     }
     try:
         return Agent1Output.model_validate(payload), report

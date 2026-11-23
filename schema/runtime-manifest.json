@@ -1,8 +1,8 @@
 {
-  "recorded_at": "2026-11-23",
+  "recorded_at": "2026-11-24",
   "schema_path": "schema/schemas.py",
   "schema_version": "0.3.0",
-  "schema_sha256": "e6ec401c10c1d53967c4128765968523b5dc9113839221e4abdaa5431879790c",
+  "schema_sha256": "7a9e8ca89f460507218f9839f3ce96e73c7a1c5b135de8224cb08a5f5d026bd5",
   "source_commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
   "dataset_baseline": {
     "manifest_path": "eval/dataset/manifest.json",
@@ -33,6 +33,10 @@
     {
       "commit": "feat/#72-agent1-thread-context",
       "summary": "Agent1Output.summary 선택 필드 추가 (메일 요약, 회신 맥락에 사용)"
+    },
+    {
+      "commit": "fix/#75-agent1-integrated-prompt",
+      "summary": "Agent1Output.title 선택 필드 추가 (메일 목록 제목, 공백 포함 20자 이내)"
     }
   ]
 }
