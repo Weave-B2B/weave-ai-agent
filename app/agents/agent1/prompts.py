@@ -10,7 +10,7 @@ from dotenv import dotenv_values
 
 from schema.schemas import Agent1Input
 
-DEFAULT_PROMPT_VERSION = "a1-draft-v1"
+DEFAULT_PROMPT_VERSION = "a1-draft-v3"
 PROMPT_DIR = Path(__file__).parent / "prompts"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
