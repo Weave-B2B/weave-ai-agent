@@ -74,7 +74,7 @@ def build_user_prompt(
         f"received_at: {inp.received_at}",
     ]
 
-    if version == "a1-draft-v1":
+    if version != "a1-draft-v0":  # v1부터 월말 마감 계산 맥락을 넣는다
         if reference_date is not None:
             current_date = reference_date
         else:
