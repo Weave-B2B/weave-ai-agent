@@ -20,6 +20,8 @@ Stage = Literal["agent1", "agent2", "agent3"]
 ItemType = Literal["function", "constraint", "deadline", "dependency", "question"]
 # function 항목의 하위 분류. 범위 판단(②)·공수 산정(③)에서 신규/변경/화면/비기능을 구분하는 데 쓴다
 ChangeKind = Literal["feature_add", "feature_change", "ui_content", "non_functional"]
+# 회신 분석에서 기존 항목과의 관계. 첫 메일은 항상 new
+ItemAction = Literal["new", "update", "retract"]
 Intent = Literal["change_request", "estimate_only", "confirmation", "defect", "issue_report",
                  "status_check", "constraint", "estimate_request"]
 ScopeLabel = Literal["in_scope", "out_of_scope", "unclear", "approved_change"]
@@ -119,6 +121,11 @@ class Item(_M):
         None,
         description="function 항목만: feature_add(신규 기능)·feature_change(기존 기능 변경)·ui_content(화면·문구·디자인)·non_functional(성능·보안·호환성). 그 외 유형은 null",
     )
+    action: Optional[ItemAction] = Field(
+        None,
+        description="회신 분석(existing_items가 있을 때)만: new(새 요청)·update(기존 항목 구체화·수정)·retract(기존 항목 철회). 그 외 null",
+    )
+    target_item_id: Optional[str] = Field(None, description="update·retract 대상 existing_items.item_id")
 
 
 class Question(_M):
@@ -149,6 +156,21 @@ class Answer(_M):
 
 
 # ================= ① 요청 구조화 + 질문 관리 =================
+class ThreadMessage(_M):
+    """같은 스레드의 이전 메일. 맥락 전용 — 항목·span은 message_text에서만 만든다"""
+    message_id: str
+    received_at: str
+    sender_role: str
+    text: str = Field(description="이전 메일 요약(Agent1Output.summary). 요약이 없으면 본문(인용 제거)")
+
+
+class ExistingItem(_M):
+    """현재 유효한 저장 항목 — 회신이 이 항목을 수정·철회하는지 판단할 때 쓴다"""
+    item_id: str = Field(description="저장된 항목 ID (backend request_item_id)")
+    item_type: ItemType
+    text: str
+
+
 class Agent1Input(_M):
     context: Context
     channel: Literal["email", "manual"] = "email"
@@ -160,6 +182,8 @@ class Agent1Input(_M):
     message_text: str = Field(description="수신 원문 그대로. span 기준")
     pm_notes: list[dict] = []
     answers: list[Answer] = Field([], description="재실행 시 이전 답변")
+    thread_context: list[ThreadMessage] = Field([], description="회신일 때 같은 스레드의 이전 메일 (오래된 순)")
+    existing_items: list[ExistingItem] = Field([], description="회신일 때 현재 유효 항목. 있으면 출력 항목에 action을 정한다")
 
 
 class _Out(_M):
@@ -181,6 +205,10 @@ class Agent1Output(_Out):
     status: A1Status
     items: list[Item]
     duplicates: list[dict] = Field([], description="{cr_id, similarity, reason} — MVP 이후")
+    summary: Optional[str] = Field(
+        None,
+        description="이번 메일 요약 1~3문장. 지시어·추상 표현을 원문·맥락의 대상으로 구체화하되 원문에 없는 사실은 넣지 않는다. 다음 회신의 thread_context로 쓴다",
+    )
 
     @model_validator(mode="after")
     def _chk(self):

@@ -276,6 +276,8 @@ def assemble(
                 inp.context.baseline_id,
             )[:3]
 
+        action, target_item_id = _resolve_action(inp, draft_item, item_id, report)
+
         items.append(
             Item(
                 item_id=item_id,
@@ -300,6 +302,8 @@ def assemble(
                     )
                 ),
                 change_kind=change_kind,
+                action=action,
+                target_item_id=target_item_id,
             )
         )
 
@@ -312,6 +316,7 @@ def assemble(
         "status": status,
         "items": [item.model_dump() for item in items],
         "duplicates": [],
+        "summary": (draft.summary or "").strip() or None,
     }
     try:
         return Agent1Output.model_validate(payload), report
@@ -321,6 +326,19 @@ def assemble(
             for error in exc.errors(include_input=False, include_url=False)
         ]
         raise _assembly_failure(paths) from None
+
+
+def _resolve_action(inp: Agent1Input, draft_item, item_id: str, report: AssembleReport) -> tuple[str | None, str | None]:
+    """회신 분석의 action·대상 번호를 검증한다. 첫 메일(기존 항목 없음)은 null, 번호가 틀리면 new로 내린다."""
+    if not inp.existing_items:
+        return None, None
+    if draft_item.action == "new":
+        return "new", None
+    number = draft_item.target_item_no
+    if number is None or not 1 <= number <= len(inp.existing_items):
+        report.warnings.append(f"{item_id}: {draft_item.action} target invalid, treated as new")
+        return "new", None
+    return draft_item.action, inp.existing_items[number - 1].item_id
 
 
 def _assemble_questions(
