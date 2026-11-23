@@ -98,10 +98,9 @@ def normalize_confirmation_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1
             item.item_type == "function"
             or (item.item_type == "question" and item.intent != "estimate_request")
         ):
+            # 유형만 확인 항목으로 맞추고 문구는 LLM 결과를 유지한다(프롬프트의 "[상위 기능] — [세부]" 형식 보존).
             item.item_type = "question"
             item.intent = "confirmation"
-            quote_text = item.quotes[0] if item.quotes else evidence
-            item.text = f"{quote_text.strip()} 적용 가능 여부 확인" if quote_text.strip() else "범위 포함 여부 확인"
             if any(marker in inp.message_text for marker in CONDITIONAL_FOLLOWUP_MARKERS):
                 item.conditional_followup = inp.message_text.strip()
 
