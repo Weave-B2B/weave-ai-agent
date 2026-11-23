@@ -2,7 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 const source=await readFile(new URL('../analysis-demo.js',import.meta.url),'utf8');
-const {createAnalysisDemo,analysisSnapshot,analysisTitle}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+const {createAnalysisDemo,analysisSnapshot,analysisTitle,mailSummaryHtml}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+
+test('Agent 1 title takes precedence over backend and item-based titles',()=>{
+  assert.equal(analysisTitle({text:'원문',backendTitle:'백엔드 제목',realA1:{title:'검색 필터 확인·영문 상세 검토',items:[]}}),'검색 필터 확인·영문 상세 검토');
+  assert.equal(analysisTitle({text:'원문',backendTitle:'백엔드 제목',realA1:{items:[]}}),'백엔드 제목');
+});
+
+test('integrated screen shows Agent 1 title and summary only when present',()=>{
+  const html=mailSummaryHtml({title:'검색 필터 확인·영문 상세 검토',summary:'<b>요약</b>'});
+  assert.match(html,/class="mail-summary"/);
+  assert.match(html,/검색 필터 확인·영문 상세 검토/);
+  assert.match(html,/&lt;b&gt;요약&lt;\/b&gt;/);
+  assert.equal(mailSummaryHtml({items:[]}),'');
+  assert.equal(mailSummaryHtml(null),'');
+});
 
 test('request title uses the feature summary while keeping the complete source',()=>{
   const s={text:'고객 원문 '.repeat(100),realA1:{items:[{item_type:'function',text:'구매자 리뷰 기능 — 별점·텍스트 및 상세 조건'},

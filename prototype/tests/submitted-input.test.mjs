@@ -58,7 +58,7 @@ async function boot(options = {}) {
   const fixtures = new vm.SourceTextModule(fixtureSource, { context });
   const analysisModule = new vm.SourceTextModule(analysisSource, { context });
   const requestSamples = new vm.SourceTextModule(requestSamplesSource, { context });
-  const module = new vm.SourceTextModule(`${appSource}\nexport { analysisDemo, route, detail, state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, approvalBlockReason, reviewFeedback, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage, startNewProject, npStart, npCreate, guessDocType }; export const cleanup = () => clearTimeout(toastTimer);`, {
+  const module = new vm.SourceTextModule(`${appSource}\nexport { analysisDemo, route, detail, state, prepare, restore, acceptView, inputChanged, submittedConditions, tabTestGuide, review, canApprove, approvalBlockReason, reviewFeedback, runAgent1, runAgent2, selectCase, scope, a1, a2, lab, switchInputSource, liveReviewInput, confirmLiveReview, invalidateLiveReview, inputSummary, selectAgent2Input, agent1ToAgent2Input, selectedAgent2Input, registrationPage, registerChangeRequest, agent1Items, agent1Panel, datasetOriginal, kb, loadKb, baselineBanner, projectsPage, startNewProject, npStart, npCreate, guessDocType, mailSummary, listTitle }; export const cleanup = () => clearTimeout(toastTimer);`, {
     context, identifier: appUrl.href, initializeImportMeta(meta) { meta.url = appUrl.href; },
   });
   await module.link(specifier => {
@@ -634,4 +634,16 @@ test('QA: abandoned approval 404 cannot erase another request estimate', async t
   assert.equal(app.state.view.session_id, 'new-case-session');
   assert.equal(app.state.error, null);
   assert.equal(JSON.parse(app.store.get(storageKey)).sessionId, 'new-case-session');
+});
+
+test('Agent 1 title and summary are shown, falling back to the request title', async t => {
+  const app = await boot({});
+  t.after(app.cleanup);
+  const html = app.mailSummary({ title: '리뷰 기능 추가 요청', summary: '상품 상세에 리뷰를 추가해 달라는 요청.' });
+  assert.match(html, /class="mail-summary"/);
+  assert.match(html, /리뷰 기능 추가 요청/);
+  assert.match(html, /상품 상세에 리뷰를 추가해 달라는 요청\./);
+  assert.equal(app.mailSummary({ title: null, summary: null }), '');
+  assert.equal(app.mailSummary(null), '');
+  assert.equal(app.listTitle({ id: 'CR-NO-A1-RESULT', title: '원래 제목' }), '원래 제목');
 });
