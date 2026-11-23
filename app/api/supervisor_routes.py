@@ -62,11 +62,17 @@ class ResumeRequest(BaseModel):
     state_revision: int = Field(ge=0)
 
 
+DEFAULT_GPT_MODEL = "gpt-6-luna"
+DEFAULT_LOCAL_MODEL = "gpt-oss:20b"
+
+
 def _workers(provider):
+    """통합 실행 모델은 .env를 따른다. GPT는 LLM_PROVIDER=openai일 때만 LLM_MODEL을 쓴다(다른 공급자의 모델명이 섞이지 않게)."""
     if provider == "gpt":
-        model_settings = {"llm_provider": "openai", "llm_model": "gpt-6-luna"}
+        model = settings.llm_model if settings.llm_provider == "openai" and settings.llm_model else DEFAULT_GPT_MODEL
+        model_settings = {"llm_provider": "openai", "llm_model": model}
     else:
-        model_settings = {"llm_provider": "ollama", "ollama_model": "gpt-oss:20b",
+        model_settings = {"llm_provider": "ollama", "ollama_model": settings.ollama_model or DEFAULT_LOCAL_MODEL,
                           "ollama_base_url": settings.ollama_base_url or "http://localhost:11434"}
     llm = build_llm(settings.model_copy(update=model_settings))
     return dict(agent1=LlmAgent1(llm), agent2=build_agent2(llm), agent3=LlmAgent3(llm), llm=llm, draft_llm=llm)
