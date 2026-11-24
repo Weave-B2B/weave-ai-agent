@@ -61,6 +61,7 @@ function totalsFor(s) {
 const MODELS = { gpt: { label: 'GPT', model: 'gpt-6-luna' }, local: { label: '로컬 LLM', model: 'gpt-oss:20b' } };
 
 export function analysisTitle(s) {
+  if (s?.realA1?.title) return s.realA1.title;
   if (s?.backendTitle) return s.backendTitle;
   const features = (s.realA1?.items || []).filter(i => i.item_type === 'function');
   const first = features[0]?.text || s.text?.split(/[\n。!?]/)[0] || '신규 변경 요청';
@@ -69,13 +70,24 @@ export function analysisTitle(s) {
   return `${short}${Array.from(label).length > 48 ? '…' : ''}${features.length > 1 ? ` 외 ${features.length - 1}건` : ''}`;
 }
 
+// Backend 접수 채널(EMAIL·OTHER 등)을 Agent1 입력 채널(email·manual)로 바꾼다.
+export function agent1Channel(channel) {
+  return String(channel || '').trim().toUpperCase() === 'EMAIL' ? 'email' : 'manual';
+}
+
+// Agent 1의 목록용 제목(title)과 메일 요약(summary). 둘 다 없으면 표시하지 않는다.
+export function mailSummaryHtml(a1) {
+  if (!a1?.title && !a1?.summary) return '';
+  return `<div class="mail-summary">${a1.title ? `<strong>${esc(a1.title)}</strong>` : ''}${a1.summary ? `<p>${esc(a1.summary)}</p>` : ''}</div>`;
+}
+
 // View adapter only: do not submit these provisional records to an agent API.
 export function analysisSnapshot(s) {
   const context = s.projectContext || { project_id: 'P-COM-101', case_id: s.id, request_revision: 1, baseline_id: 'P-COM-101:BL-2', baseline_as_of: '2026-10-05', analysis_id: `UI-${s.id}` };
   const meta = stage => ({ result_id: `ui-${stage}-${s.id}`, model: `화면 시연 · ${MODELS[s.provider || 'gpt'].label}`, agent_version: 'frontend-preview', debug: {} });
   const real = s.realA1?.items?.length ? s.realA1 : null;
   const items = real ? real.items : (s.items || []).map((text, i) => ({ item_id: `${s.id}-${i + 1}`, case_id: s.id, display_no: `R${i + 1}`, item_type: 'function', intent: 'change_request', text, spans: [] }));
-  const source = { context, message_text: s.text, received_at: s.created, sender_name: s.requester || '직접 입력', sender_role: 'PM', channel: s.channel || 'manual', items, constraints: real ? items.filter(item => ['constraint', 'deadline', 'dependency'].includes(item.item_type)) : [], answers: s.answers || [] };
+  const source = { context, message_text: s.text, received_at: s.created, sender_name: s.requester || '직접 입력', sender_role: 'PM', channel: agent1Channel(s.channel), items, constraints: real ? items.filter(item => ['constraint', 'deadline', 'dependency'].includes(item.item_type)) : [], answers: s.answers || [] };
   const a1 = real ? { ...real, context: real.context || context, meta: real.meta || meta('a1') } : { context, status: 'READY', items, questions: [], meta: meta('a1') };
   const a2 = s.realA2 ? { ...s.realA2, context: s.realA2.context || context, meta: s.realA2.meta || meta('a2') } : realRun(s) ? null : { context, status: 'READY_FOR_REVIEW', assessments: items.map(i => ({ item_id: i.item_id, label: 'out_of_scope', rationale: '화면 흐름 확인을 위한 범위 밖 가상 예시입니다. 실제 계약 문서를 검색한 결과가 아닙니다.', evidence_level: 'none', evidence: [], missing_info: [], uncertainties: ['실제 근거 문서 미연결'] })), questions: [], meta: meta('a2') };
   const lines = [['FE', '화면 변경 · 고정 예시', 3], ['BE', '내부 API 변경 · 고정 예시', 3], ['QA', '동작 확인 · 고정 예시', 0.5]].map(([role, task, md]) => ({ role, task, md, item_ids: items.map(i => i.item_id), assumption: s.answer || '미확정' }));
@@ -241,8 +253,8 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       received_at: s.created,
       sender_role: 'PM',
       sender_name: s.requester || '직접 입력',
-      channel: s.channel || 'manual',
-      channel_src: 'PROTOTYPE',
+      channel: agent1Channel(s.channel),
+      channel_src: s.channel ? `PROTOTYPE:${String(s.channel).toUpperCase()}` : 'PROTOTYPE',
       subject: s.title || '요청분석',
       message_text: s.text,
       answers: []
@@ -618,7 +630,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
   }
   function preview(s, tab = 'draft') {
     if (s.step < ({ original: 2, scope: 3, impact: 6, draft: 6 }[tab] || 6)) return '<h2>아직 준비되지 않은 결과입니다</h2><p class="caption">통합 진행 기록에서 다음 작업을 진행해 주세요.</p>';
-    if (tab === 'original') return `<h2>고객 요청 원문</h2><p class="analysis-original">${esc(s.text)}</p><h3>Agent 1 구조화 결과</h3>${(s.realA1?.items || []).map((item, i) => `<div class="analysis-item"><span>${esc(item.display_no || `R${i + 1}`)}</span><p><strong>${esc(TYPE_LABELS[item.item_type] || item.item_type || '항목')}</strong> · ${esc(item.text)}</p></div>`).join('') || '<p class="caption">구조화 항목이 없습니다.</p>'}<p class="caption">Orchestration Agent 1 결과입니다.</p>${s.answer ? `<div class="notice">PM 답변: ${esc(s.answer)}</div>` : ''}`;
+    if (tab === 'original') return `${mailSummaryHtml(s.realA1)}<h2>고객 요청 원문</h2><p class="analysis-original">${esc(s.text)}</p><h3>Agent 1 구조화 결과</h3>${(s.realA1?.items || []).map((item, i) => `<div class="analysis-item"><span>${esc(item.display_no || `R${i + 1}`)}</span><p><strong>${esc(TYPE_LABELS[item.item_type] || item.item_type || '항목')}</strong> · ${esc(item.text)}</p></div>`).join('') || '<p class="caption">구조화 항목이 없습니다.</p>'}<p class="caption">Orchestration Agent 1 결과입니다.</p>${s.answer ? `<div class="notice">PM 답변: ${esc(s.answer)}</div>` : ''}`;
     if (tab === 'scope') {
       return `<h2>범위 검토 결과</h2>${scopeSummary(s) || '<p class="caption">범위 판단 결과가 없습니다.</p>'}<p class="caption">Orchestration Agent 2 결과입니다.</p>`;
     }
@@ -681,7 +693,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       : '공통 Run 실행 · 이 노트북의 SQLite에 저장합니다. 백엔드 업무 DB 저장·고객 발송은 하지 않습니다.';
     const heading = `<div class="page-heading"><div><p class="analysis-eyebrow">MULTI-AGENT WORKSPACE <span>${backendProject ? '백엔드 연동' : '실행 연동'}</span></p><h1>고객 요청, 여기서 시작하세요</h1><p class="subtitle">요청을 분석한 뒤 Supervisor가 필요한 전문 에이전트를 선택하고, 질문과 최종 검토를 연결합니다.</p></div><button class="button" data-demo-action="new" ${s?.running ? 'disabled' : ''}>+ 새 요청</button></div>`;
     if (!s || s.unstartedBackendCr) {
-      return heading + `<section class="analysis-compose card"><div class="card-heading"><h2>${s?.unstartedBackendCr ? `백엔드 등록 요청 · ${esc(s.id)}` : '고객 요청사항'}</h2><span class="mini-tag">${projectBadge}</span></div><label class="field"><span class="sr-only">고객 요청 원문</span><textarea id="analysis-request" placeholder="고객이 보낸 메일이나 메시지를 그대로 붙여넣으세요.\n\n기능 추가, 일정 조건, 견적 요청이 함께 있어도 괜찮아요." maxlength="12000">${esc(s?.unstartedBackendCr ? (text || s.text) : text)}</textarea></label><div class="analysis-compose-footer"><label class="analysis-model-picker">모델 <select id="analysis-model" aria-label="분석 모델"><option value="gpt" ${provider === 'gpt' ? 'selected' : ''}>${MODELS.gpt.label}</option><option value="local" ${provider === 'local' ? 'selected' : ''}>${MODELS.local.label}</option></select></label><button class="button plain" data-demo-action="sample">예시 요청 넣기</button><button class="button primary" data-demo-action="start">요청 분석 시작 →</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</section><div class="analysis-intro">${[['01', '필요한 에이전트가 분석', '요청 정리와 문서 조사, 영향 산정의 진행 과정을 확인합니다.'], ['02', '필요한 순간에만 질문', 'PM 확인 후 범위 검토와 영향 산정을 이어서 실행합니다.'], ['03', '결과와 기록을 한곳에', 'Workflow 결과와 단계별 기록을 한 화면에서 확인합니다.']].map(([n, h, p]) => `<div><span>${n}</span><h3>${h}</h3><p>${p}</p></div>`).join('')}</div><p class="analysis-demo-note">${noteText}</p>${sessions.length ? `<section class="card"><h2>${backendProject ? '이 프로젝트의 변경 요청 · 분석 이력' : '이전 요청 분석'}</h2>${sessions.map(x => `<button class="analysis-history" data-demo-open="${esc(x.id)}"><strong>${esc(x.id)} · ${esc(x.text.slice(0, 55))}</strong><span>${x.unstartedBackendCr ? '프론트 등록 · 분석 시작하기' : x.ready ? '결과 준비' : '진행 기록'} ↗</span></button>`).join('')}</section>` : ''}`;
+      return heading + `<section class="analysis-compose card"><div class="card-heading"><h2>${s?.unstartedBackendCr ? `백엔드 등록 요청 · ${esc(s.id)}` : '고객 요청사항'}</h2><span class="mini-tag">${projectBadge}</span></div><label class="field"><span class="sr-only">고객 요청 원문</span><textarea id="analysis-request" placeholder="고객이 보낸 메일이나 메시지를 그대로 붙여넣으세요.\n\n기능 추가, 일정 조건, 견적 요청이 함께 있어도 괜찮아요." maxlength="12000">${esc(s?.unstartedBackendCr ? (text || s.text) : text)}</textarea></label><div class="analysis-compose-footer"><label class="analysis-model-picker">모델 <select id="analysis-model" aria-label="분석 모델"><option value="gpt" ${provider === 'gpt' ? 'selected' : ''}>${MODELS.gpt.label}</option><option value="local" ${provider === 'local' ? 'selected' : ''}>${MODELS.local.label}</option></select></label><button class="button plain" data-demo-action="sample">예시 요청 넣기</button><button class="button primary" data-demo-action="start">요청 분석 시작 →</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</section><div class="analysis-intro">${[['01', '필요한 에이전트가 분석', '요청 정리와 문서 조사, 영향 산정의 진행 과정을 확인합니다.'], ['02', '필요한 순간에만 질문', 'PM 확인 후 범위 검토와 영향 산정을 이어서 실행합니다.'], ['03', '결과와 기록을 한곳에', 'Workflow 결과와 단계별 기록을 한 화면에서 확인합니다.']].map(([n, h, p]) => `<div><span>${n}</span><h3>${h}</h3><p>${p}</p></div>`).join('')}</div><p class="analysis-demo-note">${noteText}</p>${sessions.length ? `<section class="card"><h2>${backendProject ? '이 프로젝트의 변경 요청 · 분석 이력' : '이전 요청 분석'}</h2>${sessions.map(x => `<button class="analysis-history" data-demo-open="${esc(x.id)}"><strong>${esc(x.id)} · ${esc(x.realA1?.title || x.text.slice(0, 55))}</strong><span>${x.unstartedBackendCr ? '프론트 등록 · 분석 시작하기' : x.ready ? '결과 준비' : '진행 기록'} ↗</span></button>`).join('')}</section>` : ''}`;
     }
     return heading + `<div class="analysis-run-heading"><span class="mini-tag">${esc(s.id)}</span><strong>${s.running ? '진행 중' : s.hold ? '보류' : s.approved ? 'PM 확인 완료' : pendingEvidence(s) ? '추가 근거 조사 필요' : pendingQuestion(s) ? '추가 확인 필요' : s.ready ? '최종 검토 대기' : 'PM 답변 대기'}</strong><span class="caption">${esc(MODELS[s.provider || 'gpt'].label)} 선택${s.runBacked ? (s.backendConnected || backendProject ? ' · 백엔드 DB 연결 (PostgreSQL)' : ' · 로컬 저장 · 백엔드 미연결') : ''}${s.llmCalls != null ? ` · 모델 호출 시도 ${s.llmCalls}회` : ''} · ${realRun(s) ? 'Orchestration 실행' : '실제 AI 호출 없음'}</span></div><div class="analysis-workspace"><section class="card analysis-feed"><div class="card-heading"><h2>진행 기록</h2><span class="caption">기록을 누르면 해당 결과로 이동합니다</span></div><div class="analysis-request-bubble"><small>고객 요청</small><p>${esc(s.text)}</p></div><div class="analysis-events" aria-live="polite">${s.events.map(x => eventHtml(x, s.id, s.running && x.seq === s.progressStep)).join('')}</div>${s.running ? '<p class="loading-line" role="status"><span class="inline-spinner"></span>요청 분석을 진행하고 있습니다…</p>' : pendingEvidence(s) ? `<div class="notice">추가 문서 조사 필요: ${esc(pendingEvidence(s).text)}. Agent 2 재조사 자동 연결은 아직 준비 중입니다.</div>` : pendingQuestion(s) ? '<button class="button primary" data-demo-action="agent3-question">추가 질문에 답변하기</button>' : s.supervisor ? supervisorControls(s) : !s.ready ? '<button class="button primary" data-demo-action="question">진행 조건 확인하기</button>' : `<div class="form-actions"><button class="button primary" data-demo-action="final">${s.approved ? '최종 결과 다시 확인' : '최종 검토하기'}</button><button class="button" data-demo-action="list">변경 요청 목록</button></div>`}</section><aside class="analysis-result"><section class="card"><h2>단계별 결과</h2><p class="caption">완료된 작업의 결과를 열어볼 수 있습니다.</p><div class="analysis-stages">${stageLinks(s)}</div></section>${s.ready ? `<section class="card">${preview(s)}<p class="analysis-demo-note">${realRun(s) ? '메일 초안은 고객 발송 전 PM 검토가 필요합니다.' : '화면 시연용 가상 결과입니다.'}</p></section>` : `<section class="card analysis-result-empty"><span>◎</span><h3>결과가 이곳에 쌓입니다</h3><p>PM 확인 후 영향 산정과 문서 초안 미리보기가 이어집니다.</p></section>`}</aside></div>${dialog()}`;
   }

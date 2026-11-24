@@ -71,13 +71,17 @@ LLM은 최종 ID나 원문 위치를 직접 생성하지 않는다.
 Agent 1 프롬프트는 파일로 별도 관리된다.
 
 - [a1-draft-v0.txt](../../app/agents/agent1/prompts/a1-draft-v0.txt): 기존 기본 프롬프트 보존용
-- [a1-draft-v1.txt](../../app/agents/agent1/prompts/a1-draft-v1.txt): 현재 기능 강화 프롬프트
+- [a1-draft-v1.txt](../../app/agents/agent1/prompts/a1-draft-v1.txt): 기능 강화 프롬프트
+- [a1-draft-v2.txt](../../app/agents/agent1/prompts/a1-draft-v2.txt): v1 + 분석 결과물 형식 지시(공수 산정·협의 문서 작성 요청)를 기능 요청이 아닌 constraint로 보존하는 규칙(14번)
+- [a1-draft-v3.txt](../../app/agents/agent1/prompts/a1-draft-v3.txt): v2 + 항목 text `[상위 기능] — [세부 대상·조건]` 명사구 통일, 같은 대상 통합, 유지 요청은 confirmation, 고객 미결 쟁점(제공 주체·포함 여부)만 확인 항목, quotes 원문 복사 강화. 비교 실험: [prompt-experiment-v2-v3.md](prompt-experiment-v2-v3.md)
+
+개별 호출과 오케스트레이션(RunSupervisorRuntime)은 같은 Agent 1과 같은 프롬프트를 쓴다. 경로별 프롬프트 덧붙이기는 하지 않는다.
 
 버전 선택 우선순위는 다음과 같다.
 
 1. 환경변수 `AGENT1_PROMPT_VERSION`
 2. `.env`의 `AGENT1_PROMPT_VERSION`
-3. 기본값 `a1-draft-v1`
+3. 기본값 `a1-draft-v3`
 
 기본값과 파일 로딩은 [prompts.py](../../app/agents/agent1/prompts.py)에 구현되어 있다.
 

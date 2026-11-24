@@ -209,6 +209,10 @@ class Agent1Output(_Out):
         None,
         description="이번 메일 요약 1~3문장. 지시어·추상 표현을 원문·맥락의 대상으로 구체화하되 원문에 없는 사실은 넣지 않는다. 다음 회신의 thread_context로 쓴다",
     )
+    title: Optional[str] = Field(
+        None, max_length=20,
+        description="메일 목록에 보일 짧은 제목(공백 포함 20자 이내). 넘으면 조립 단계에서 자른다. 없으면 화면은 메일 제목(subject)을 쓴다",
+    )
 
     @model_validator(mode="after")
     def _chk(self):

@@ -98,10 +98,9 @@ def normalize_confirmation_items(inp: Agent1Input, draft: Agent1Draft) -> Agent1
             item.item_type == "function"
             or (item.item_type == "question" and item.intent != "estimate_request")
         ):
+            # 유형만 확인 항목으로 맞추고 문구는 LLM 결과를 유지한다(프롬프트의 "[상위 기능] — [세부]" 형식 보존).
             item.item_type = "question"
             item.intent = "confirmation"
-            quote_text = item.quotes[0] if item.quotes else evidence
-            item.text = f"{quote_text.strip()} 적용 가능 여부 확인" if quote_text.strip() else "범위 포함 여부 확인"
             if any(marker in inp.message_text for marker in CONDITIONAL_FOLLOWUP_MARKERS):
                 item.conditional_followup = inp.message_text.strip()
 
@@ -198,6 +197,15 @@ def locate_quote(
         ),
         candidates[0],
     )
+
+
+TITLE_MAX_LENGTH = 20
+
+
+def _title(raw: str | None) -> str | None:
+    """목록용 제목: 공백을 한 칸으로 줄이고 공백 포함 20자를 넘으면 자른다. 비면 None."""
+    text = " ".join((raw or "").split())
+    return text[:TITLE_MAX_LENGTH].rstrip() or None
 
 
 def assemble(
@@ -317,6 +325,7 @@ def assemble(
         "items": [item.model_dump() for item in items],
         "duplicates": [],
         "summary": (draft.summary or "").strip() or None,
+        "title": _title(draft.title),
     }
     try:
         return Agent1Output.model_validate(payload), report

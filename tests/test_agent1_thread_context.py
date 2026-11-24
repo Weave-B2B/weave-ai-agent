@@ -93,3 +93,32 @@ def test_요약은_결과에_담고_빈_요약은_비운다():
 def test_모든_메일_프롬프트에_요약_지침이_들어간다():
     assert "<summary_guide>" in build_user_prompt(_input(with_context=False))
     assert "<summary_guide>" in build_user_prompt(_input())
+
+
+def test_제목은_공백을_정리하고_20자를_넘으면_자른다():
+    item = [_draft_item("카카오 로그인 추가", "카카오 로그인도 추가해 주세요")]
+    out, _ = assemble(_input(), Agent1Draft(items=item, title="  카카오   로그인 추가  "), feature_search=None)
+    assert out.title == "카카오 로그인 추가"
+
+    long_title = "영문 상세페이지 언어 선택 전환 및 카카오 로그인 추가"
+    out, _ = assemble(_input(), Agent1Draft(items=item, title=long_title), feature_search=None)
+    assert len(out.title) <= 20
+    assert out.title == long_title[:20].rstrip()
+
+    out, _ = assemble(_input(), Agent1Draft(items=item, title="   "), feature_search=None)
+    assert out.title is None
+    out, _ = assemble(_input(), Agent1Draft(items=item), feature_search=None)
+    assert out.title is None
+
+
+def test_모든_메일_프롬프트에_제목_지침이_들어간다():
+    assert "title에는" in build_user_prompt(_input(with_context=False))
+    assert "title에는" in build_user_prompt(_input())
+
+
+def test_제목_지침은_전체_안건과_고객_요청_동사를_따른다():
+    prompt = build_user_prompt(_input(with_context=False))
+    assert "메일 전체 안건을 고르게 담는다" in prompt
+    assert "고객이 쓴 요청 동사" in prompt
+    assert "판단 표현" in prompt
+    assert "미정 사항" in prompt

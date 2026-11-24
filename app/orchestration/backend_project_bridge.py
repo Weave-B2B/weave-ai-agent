@@ -51,6 +51,11 @@ def backend_internal_token() -> str:
     return settings.backend_internal_token or os.environ.get("BACKEND_INTERNAL_TOKEN") or "local-dev-internal-token"
 
 
+def agent1_channel(channel: str | None) -> str:
+    """Backend 접수 채널(EMAIL·MEETING·PHONE·MESSENGER·OTHER)을 Agent1Input.channel(email·manual)로 바꾼다."""
+    return "email" if (channel or "").strip().upper() == "EMAIL" else "manual"
+
+
 def is_backend_project_id(project_id: str | None) -> bool:
     return bool(project_id and backend_kb.is_backend_id(project_id))
 
@@ -810,8 +815,8 @@ def _materialize_backend_cr_to_local_store(
         "received_at": received_at,
         "sender_role": "CLIENT",
         "sender_name": requester or "고객사 담당자",
-        "channel": channel.lower() if channel.lower() in ("email", "messenger", "meeting", "doc", "manual", "other") else "email",
-        "channel_src": "BACKEND",
+        "channel": agent1_channel(channel),
+        "channel_src": f"BACKEND:{(channel or '').upper()}",
         "subject": cr_title,
         "message_text": orig_text,
         "answers": [],

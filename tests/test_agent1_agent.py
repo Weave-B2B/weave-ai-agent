@@ -131,7 +131,7 @@ def test_agent1_calls_fake_once_with_internal_schema_and_safe_prompt() -> None:
 
 
 def test_agent1_loads_versioned_prompt_files() -> None:
-    assert available_prompt_versions() == ("a1-draft-v0", "a1-draft-v1")
+    assert available_prompt_versions() == ("a1-draft-v0", "a1-draft-v1", "a1-draft-v2", "a1-draft-v3")
 
     v0 = load_prompt("a1-draft-v0")
     v1 = load_prompt("a1-draft-v1")
@@ -149,6 +149,47 @@ def test_agent1_loads_versioned_prompt_files() -> None:
 
     with pytest.raises(ValueError, match="Unknown Agent 1 prompt version"):
         load_prompt("a1-draft-v999")
+
+
+def test_agent1_v2_adds_analysis_output_rule_on_top_of_v1() -> None:
+    v1 = load_prompt("a1-draft-v1")
+    v2 = load_prompt("a1-draft-v2")
+
+    assert v2.startswith(v1)
+    assert "이 분석 서비스에 요구한 결과물 형식" in v2
+    assert "intent=constraint" in v2
+    assert "결과물 형식" not in v1
+
+
+def test_agent1_v2_keeps_month_end_deadline_context() -> None:
+    inp = _input("월말 정산 때문에 급합니다.")
+
+    prompt = build_user_prompt(inp, prompt_version="a1-draft-v2", reference_date=date(2026, 11, 2))
+
+    assert "<deadline_context>" in prompt
+
+
+def test_agent1_v3_unifies_item_text_and_splits_customer_open_issues() -> None:
+    v2 = load_prompt("a1-draft-v2")
+    v3 = load_prompt("a1-draft-v3")
+
+    assert "[상위 기능] — [세부 대상·조건]" in v3
+    assert "확인 질문이 아니라 별도 항목으로 만든다" in v3      # 고객이 제기한 미결 쟁점 → 확인 항목
+    assert "target=client, blocking=false" in v3                # 미정 수량·범위 → 비차단 질문
+    assert "서술형 문장을 쓰지 않는다" in v3
+    assert "요약하거나 어미를 바꾸지 않는다" in v3
+    assert "이 분석 서비스에 요구한 결과물 형식" in v3          # v2 규칙 유지
+    assert "수정이 필요할 것으로 추정됩니다" in v2 and "수정이 필요할 것으로 추정됩니다" not in v3
+    assert "같은 대상에 대한 기준·희망·확인 요청은 한 항목으로 합친다" in v3
+    assert "회신 요청은 별도 항목으로 만들지 않는다" in v3
+    assert "change_request가 아니라 item_type=question, intent=confirmation" in v3
+
+
+def test_agent1_v3_keeps_month_end_deadline_context() -> None:
+    prompt = build_user_prompt(_input("월말 정산 때문에 급합니다."), prompt_version="a1-draft-v3",
+                               reference_date=date(2026, 11, 2))
+
+    assert "<deadline_context>" in prompt
 
 
 def test_agent1_prompt_version_can_be_selected_by_environment(monkeypatch) -> None:

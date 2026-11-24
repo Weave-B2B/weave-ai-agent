@@ -437,3 +437,19 @@ def test_integrated_final_review_rechecks_calculation_snapshot(setup, monkeypatc
     # Direct persistence API cannot bypass the runtime guard either.
     with pytest.raises(InvalidStateTransition): state.final_review(req)
     assert state.get_state("run-1").status != "COMPLETED"
+
+
+def test_supervisor_uses_same_agent1_as_direct_call(setup):
+    """Agent 1은 개별 호출과 오케스트레이션에서 같은 인스턴스·같은 시스템 프롬프트로 실행된다."""
+    from app.agents.agent1.agent import LlmAgent1
+    from app.agents.agent1.prompts import SYSTEM
+    from app.agents.base import AgentFailure
+    state, workers, decisions, draft = setup
+    llm = FakeLlm([])
+    agent1 = LlmAgent1(llm)
+    rt = RunSupervisorRuntime(state, AgentSet(agent1, workers.agent2, workers.agent3), decisions, draft)
+    assert rt.agents.agent1 is agent1
+    inp = state.get_inputs("run-1").agent1_input
+    with pytest.raises(AgentFailure):
+        rt._analyze(inp)                                  # 빈 FakeLlm — 호출된 프롬프트만 확인한다
+    assert llm.calls[0]["system"] == SYSTEM

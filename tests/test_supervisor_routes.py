@@ -36,19 +36,20 @@ def test_session_routes_step_question_and_revision(a3_input, monkeypatch, provid
     state.last_needs = [{"question_id": "Q1", "kind": "client_input", "target": "pm", "blocking": True, "topic": "범위 확인", "item_ids": [a3_input.items[0].item_id]}]
     llm = FakeLlm([{"action": "ask_pm", "args": {"question_id": "Q1"}, "reason": "확인 필요"}])
     runtime = SupervisorRuntime(state, None, None, llm)
-    monkeypatch.setattr(routes.settings, "llm_model", "unrelated-api-model")
-    monkeypatch.setattr(routes.settings, "ollama_model", "unrelated-local-model")
+    monkeypatch.setattr(routes.settings, "llm_provider", "openai")
+    monkeypatch.setattr(routes.settings, "llm_model", "env-api-model")
+    monkeypatch.setattr(routes.settings, "ollama_model", "env-local-model")
     monkeypatch.setattr(routes.settings, "ollama_base_url", "")
     monkeypatch.setattr(routes.settings, "llm_base_url", "https://example.invalid")
 
     def build_test_llm(config):
         if provider == "local":
             assert config.llm_provider == "ollama"
-            assert config.ollama_model == "gpt-oss:20b"
+            assert config.ollama_model == "env-local-model"
             assert config.ollama_base_url == "http://localhost:11434"
         else:
             assert config.llm_provider == "openai"
-            assert config.llm_model == "gpt-6-luna"
+            assert config.llm_model == "env-api-model"
         return llm
 
     monkeypatch.setattr(routes, "build_llm", build_test_llm)
@@ -137,3 +138,18 @@ def test_progress_is_readable_during_start_and_tool_execution(a3_input, monkeypa
         assert "계약 원문" not in str(events)
         assert "내부 검색어" not in str(events)
         assert client.get(progress_url, params={"after": 4}).json() == {"events": []}
+
+
+def test_workers_follow_env_models_and_fall_back_to_defaults(monkeypatch):
+    captured = []
+    monkeypatch.setattr(routes, "build_llm", lambda config: captured.append(config) or object())
+    monkeypatch.setattr(routes, "build_agent2", lambda llm: object())
+    monkeypatch.setattr(routes.settings, "ollama_base_url", "")
+
+    monkeypatch.setattr(routes.settings, "llm_provider", "gemini")       # 다른 공급자의 모델명은 GPT에 쓰지 않는다
+    monkeypatch.setattr(routes.settings, "llm_model", "gemini-2.5-flash-lite")
+    monkeypatch.setattr(routes.settings, "ollama_model", "")
+    routes._workers("gpt")
+    routes._workers("local")
+    assert (captured[0].llm_provider, captured[0].llm_model) == ("openai", routes.DEFAULT_GPT_MODEL)
+    assert (captured[1].llm_provider, captured[1].ollama_model) == ("ollama", routes.DEFAULT_LOCAL_MODEL)
