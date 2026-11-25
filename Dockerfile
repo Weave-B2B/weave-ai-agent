@@ -45,8 +45,10 @@ EXPOSE 8000
 # 배포 환경에서 trace exporter를 지정하면 전송 활성화
 ENV OTEL_TRACES_EXPORTER=none \
     OTEL_METRICS_EXPORTER=none \
-    OTEL_LOGS_EXPORTER=none
+    OTEL_LOGS_EXPORTER=none \
+    OTEL_PYTHON_LOG_CORRELATION=true \
+    OTEL_PYTHON_LOG_AUTO_INSTRUMENTATION=false
 
 # 상태 확인: GET /health (로그인 없이 200, {"status":"ok"})
 # 설정값은 모두 환경변수로 받는다 (.env 파일은 이미지에 없음)
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-config", "app/logging_config.json"]
