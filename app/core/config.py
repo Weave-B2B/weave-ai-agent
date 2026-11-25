@@ -62,8 +62,9 @@ class Settings(BaseSettings):
     s3_source_bucket: str = "weave-dev-files"
     s3_result_bucket: str = "weave-dev-files"
 
-    # 백엔드 ↔ AI 결과 전달 방식. http: 백엔드 내부 API로 바로 보낸다 (로컬 기본)
-    # sqs: 결과 큐로 보낸다. 요청은 워커(python -m app.worker)가 요청 큐에서 받는다
+    # 백엔드 ↔ AI 결과 전달 방식. sqs: 결과 큐로 보낸다. 요청은 워커(python -m app.worker)가 요청 큐에서 받는다
+    #   (로컬 .env.example·dev 배포 기본. 큐 URL이 필요해 코드 기본값은 http로 둔다)
+    # http: 백엔드 내부 API로 바로 보낸다 (큐 설정 없이 테스트·단독 실행)
     result_transport: Literal["http", "sqs"] = "http"
     sqs_endpoint: str = ""           # 로컬 LocalStack: http://localhost:4566. 배포는 비운다 (Pod IAM 역할)
     sqs_region: str = "ap-northeast-2"

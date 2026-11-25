@@ -102,6 +102,27 @@ uvicorn app.main:app --reload
 - 대화형 API 문서: <http://127.0.0.1:8000/docs>
 - OpenAPI 스키마: <http://127.0.0.1:8000/openapi.json>
 
+### 백엔드와 함께 실행 (SQS)
+
+백엔드와 AI는 색인·분석 요청과 결과를 SQS 큐로 주고받습니다(dev 배포와 같음). `.env.example`의 기본값은 `RESULT_TRANSPORT=sqs`이며, 백엔드 `local` 프로필도 SQS가 기본으로 켜져 있습니다.
+
+1. weave-infra에서 LocalStack(S3·SQS)을 띄웁니다. 큐 8개(요청·결과 각 2개와 DLQ)가 자동으로 만들어집니다.
+
+   ```bash
+   docker compose -f compose.local.yaml up -d localstack   # weave-infra 저장소에서
+   ```
+
+2. AI API 서버와 워커를 각각 실행합니다. 워커가 요청 큐에서 메시지를 받아 처리하고 결과 큐로 보냅니다.
+
+   ```bash
+   uvicorn app.main:app --reload   # 터미널 1
+   python -m app.worker            # 터미널 2
+   ```
+
+3. 백엔드를 `./gradlew bootRun`으로 실행합니다.
+
+워커와 LocalStack 없이 개발하려면 AI `.env`에서 `RESULT_TRANSPORT=http`, 백엔드에서 `SQS_ENABLED=false`로 함께 바꿉니다. 이 경우 백엔드가 AI 내부 API를 직접 호출합니다.
+
 기본 `AGENT_MODE=fixture`에서는 평가 데이터셋에 정의된 케이스의 고정 결과로 API와 오케스트레이션 흐름을 확인합니다. 등록되지 않은 케이스도 Agent 1은 원문을 간단히 나눈 기능 항목으로, Agent 2는 근거 없는 범위 미확정 결과로, Agent 3은 산정 대상 없음(`NOT_REQUIRED`)으로 반환합니다. 이 대체 결과는 흐름 테스트용이며 실제 분석·견적 결과가 아닙니다. 실제 모델 분석은 `AGENT_MODE=llm`으로 실행합니다.
 
 Agent1 입력과 구조화 출력을 확인하는 Streamlit 데모는 별도 터미널에서 실행합니다.
