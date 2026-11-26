@@ -31,6 +31,8 @@ SUPP = re.compile(LEAD + r'부\s*칙\s*(?:[(（].*[)）])?\s*$')
 NUMSEC = re.compile(r'^\s*(#+)\s*(?:\*\*)?\s*(\d{1,2}(?:\.\d{1,2})*)(\.?)\s+(\S.*?)\s*(?:\*\*)?\s*$')
 # docling이 제목 표시(#)를 빠뜨린 절 제목: '01. 변경 대상'처럼 두 자리 번호 + 짧은 제목만 있는 줄 (일반 목록 '1.'과 구분)
 PADSEC = re.compile(r'^\s*(?:\*\*)?\s*(0[1-9]|[1-9]\d)\.\s+(\S.{0,40}?)\s*(?:\*\*)?\s*$')
+# 절·기능 코드가 붙은 마크다운 제목(pdf_r2.attach_section_codes가 만든 '## 제목 [TB-F10]'): 새 최상위 절
+CODESEC = re.compile(r'^\s*#{1,6}\s+(?:\*\*)?\s*(\S.{0,60}?)\s*(?:\*\*)?\s*\[([A-Z]{1,5}-(?:[A-Z]{1,3})?\d{1,3}[A-Z]?)\]\s*$')
 # 번호 없는 마크다운 제목: 짧고 문장이 아니면 절 경계 (문서의 첫 제목은 문서 제목이라 제외)
 MDSEC = re.compile(r'^\s*#{1,6}\s+(?:\*\*)?\s*(\S.{0,40}?)\s*(?:\*\*)?\s*$')
 CONT = re.compile(r'[(（]\s*계\s*속\s*[)）]\s*$')
@@ -104,6 +106,14 @@ class Classifier:
                 return dict(kind='cont', title=self.top, inline=False)
             self.top = a; self.top_kind = 'annex'; self.last_art = None
             return dict(kind='annex', title=a, inline=False)
+        m = CODESEC.match(line)
+        if m and self.top_kind != 'article':
+            self.seen_md = True
+            title = f"{m.group(2)} {m.group(1).replace('**', '').strip()}"       # 경로에는 'TB-F10 제목'으로
+            if self.top_kind == 'annex':                   # 별첨 안의 코드 절(CO-A01 등)은 별첨 아래에 둔다
+                return dict(kind='numsec', title=title, depth=1, inline=False)
+            self.top = title; self.top_kind = 'codesec'; self.last_art = None
+            return dict(kind='codesec', title=title, inline=False)
         m = NUMSEC.match(line)
         if m: self.seen_md = True
         if m and self.top_kind != 'article':
@@ -160,7 +170,7 @@ def parse_structure(doc):
         fm = FOOT.match(l) if not c else None
         if c and c['kind'] != 'cont':
             k = c['kind']
-            if k in ('article', 'annex', 'supp'): chain_top, numstack = c['title'], []
+            if k in ('article', 'annex', 'supp', 'codesec'): chain_top, numstack = c['title'], []
             elif k == 'chapter': chain_top, numstack = None, []
             elif k == 'numsec':
                 d = c['depth']; numstack = [x for x in numstack if x[0] < d] + [(d, c['title'])]
@@ -284,7 +294,9 @@ def chunk_B3(doc, L):
         keyed = any(b['kind'] == 'table' and b.get('records') for b in sec.get('blocks', []))
         if r.ntok(doc['text'][s:e]) <= L and not keyed:      # 항목 식별자 표는 짧아도 항목별로 나눈다
             out.append(dict(r.mk(doc, s, e), sec=sec)); continue
-        units = [r.mk(doc, a, z) for a, z in sec.get('pre', []) + ([sec['head']] if sec['head'] and not sec['inline'] else [])]
+        # 항목 식별자 표가 있는 절은 제목만 있는 청크를 따로 만들지 않는다 (제목은 경로에 들어간다)
+        heads = [] if keyed else sec.get('pre', []) + ([sec['head']] if sec['head'] and not sec['inline'] else [])
+        units = [r.mk(doc, a, z) for a, z in heads]
         for b in sec['blocks']:
             units.extend(r.block_units(doc, b, L))
         for u in r.greedy(doc, units, L):

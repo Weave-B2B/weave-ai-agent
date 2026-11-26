@@ -232,11 +232,43 @@ def _cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip()[1:-1].split("|")]
 
 
+# 절 제목 오른쪽에 찍힌 절·기능 코드: TB-F10, S-07A, CO-A01, C-01, F-21, IF-01, DATA-01, SEC-01
+_SECTION_CODE = re.compile(r"^\s*([A-Z]{1,5}-(?:[A-Z]{1,3})?\d{1,3}[A-Z]?)\s*$")
+_MD_HEADING = re.compile(r"^(\s*#{1,6}\s+)(.+?)\s*$")
+_ARTICLE_TITLE = re.compile(r"^\s*(?:\*\*)?\s*제\s*\d+\s*조")
+
+
+def attach_section_codes(page: str) -> str:
+    """docling이 제목 오른쪽 코드를 다음 줄로 떼어 낸 경우('## 제목' + 'TB-F10') 제목에 붙인다.
+    조항(제N조)은 '## 제1조 제목 (C-01)', 그 밖은 '## 제목 [TB-F10]'으로 만든다. 청커(b1_v3.CODESEC)는
+    끝의 [코드] 표시가 있는 제목만 새 최상위 절로 본다 ('## AT-01 인수시험'처럼 원래 코드로 시작하는 제목은 하위 절)."""
+    lines = page.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        heading = _MD_HEADING.match(line)
+        j = i + 1
+        while heading and j < len(lines) and not lines[j].strip():
+            j += 1
+        code = _SECTION_CODE.match(lines[j]) if heading and j < len(lines) else None
+        if heading and code:
+            prefix, title = heading.groups()
+            code_text = code.group(1)
+            merged = f"{title} ({code_text})" if _ARTICLE_TITLE.match(title) else f"{title} [{code_text}]"
+            out.append(prefix + merged)
+            i = j + 1
+            continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
 def build_chunks(document_id: str, pages: list[str]) -> tuple[list[str], list[dict]]:
     from .b1_units import ntok
     from .b1_v3 import build_view, chunk_document, metas_for
 
-    pages = [merge_wrapped_rows(compact_tables(p)) for p in pages]
+    pages = [attach_section_codes(merge_wrapped_rows(compact_tables(p))) for p in pages]
     meta = metas_for({document_id: pages})[document_id]
     chunks, _ = chunk_document(document_id, pages, meta)
     view = build_view(pages)

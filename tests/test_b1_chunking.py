@@ -87,3 +87,19 @@ def test_wrapped_table_row_is_merged_into_one_logical_row():
     _, chunks = pdf_r2.build_chunks("F", ["## 명세\n\n## 01. 기능\n\n" + page])
     row = next(c for c in chunks if c["heading"].endswith("A-F02 상품 목록·상세]"))
     assert "목록에 서 상세" in row["text"] and row["line_start"] > 2       # 머리글 줄이 아니라 항목 행부터
+
+
+def test_section_code_on_next_line_becomes_section_boundary():
+    """제목 오른쪽 코드가 다음 줄로 떨어진 형식(TripBranch 문서): 코드가 붙은 제목만 최상위 절, 'AT-01 …'은 그 아래 하위 절."""
+    pages = ["## TripBranch 기능명세서\n\n문서번호 FSP-TB-001\n\n## 01. 기능 요구사항 적용 기준\nF-00\n\n적용 기준 본문.\n\n"
+             "## 대화 진입과 응답 스트리밍\n\n## 대화 진입과 스트리밍\nTB-F01\n\n## 요구사항 정의\n\n최초 범위 IN 채팅.\n\n"
+             "## AT-01 인수시험\n\n| 시험 | 조건 |\n|---|---|\n| AT-01-1 | 모바일 발화 |\n\n"
+             "## 리뷰 문장 기반 텍스트 근거 검색\nTB-F10\n\n## 요구사항 정의\n\n텍스트 임베딩은 pgvector에 적재한다.\n",
+             "## 계약서\n\n## 제1조 계약 목적과 당사자\nC-01\n\n발주자는 여정온이다.\n"]
+    heads = [c["heading"] for c in pdf_r2.build_chunks("F", pages[:1])[1]]
+    assert any(h.endswith("> TB-F01 대화 진입과 스트리밍 > 요구사항 정의]") for h in heads)
+    assert any("> TB-F01 대화 진입과 스트리밍 > AT-01 인수시험" in h for h in heads)     # AT-01은 TB-F01 아래
+    assert any(h.endswith("> TB-F10 리뷰 문장 기반 텍스트 근거 검색 > 요구사항 정의]") for h in heads)
+    assert not any("> F-00 01. 기능 요구사항 적용 기준 > TB-F10" in h for h in heads)   # 첫 절 아래로 빨려 들지 않는다
+    ctr = [c["heading"] for c in pdf_r2.build_chunks("C", pages[1:])[1]]
+    assert any(h.endswith("> 제1조 계약 목적과 당사자 (C-01)]") for h in ctr)
