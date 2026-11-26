@@ -17,9 +17,24 @@ RUN apt-get update \
 # 코드가 저장소 루트를 기준으로 app·schema·prototype 패키지와 data 폴더를 찾으므로 루트 구조를 그대로 둔다
 WORKDIR /app
 
+# PDF 파서(docling)가 쓰는 torch는 CPU 전용 휠을 먼저 설치한다.
+# 기본 PyPI 휠은 CUDA 라이브러리를 함께 받아 이미지가 수 GB 커진다 (GPU 없이 CPU로만 실행)
+RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.15.0 torchvision==0.29.2
+
 # 의존성 레이어 캐시: requirements.txt가 바뀌지 않으면 다시 설치하지 않음
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
+
+# PDF 파서 모델(레이아웃·표 구조)을 빌드 때 받아 둔다. docling은 DOCLING_ARTIFACTS_PATH에서 읽고 실행 중 내려받지 않는다.
+# OCR은 쓰지 않는다 (텍스트 층이 없는 쪽은 이미지 전사로 처리, app/indexing/pdf_r2.py)
+ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
+RUN docling-tools models download layout tableformer -o ${DOCLING_ARTIFACTS_PATH} \
+    && chmod -R a+rX ${DOCLING_ARTIFACTS_PATH}
+
+# 청크 길이 계산(tiktoken cl100k_base) 사전도 빌드 때 받아 둔다. 없으면 실행 중 외부에서 내려받으려 한다
+ENV TIKTOKEN_CACHE_DIR=/opt/tiktoken-cache
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" \
+    && chmod -R a+rX ${TIKTOKEN_CACHE_DIR}
 
 # 실행에 필요한 폴더만 복사한다 (.env, tests, docs 등은 넣지 않음)
 # prototype: app/main.py가 import하므로 없으면 기동 실패
