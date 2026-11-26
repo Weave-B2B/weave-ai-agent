@@ -133,3 +133,17 @@ def test_refresh_remote_picks_up_documents_added_to_current_baseline(backend, mo
     assert loader.refresh_remote(NEW) is True
     assert added in list_baseline_docs(NEW)["document_ids"]
     assert get_section(added, "CTR-01")["text"] == "계약 목적을 정한다."
+
+
+def test_reindexed_document_uses_only_current_extraction_version_chunks():
+    """다른 파서로 다시 색인해 예전 청크가 남아 있어도 문서의 현재 추출 버전 청크만 근거 후보가 된다."""
+    dv = str(uuid4())
+    doc = dict(_doc(dv, "SOW"), extractionVersion="docling-luna-b1-v3")
+    old = _chunk(dv, "S-03", "03. 제외 범위", "예전 파서 청크")
+    new = dict(_chunk(dv, "B1-00004", "[과업범위 > 03. 제외 범위]", "새 파서 청크"), extractionVersion="docling-luna-b1-v3")
+    kb = to_kb(_resp(str(uuid4()), "ACTIVE", None, [doc], [old, new]))
+    assert [s["text"] for s in kb["sections"]] == ["새 파서 청크"]
+    assert kb["documents"][0]["section_count"] == 1
+
+    unknown = dict(doc, extractionVersion=None)                 # 현재 버전 정보가 없으면(이전 데이터) 모두 쓴다
+    assert len(to_kb(_resp(str(uuid4()), "ACTIVE", None, [unknown], [old, new]))["sections"]) == 2

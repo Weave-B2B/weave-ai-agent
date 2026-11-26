@@ -85,7 +85,8 @@ def to_kb(resp: dict) -> dict:
                "effective_date": d.get("effectiveDate"),
                "approval_state": (d.get("approvalStatus") or "").lower(), "priority_rank": PRIORITY.index(code) + 1,
                "title": d.get("documentTitle"), "document_code": d.get("documentCode"),
-               "judgment_role": d.get("judgmentRole"), "extraction_status": d.get("extractionStatus")}
+               "judgment_role": d.get("judgmentRole"), "extraction_status": d.get("extractionStatus"),
+               "extraction_version": d.get("extractionVersion")}
         by_version[doc["doc_id"]] = doc
         docs.append(doc)
         if d.get("judgmentRole") == "BASELINE" and d.get("approvalStatus") == "APPROVED":
@@ -94,6 +95,11 @@ def to_kb(resp: dict) -> dict:
     for c in resp.get("chunks", []):
         doc = by_version.get(c["documentVersionId"])
         if doc is None or not c.get("sectionId"):
+            continue
+        # 같은 문서 버전을 다른 파서로 다시 색인하면 예전 청크도 남는다(백엔드는 청크를 지우지 않음).
+        # 문서의 현재 추출 버전과 다른 청크는 근거 후보에서 뺀다. 현재 버전이 없으면(이전 데이터) 모두 쓴다
+        current = doc.get("extraction_version")
+        if current and c.get("extractionVersion") and c["extractionVersion"] != current:
             continue
         secs.append({
             "doc_id": doc["doc_id"], "section_id": c["sectionId"], "project_id": project_id,

@@ -20,7 +20,7 @@ from app.api.internal_analysis_routes import REPORT_BACKOFF_SEC, REPORT_RETRIES,
 from app.core.config import settings
 from app.indexing.backend import IngestReportError, build_client
 from app.indexing.messages import IndexRequest, IndexResult
-from app.indexing.pipeline import EXTRACTION_VERSION
+from app.indexing.pipeline import extraction_version_for
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/internal/v1", tags=["Internal (Backend → AI)"])
@@ -82,7 +82,7 @@ def run_ingest(req: IndexRequest) -> None:
         log.exception("색인 준비 실패 document_version_id=%s", req.document_version_id)
         result = IndexResult(status="FAILED", request_id=req.request_id, document_version_id=req.document_version_id,
                              failed_stage="EMBED", error_code="INDEXING_UNAVAILABLE", retryable=True,
-                             error_message=f"{type(exc).__name__}: {exc}"[:500], extraction_version=EXTRACTION_VERSION)
+                             error_message=f"{type(exc).__name__}: {exc}"[:500], extraction_version=extraction_version_for(req))
     _report(req.document_version_id, result)
 
 

@@ -107,3 +107,66 @@ def test_schema_failure_is_reported_as_failed_and_retried_next_time(env, monkeyp
     assert [(r.status, r.error_code, r.retryable) for _, r in rec.calls] == [("FAILED", "INDEXING_UNAVAILABLE", True)] * 2
     assert len(attempts) == 2
     assert "InsufficientPrivilege" in rec.calls[0][1].error_message
+
+
+def test_r2_parser_in_shared_ingest_reuses_chunk_ids_and_legacy_switch(env, monkeypatch, tmp_path):
+    import json
+
+    from app.embed.providers import FakeEmbedder
+    from app.indexing import pdf_r2
+    from app.indexing.objects import DirStore
+    from app.kb.loader import chunk_uuid
+
+    client, rec = env
+    body = _body()
+    objects = DirStore(tmp_path)
+    objects.put(settings.s3_source_bucket, body["objectKey"], b"fake PDF", "application/pdf")
+    monkeypatch.setattr(settings, "pdf_parser", "r2")
+    monkeypatch.setattr(settings, "result_transport", "http")
+    monkeypatch.setattr("app.embed.build_embedder", lambda _: FakeEmbedder())
+    monkeypatch.setattr("app.indexing.objects.S3Store", lambda *args: objects)
+
+    class Store:
+        model_id = "test-pgvector"
+
+        def __init__(self):
+            self.rows = {}
+            self.insert_calls = 0
+
+        def migrate(self):
+            pass
+
+        def existing(self, ids):
+            return {cid: self.rows[cid] for cid in ids if cid in self.rows}
+
+        def insert(self, rows):
+            self.insert_calls += 1
+            for cid, version_id, project_id, _, digest, version in rows:
+                self.rows[cid] = (version_id, project_id, digest, version)
+
+    store = Store()
+    monkeypatch.setattr("app.kb.vector_store.open_pg_store", lambda *_: store)
+    monkeypatch.setattr(pdf_r2, "extract_pages", lambda *_: (["첫 페이지", "검수 조건"], [{"page": 2, "reasons": ["scan"]}]))
+    cid = chunk_uuid(body["documentVersionId"], "B1-00001", pdf_r2.EXTRACTION_VERSION)
+    chunk = dict(chunk_id=cid, extraction_version=pdf_r2.EXTRACTION_VERSION, section_id="B1-00001", heading="[계약 > 검수]", text="검수 조건",
+                 page=2, page_end=2, line_start=1, line_end=1, start_offset=6, end_offset=11,
+                 feature_id=None, scope_flag=None)
+    monkeypatch.setattr(pdf_r2, "build_chunks", lambda _, pages: (pages, [chunk]))
+
+    for _ in range(2):
+        assert client.post("/internal/v1/document-ingests", json=body, headers={"X-Internal-Token": TOKEN}).status_code == 202
+    first, second = (result for _, result in rec.calls)
+    assert first.status == second.status == "READY"
+    assert first.manifest == second.manifest
+    assert store.insert_calls == 1
+    assert store.rows[cid][:2] == (body["documentVersionId"], body["projectId"])
+    manifest = json.loads(objects.get(first.manifest.bucket, first.manifest.key))
+    assert manifest["extractionVersion"] == pdf_r2.EXTRACTION_VERSION
+    assert manifest["pageFallbacks"] == [{"page": 2, "reasons": ["scan"]}]
+    assert manifest["chunks"][0]["pageStart"] == manifest["chunks"][0]["pageEnd"] == 2
+
+    monkeypatch.setattr(settings, "pdf_parser", "legacy")          # 되돌리면 기존 파서 버전으로 색인
+    body.update(projectId=str(uuid4()), requestId=str(uuid4()))
+    assert client.post("/internal/v1/document-ingests", json=body, headers={"X-Internal-Token": TOKEN}).status_code == 202
+    assert rec.calls[-1][1].extraction_version == "pdftotext-layout-v1"
+    assert store.insert_calls == 1

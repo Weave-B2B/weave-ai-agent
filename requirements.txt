@@ -32,12 +32,20 @@ opentelemetry-instrumentation-requests==0.66b2
 opentelemetry-instrumentation-logging==0.66b2
 
 # ==========================================
-# 5. Frontend / Interactive Demo
+# 5. PDF 파서 (PDF_PARSER=r2: docling + 페이지 전사 + 구조 청킹)
+# ==========================================
+# torch·torchvision은 docling이 끌어온다. Docker는 CPU 전용 휠을 먼저 설치한다 (Dockerfile 참고)
+docling==2.150.1
+pypdfium2>=5.15,<6           # 쪽 렌더링·텍스트 품질 판정
+tiktoken>=0.14,<1            # 청크 길이(토큰) 계산
+
+# ==========================================
+# 6. Frontend / Interactive Demo
 # ==========================================
 streamlit>=1.40,<2  #삭제예정
 
 # ==========================================
-# 6. Testing
+# 7. Testing
 # ==========================================
 pytest
 httpx
