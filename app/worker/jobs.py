@@ -15,7 +15,7 @@ from app.worker.runner import Job, Unprocessable
 def index_job(body: dict) -> Job:
     from app.api import internal_ingest_routes as ingest
     from app.indexing.messages import IndexResult
-    from app.indexing.pipeline import EXTRACTION_VERSION
+    from app.indexing.pipeline import extraction_version_for
 
     try:
         req = ingest.IndexRequest.model_validate(body)
@@ -26,7 +26,7 @@ def index_job(body: dict) -> Job:
         ingest._report(req.document_version_id, IndexResult(
             status="FAILED", request_id=req.request_id, document_version_id=req.document_version_id,
             failed_stage="EMBED", error_code="INDEXING_UNAVAILABLE", retryable=True,
-            error_message="여러 번 시도했지만 색인 결과를 보내지 못했습니다.", extraction_version=EXTRACTION_VERSION))
+            error_message="여러 번 시도했지만 색인 결과를 보내지 못했습니다.", extraction_version=extraction_version_for(req)))
 
     return Job(key=f"index:{req.request_id}", run=lambda: ingest.run_ingest(req), give_up=give_up)
 

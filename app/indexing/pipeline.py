@@ -10,6 +10,8 @@ import hashlib
 import json
 import logging
 
+from app.core.config import settings
+from app.indexing import pdf_r2
 from app.embed.base import Embedder
 from app.indexing.messages import IndexRequest, IndexResult, ObjectRef
 from app.indexing.objects import ObjectStore
@@ -40,13 +42,51 @@ def manifest_bytes(m: dict) -> bytes:
     return (json.dumps(m, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
+def extraction_version_for(req: IndexRequest) -> str:
+    """색인 요청에 쓸 추출 버전 (PDF_PARSER). 버전이 다르면 청크 ID도 달라 기존 색인과 섞이지 않는다."""
+    return pdf_r2.EXTRACTION_VERSION if settings.pdf_parser == "r2" else EXTRACTION_VERSION
+
+
+def _r2_pages(req, objects, result_bucket, pdf, source_sha):
+    # Reuse the transcript for sequential retries of an immutable document version.
+    # This also avoids paying for Luna again when embedding or reporting is retried.
+    key = f"indexing/{pdf_r2.EXTRACTION_VERSION}/{req.project_id}/{req.document_version_id}/{source_sha}.json"
+    try:
+        cached = objects.get(result_bucket, key)
+    except FileNotFoundError:
+        cached = None
+    except Exception as exc:
+        # S3 reports a missing key as a ClientError, while permission and
+        # transport failures must leave the request retryable.
+        error = getattr(exc, "response", {}).get("Error", {}).get("Code")
+        if error not in {"NoSuchKey", "404", "NotFound"}:
+            raise _Fail("EXTRACT", "R2_CACHE_READ_FAILED", True, "파싱 결과를 읽지 못했습니다.") from exc
+        cached = None
+    if cached is not None:
+        try:
+            data = json.loads(cached)
+            return data["pages"], data["pageFallbacks"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise _Fail("EXTRACT", "R2_CACHE_INVALID", False, "저장된 파싱 결과가 올바르지 않습니다.") from exc
+
+    transcribe = pdf_r2.build_transcriber(settings.pdf_r2_transcribe_provider, settings.pdf_r2_transcribe_model,
+                                          openai_key=settings.pdf_r2_openai_api_key, region=settings.aws_region)
+    pages, decisions = pdf_r2.extract_pages(pdf, str(req.document_version_id), transcribe)
+    try:
+        objects.put(result_bucket, key, manifest_bytes({"pages": pages, "pageFallbacks": decisions}), "application/json")
+    except Exception as exc:
+        raise _Fail("EXTRACT", "R2_CACHE_WRITE_FAILED", True, "파싱 결과를 저장하지 못했습니다.") from exc
+    return pages, decisions
+
+
 def index_document(req: IndexRequest, objects: ObjectStore, embedder: Embedder, store: PgVectorStore,
                    source_bucket: str, result_bucket: str) -> IndexResult:
     profile = profile_id(embedder)
+    version = extraction_version_for(req)
     base = dict(request_id=req.request_id, document_version_id=req.document_version_id,
-                extraction_version=EXTRACTION_VERSION, embedding_profile_id=profile)
+                extraction_version=version, embedding_profile_id=profile)
     try:
-        manifest = _run(req, objects, embedder, store, source_bucket, result_bucket, profile)
+        manifest = _run(req, objects, embedder, store, source_bucket, result_bucket, profile, version)
     except _Fail as f:
         log.warning("색인 실패 request=%s stage=%s code=%s", req.request_id, f.stage, f.code)
         return IndexResult(status="FAILED", failed_stage=f.stage, error_code=f.code, retryable=f.retryable,
@@ -54,7 +94,7 @@ def index_document(req: IndexRequest, objects: ObjectStore, embedder: Embedder, 
     return IndexResult(status="READY", section_count=manifest[1], manifest=manifest[0], **base)
 
 
-def _run(req, objects, embedder, store, source_bucket, result_bucket, profile) -> tuple[ObjectRef, int]:
+def _run(req, objects, embedder, store, source_bucket, result_bucket, profile, version) -> tuple[ObjectRef, int]:
     bucket = req.bucket or source_bucket
     if req.document_type == "IMPACT_WORKBOOK" or req.mime_type != "application/pdf":
         raise _Fail("EXTRACT", "UNSUPPORTED_MIME_TYPE", False, f"PDF만 지원: {req.mime_type}")
@@ -65,19 +105,38 @@ def _run(req, objects, embedder, store, source_bucket, result_bucket, profile) -
     source_sha = _sha(pdf)
     if req.sha256 and req.sha256 != source_sha:
         raise _Fail("EXTRACT", "SOURCE_CHECKSUM_MISMATCH", False, "원본 SHA-256이 요청과 다름")
-    try:
-        pages, secs = parse_pdf(pdf)
-    except PdfToolMissing as exc:
-        raise _Fail("EXTRACT", "EXTRACT_TOOL_MISSING", True, str(exc)) from exc
-    except PdfExtractError as exc:
-        raise _Fail("EXTRACT", "EXTRACT_FAILED", False, str(exc)) from exc
-    if not secs:
-        raise _Fail("CHUNK", "NO_SECTIONS", False, "조항을 찾지 못함 — 지원하지 않는 양식일 수 있음")
     dv, pj = str(req.document_version_id), str(req.project_id)
-    try:
-        chunks = to_chunks(dv, pages, secs)
-    except ValueError as exc:
-        raise _Fail("CHUNK", "DUPLICATE_SECTION_ID", False, str(exc)) from exc
+    decisions = []
+    if version == pdf_r2.EXTRACTION_VERSION:
+        try:
+            pages, decisions = _r2_pages(req, objects, result_bucket, pdf, source_sha)
+        except _Fail:
+            raise
+        except pdf_r2.PageFallbackError as exc:
+            raise _Fail("EXTRACT", "LUNA_TRANSCRIPTION_FAILED", exc.retryable, str(exc)) from exc
+        except ImportError as exc:
+            raise _Fail("EXTRACT", "EXTRACT_TOOL_MISSING", False, type(exc).__name__) from exc
+        except Exception as exc:
+            raise _Fail("EXTRACT", "EXTRACT_FAILED", False, type(exc).__name__) from exc
+        try:
+            pages, chunks = pdf_r2.build_chunks(dv, pages)
+        except ValueError as exc:
+            raise _Fail("CHUNK", "CHUNK_INVALID", False, str(exc)) from exc
+        if not chunks:
+            raise _Fail("CHUNK", "NO_SECTIONS", False, "B1 청크가 없습니다.")
+    else:
+        try:
+            pages, secs = parse_pdf(pdf)
+        except PdfToolMissing as exc:
+            raise _Fail("EXTRACT", "EXTRACT_TOOL_MISSING", True, str(exc)) from exc
+        except PdfExtractError as exc:
+            raise _Fail("EXTRACT", "EXTRACT_FAILED", False, str(exc)) from exc
+        if not secs:
+            raise _Fail("CHUNK", "NO_SECTIONS", False, "조항을 찾지 못함 — 지원하지 않는 양식일 수 있음")
+        try:
+            chunks = to_chunks(dv, pages, secs)
+        except ValueError as exc:
+            raise _Fail("CHUNK", "DUPLICATE_SECTION_ID", False, str(exc)) from exc
     try:
         build_pg_index(embedder, {(dv, c["section_id"]): c for c in chunks}, store, lambda _: (dv, pj))
     except IndexConflict as exc:
@@ -89,7 +148,7 @@ def _run(req, objects, embedder, store, source_bucket, result_bucket, profile) -
     snap_key, man_key = result_keys(req.request_id)
     manifest = {
         "schemaVersion": MANIFEST_VERSION, "requestId": str(req.request_id), "projectId": pj,
-        "documentVersionId": dv, "extractionVersion": EXTRACTION_VERSION, "embeddingProfileId": profile,
+        "documentVersionId": dv, "extractionVersion": version, "embeddingProfileId": profile,
         "sourceSha256": source_sha,
         "textSnapshot": {"bucket": result_bucket, "key": snap_key, "sha256": _sha(snapshot)},
         "chunkCount": len(chunks),
@@ -100,6 +159,8 @@ def _run(req, objects, embedder, store, source_bucket, result_bucket, profile) -
                     "textSha256": _sha(c["text"].encode("utf-8")), "embeddingInputSha256": text_hash(chunk_text(c))}
                    for c in chunks],
     }
+    if version == pdf_r2.EXTRACTION_VERSION:
+        manifest["pageFallbacks"] = decisions
     body = manifest_bytes(manifest)
     try:
         objects.put(result_bucket, snap_key, snapshot, "text/plain; charset=utf-8")

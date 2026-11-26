@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     vector_store: str = "local"      # local: embed_index_path JSON · pgvector: vector-db(weave_vector)
     vector_db_url: str = ""          # 예: postgresql://weave:weave@localhost:5433/weave_vector (weave-infra 기본값)
     # 문서 색인 (app.indexing). 로컬은 weave-infra LocalStack (S3_ENDPOINT=http://localhost:4566)
+    # PDF 파서. r2: docling + 품질 낮은 페이지 이미지 전사 + 구조 청킹(b1-v3, 기본)
+    #           legacy: pdftotext + 섹션 코드 규칙 (원래 합성 템플릿 형식만 읽는다. 되돌릴 때 사용)
+    pdf_parser: Literal["r2", "legacy"] = "r2"
+    # 품질이 낮은 페이지를 이미지로 전사할 모델. bedrock은 AWS 자격 증명(배포는 Pod 역할), openai는 아래 키
+    pdf_r2_transcribe_provider: Literal["bedrock", "openai"] = "bedrock"
+    pdf_r2_transcribe_model: str = ""   # 비우면 bedrock: Claude Haiku 4.5(global 프로필), openai: gpt-6-luna
+    pdf_r2_openai_api_key: str = ""
     s3_endpoint: str = ""
     s3_access_key_id: str = ""      # 비우면 boto3 기본 자격 증명(환경 변수·~/.aws·IAM 역할). LocalStack은 아무 값(test)
     s3_secret_access_key: str = ""
