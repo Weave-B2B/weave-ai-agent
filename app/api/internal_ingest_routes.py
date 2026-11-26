@@ -7,6 +7,7 @@ SQS가 생기면 이 입구 대신 큐 수신부가 같은 run_ingest를 부른�
 인증: 범위 분석 입구와 같은 내부 토큰(X-Internal-Token = BACKEND_INTERNAL_TOKEN).
 """
 import logging
+import threading
 import time
 from typing import Optional
 from uuid import UUID
@@ -42,6 +43,23 @@ def request_ingest(req: IndexRequest, background: BackgroundTasks,
     return IngestAccepted(request_id=req.request_id, document_version_id=req.document_version_id)
 
 
+_schema_ready: set[str] = set()
+_schema_lock = threading.Lock()
+
+
+def _ensure_schema(store) -> None:
+    """vector-db에 vector 확장·chunk_embedding 테이블이 없으면 만든다 (db/vector/V1, IF NOT EXISTS라 다시 실행해도 안전).
+    배포 DB에 사람이 접속해 만들지 않아도 첫 색인에서 준비된다. 같은 DB는 프로세스마다 한 번만 실행한다.
+    실패(권한 부족 등)는 호출한 쪽에서 색인 FAILED로 알린다."""
+    key = settings.vector_db_url
+    if key in _schema_ready:
+        return
+    with _schema_lock:
+        if key not in _schema_ready:
+            store.migrate()
+            _schema_ready.add(key)
+
+
 def run_ingest(req: IndexRequest) -> None:
     """색인 1건을 실행하고 결과를 백엔드에 보낸다. 예외를 밖으로 던지지 않는다 (백그라운드 작업)."""
     if req.document_type == "IMPACT_WORKBOOK" or req.mime_type != "application/pdf":
@@ -56,6 +74,7 @@ def run_ingest(req: IndexRequest) -> None:
         if embedder is None:
             raise RuntimeError("EMBED_PROVIDER=none — 임베딩 모델이 없음")
         store = open_pg_store(settings, embedder)
+        _ensure_schema(store)
         objects = S3Store(settings.s3_endpoint or None, settings.s3_region,
                           settings.s3_access_key_id or None, settings.s3_secret_access_key or None)
         result = index_document(req, objects, embedder, store, settings.s3_source_bucket, settings.s3_result_bucket)
