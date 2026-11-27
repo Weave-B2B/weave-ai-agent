@@ -131,7 +131,7 @@ def test_agent1_calls_fake_once_with_internal_schema_and_safe_prompt() -> None:
 
 
 def test_agent1_loads_versioned_prompt_files() -> None:
-    assert available_prompt_versions() == ("a1-draft-v0", "a1-draft-v1", "a1-draft-v2", "a1-draft-v3")
+    assert available_prompt_versions() == ("a1-draft-v0", "a1-draft-v1", "a1-draft-v2", "a1-draft-v3", "a1-draft-v4")
 
     v0 = load_prompt("a1-draft-v0")
     v1 = load_prompt("a1-draft-v1")
