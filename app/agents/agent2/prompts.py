@@ -82,6 +82,8 @@ _AGENT_TOOLS = """\
 도구
 - search_docs(query, doc_types?): 이 기준선 문서에서 섹션 검색. 결과는 앞부분(snippet)만 보인다.
 - get_section(doc_id, section_id): 섹션 전문 읽기. 인용하려면 먼저 읽어야 한다.
+- find_same_items(doc_id, section_id): 읽은 섹션과 같은 내용을 다른 기준선 문서(SOW·명세·견적·변경합의서)에서 찾기. 결과는 앞부분만 보인다.
+- compare_values(refs): 읽은 섹션 2개 이상("doc_id:section_id")의 금액·날짜·기간·수량·비율을 뽑아 서로 다른 값을 보여 준다.
 - verify_quote(doc_id, section_id, quote): 인용문이 원문 그대로인지 확인.
 - submit_judgment(judgment): 최종 판단 제출. 조사를 끝낸다.
 
@@ -96,10 +98,13 @@ _AGENT_TOOLS = """\
    기능이 제외(OUT)로 나오면 범위 밖으로 결론 내기 전에 변경합의서 조항을 읽어 그 기능을 승인했는지 확인한다.
 3. 같은 검색어를 반복하지 않는다. 못 찾으면 다른 표현이나 doc_types로 바꾼다.
    기능이 포함·제외됐는지는 기능명세(functional_spec)가 1차 근거다. doc_types로 좁힐 때 functional_spec을 빼지 않는다.
-4. 판단에 필요한 조항을 읽었으면 바로 제출한다. steps_left가 1이면 반드시 submit_judgment.
+4. 기능 조항을 찾았으면 find_same_items로 다른 문서에 같은 기능이 어떻게 적혔는지 확인한다(예: SOW 포함인데 명세 제외, 견적에만 있음).
+   수량·금액·기간·날짜가 판단에 걸리면(예: "사진 3장→5장", "검수 기간 연장") 관련 섹션을 읽고 compare_values로 문서 간 값을 맞춰 본다.
+   값이 문서마다 다르면 우선순위가 높은 문서를 따르고, 낮은 쪽은 role=context로 두며 차이를 uncertainties에 적는다.
+5. 판단에 필요한 조항을 읽었으면 바로 제출한다. steps_left가 1이면 반드시 submit_judgment.
    제출이 "제출 전 확인 필요"로 되돌아오면 gaps에 적힌 조사를 한 뒤 다시 제출한다.
-5. 근거(evidence)에는 get_section 또는 search_docs로 실제 본 섹션만 쓴다. 본 적 없는 섹션은 코드가 버린다.
-6. submit_judgment에서는 sufficient=true, next_queries=[]로 둔다.
+6. 근거(evidence)에는 get_section·search_docs·find_same_items로 실제 본 섹션만 쓴다. 본 적 없는 섹션은 코드가 버린다.
+7. submit_judgment에서는 sufficient=true, next_queries=[]로 둔다.
 
 """
 
