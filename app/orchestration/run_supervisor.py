@@ -431,6 +431,8 @@ class RunSupervisorRuntime:
         run_inputs = self.state.get_inputs(run.state.run_id)
         current = self._agent3_input(inp, a1, a2, rate, run.coordination.quote_links,
                                      run.state.agents["agent1"].current_result_id, run_inputs.calculation_context)
+        # 진행 자료는 처음 산정 때 고정한 스냅샷을 재산정에서도 그대로 쓴다 (조회는 D단계 조사 단계에서 채운다)
+        current.work_activity = old.work_activity if old else None
         view, previous = None, None
         context_changed = False
         if old and old.source:
@@ -442,6 +444,7 @@ class RunSupervisorRuntime:
                                           source.quote_links, source.a1_result_id)
             previous.workbook_source_pinned = source.workbook_source_pinned
             previous.workbook_source = source.workbook_source
+            previous.work_activity = old.work_activity
             context_changed = (source.rate_card_id != rate
                 or source.calculation_context_revision != run_inputs.calculation_context_revision
                 or previous.workbook_source_pinned != current.workbook_source_pinned
@@ -481,7 +484,9 @@ class RunSupervisorRuntime:
             pm_edit_id=old.source.pm_edit_id if old and old.source else None,
             calculation_context_revision=run_inputs.calculation_context_revision,
             workbook_source_pinned=current.workbook_source_pinned,
-            workbook_source=current.workbook_source).model_dump()
+            workbook_source=current.workbook_source,
+            activity_snapshot_hash=current.work_activity.snapshot_hash if current.work_activity else None).model_dump()
+        raw["work_activity"] = current.work_activity.model_dump(mode="json") if current.work_activity else None
         return Agent3RunOutput.model_validate(raw)
 
     def answer(self, request: AnswerQuestion):
