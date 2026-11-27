@@ -2,7 +2,7 @@
   "recorded_at": "2026-11-27",
   "schema_path": "schema/schemas.py",
   "schema_version": "0.3.0",
-  "schema_sha256": "4257be3a2446a2a10e2d9f14cc7d2e6dd97a51e2f5271151ccaf8bbe43b1344e",
+  "schema_sha256": "757d492260a67fb9b85fcf9eaee65f9a79104f6d8c895fd860189e10b06a86eb",
   "source_commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
   "dataset_baseline": {
     "manifest_path": "eval/dataset/manifest.json",
@@ -41,6 +41,10 @@
     {
       "commit": "fix/#20-supervisor-question-loop",
       "summary": "Question.choices 선택 필드 추가 (PM 질문 선택지 최대 3개, 기타·모름은 화면이 추가)"
+    },
+    {
+      "commit": "feat/#20-clarifier-evidence-ref",
+      "summary": "EvidenceRef 추가 (근거 출처 request·contract·activity와 시스템 일치 검증, 기존 모델 변경 없음)"
     }
   ]
 }

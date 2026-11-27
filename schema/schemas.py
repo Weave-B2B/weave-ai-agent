@@ -101,6 +101,30 @@ class Evidence(_M):
     verified: Optional[bool] = Field(None, description="인용 존재 검증 결과 — 코드가 채움")
 
 
+EvidenceSourceType = Literal["request", "contract", "activity"]
+EvidenceSystem = Literal["message", "doc", "jira", "github", "workbook"]
+_EVIDENCE_SYSTEMS: dict[str, set[str]] = {
+    "request": {"message"}, "contract": {"doc"}, "activity": {"jira", "github", "workbook"}}
+
+
+class EvidenceRef(_M):
+    """질문·선택지·가정이 기대는 근거 한 건. 범위 판단 근거가 될 수 있는 것은 contract뿐이다.
+    activity(Jira·GitHub·운영 엑셀)는 진행 상황 참고 자료이며 계약 근거·지시가 아니다."""
+    source_type: EvidenceSourceType = Field(description="request=고객 요청 원문, contract=기준선 문서, activity=작업 진행 자료")
+    system: EvidenceSystem
+    ref: str = Field(min_length=1, examples=["message_text[74:91]", "FSP-TB-001-v2.0:F-11", "TRIP-123", "Weave-B2B/app#88"])
+    title: Optional[str] = Field(None, description="사람이 읽는 표기 (문서 제목, 원문 인용, 이슈·PR 제목)")
+    url: Optional[str] = None
+    fetched_at: Optional[str] = Field(None, description="외부 조회 시각 (activity)")
+    snapshot_hash: Optional[str] = Field(None, description="조회 결과를 고정한 스냅샷 해시 (activity)")
+
+    @model_validator(mode="after")
+    def system_matches_source(self):
+        if self.system not in _EVIDENCE_SYSTEMS[self.source_type]:
+            raise ValueError(f"{self.system} is not a {self.source_type} evidence system")
+        return self
+
+
 class Item(_M):
     item_id: str = Field(description="{case_id}-{n}. 같은 의미면 재실행해도 유지", examples=["CR-A-001-1"])
     case_id: str
