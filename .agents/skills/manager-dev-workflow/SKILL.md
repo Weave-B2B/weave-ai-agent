@@ -94,6 +94,8 @@ reference, dependencies, allowed paths, and expected artifacts in the spawn mess
 Respect the actual concurrency capacity; finish dependent tasks before starting consumers.
 Assign one writer to each file. Shared API/schema decisions go through the manager.
 
+For UI tasks, apply the protocol's Figma evidence reuse rules before dispatch. Inventory existing manifests/exports/coverage, assign only missing research to sources, and pass the same evidence paths and revision/coverage to planner, prototype and QA. If no research role is needed, authorize QA to collect missing scoped interactions directly; independent execution is still required.
+
 Every result uses the handoff format in the protocol. If information is missing,
 the worker sends an `information_request` to the manager. Reuse an existing approved
 source task when its scope covers the question; otherwise obtain approval for a new
