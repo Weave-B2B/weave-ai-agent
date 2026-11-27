@@ -411,6 +411,24 @@ test('PM question dialog labels structured evidence by source type',async t=>{
   assert.match(html,/근거: 고객 요청 원문 “검수 일정” \/ 계약 문서 기능 명세서 · F-1 \/ 진행 자료 TRIP-7/);
 });
 
+test('PM question dialog shows the fallback assumption and evidence for each choice',async t=>{
+  const q={question_id:'Q-AS',stage:'agent1',text:'검수일은 확정 일정인가요?',reason:'일정 산정에 필요합니다.',target:'pm',blocking:true,status:'open',
+    choices:['확정 일정','조정 가능'],assumption_if_unknown:'확정 일정으로 가정합니다',
+    choice_evidence:{'확정 일정':[{source_type:'contract',system:'doc',ref:'SOW-1:4.2',title:'과업지시서 · 4.2'}]}};
+  const session={id:'CR-UI-QAS',caseId:'C-AS',stateRevision:2,text:'검수',created:'2026-11-27',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
+  globalThis.fetch=async()=>({ok:true,json:async()=>({state_revision:2,a1:{items:[]},question:q,
+    assumptions:[{kind:'unasked',slot:'photo_order',stage:'agent1',item_ids:[],text:'업로드 순서대로 표시',evidence:[]}]})});
+  h.demo.enter(session.id);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  h.click('agent3-question');
+  const html=h.demo.page();
+  assert.match(html,/확인이 어려우면 이렇게 가정하고 진행합니다: 확정 일정으로 가정합니다/);
+  assert.match(html,/확정 일정<small class="caption" style="display:block">근거: 계약 문서 과업지시서 · 4.2<\/small>/);
+  assert.equal(h.demo.current().assumptions.length,1);
+});
+
 test('calc-v1 list and final review display supply amount rather than labor subtotal',()=>{
   const session={id:'CR-UI-CALC',text:'조정 견적',created:'2026-11-18',events:[],step:6,ready:true,analysisId:'calc',
     realA3:{contract_version:'agent3-run/2',status:'IMPACT_DRAFT_READY',estimates:[{totals:{md:2,price:1400000,cost:1000000},lines:[]}],
