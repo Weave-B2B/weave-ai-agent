@@ -148,7 +148,7 @@
     {"name": "negative_expense", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "ENTERED", "expenses": [{"name": "x", "internal_cost": -1, "billable": false}]}},
     {"name": "expenses_with_confirmed_none", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "CONFIRMED_NONE", "expenses": [{"name": "x", "internal_cost": 1000, "billable": false}]}},
     {"name": "vat_ratio_out_of_range", "rate_card": "G", "policy": "BAD_VAT", "lines": [{"role": "QA", "md": "1.0"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}},
-    {"name": "md_not_half_step", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "0.25"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}},
+    {"name": "md_not_quarter_step", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "0.3"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}},
     {"name": "negative_md", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "QA", "md": "-1"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}},
     {"name": "unknown_role", "rate_card": "G", "policy": "CONFIRMED", "lines": [{"role": "DBA", "md": "1"}], "adjustments": {"expenses_state": "CONFIRMED_NONE"}}
   ],
