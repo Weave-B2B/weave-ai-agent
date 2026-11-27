@@ -52,6 +52,8 @@ class ProposedQuestion(_Proposal):
     field: str | None = None
     text: str = Field(min_length=1)
     reason: str = Field(min_length=1)
+    choices: list[str] = Field(default_factory=list, max_length=3, description=(
+        "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
     target: Literal["pm", "client"] = "pm"
     blocking: bool = False
 
@@ -60,6 +62,9 @@ class ProposedNeed(_Proposal):
     kind: Literal["more_evidence", "client_input", "missing_standard"]
     item_numbers: list[int] = Field(min_length=1)
     topic: str = Field(min_length=1)
+    reason: str = ""
+    choices: list[str] = Field(default_factory=list, max_length=3, description=(
+        "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
     target: Literal["pm", "client"] | None = None
 
 

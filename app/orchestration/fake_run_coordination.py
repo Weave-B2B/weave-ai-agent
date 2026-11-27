@@ -16,7 +16,7 @@ from app.orchestration.run_coordination import (
     AcquireExecution, AnswerQuestion, CoordinatedRun, CoordinationState, ExecutionLease,
     ExecutionReceipt, FinalReviewDecision, FinishUnchanged, FencedCommit, RequestFinalReview,
     ReviewBundle, SaveCoordination, payload_fingerprint,
-    ReserveLlmAttempt, ResumeRun,
+    ReserveLlmAttempt, ResumeRun, UNKNOWN_ANSWERS,
 )
 from app.orchestration.run_agent3_payload import Agent3RunOutput
 
@@ -207,11 +207,13 @@ class FakeCoordinatedRunStateClient(FakeRunStateClient):
             answer = req.answer.strip()
             if not answer:
                 raise InvalidStateTransition("Answer must not be blank", run_id=run.run_id)
-            unknown = req.disposition == "unknown" or answer.casefold() in {"모름", "모르겠어요", "unknown", "확인 필요"}
+            unknown = req.disposition == "unknown" or answer.casefold() in UNKNOWN_ANSWERS
             if not unknown and answer not in q.choices and not q.allow_other:
                 raise InvalidStateTransition("Select one of the allowed choices", run_id=run.run_id)
-            # Unknown is recorded for audit, never treated as a resolved blocker.
-            q.answer, q.status = answer, "open" if unknown else "resolved"
+            # '모름'도 유효한 답이다: 질문은 닫고(Backend와 같은 정책) disposition으로 구분한다.
+            # 같은 질문을 다시 띄우지 않으며, 필수 질문이면 Supervisor가 분석을 보류한다.
+            q.answer, q.status = answer, "resolved"
+            q.disposition = "unknown" if unknown else "provided"
             run.coordination.answers.append(Answer(answer_id=f"answer-{req.operation_id}",
                 question_id=q.question_id, text=answer, answered_by="pm",
                 answered_at=self._clock().isoformat(), verified=False))
@@ -220,9 +222,8 @@ class FakeCoordinatedRunStateClient(FakeRunStateClient):
                                 "resolved": not unknown, "operation_id": req.operation_id})
             if not any(q.blocking and q.status == "open" for q in run.coordination.questions):
                 run.status, run.pending = "RUNNING", None
-                if not unknown:
-                    run.coordination.segment_steps = 0
-                    run.coordination.segment_llm_calls = 0
+                run.coordination.segment_steps = 0
+                run.coordination.segment_llm_calls = 0
             run.review_bundle = None
             # An answer may affect the analysis: keep history, invalidate existing outputs.
             if not unknown:

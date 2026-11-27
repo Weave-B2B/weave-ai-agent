@@ -20,7 +20,7 @@ from app.kb.loader import baselines, rate_cards, superseded_by
 from app.llm.factory import LlmConfigError
 from app.orchestration.local_run_store import LocalRunStore
 from app.orchestration.progress import CaseProgress
-from app.orchestration.run_coordination import AnswerQuestion, FinalReviewDecision, ResumeRun
+from app.orchestration.run_coordination import AnswerQuestion, FinalReviewDecision, ResumeRun, UNKNOWN_ANSWERS
 from app.orchestration.run_state import RunInputs
 from schema.schemas import Agent1Input
 from app.orchestration.run_supervisor import RunSupervisorRuntime
@@ -60,6 +60,7 @@ class AnswerBody(RevisionBody):
     question_id: str
     text: str = Field(min_length=1, max_length=4000)
     operation_id: str = Field(min_length=1)
+    disposition: Literal["provided", "unknown"] | None = None
 
 
 class ReviewBody(RevisionBody):
@@ -114,7 +115,8 @@ def _view(store, case_id):
     target = run.review_bundle
     from app.agents.agent3.workflow import _hash
     snapshot_hash = _hash(target.model_dump()) if target else None
-    pending = next((q for q in run.coordination.questions if q.status == "open"), None)
+    open_questions = [q for q in run.coordination.questions if q.status == "open"]
+    pending = next((q for q in open_questions if q.blocking), open_questions[0] if open_questions else None)
     hold = run.coordination.hold_reason
     if run.state.status == "WAITING_PM_REVIEW" and review and review["decision"] == "hold":
         hold = "PM 최종 검토 보류"
@@ -209,7 +211,7 @@ def step(case_id: str, body: RevisionBody, store=Depends(get_store)):
 def answer(case_id: str, body: AnswerBody, store=Depends(get_store)):
     store.answer_question(AnswerQuestion(run_id=case_id, expected_state_revision=body.state_revision,
         operation_id=body.operation_id, question_id=body.question_id, answer=body.text, answered_by="prototype-pm",
-        disposition="unknown" if body.text.strip() == "모름" else "provided"))
+        disposition=body.disposition or ("unknown" if body.text.strip().casefold() in UNKNOWN_ANSWERS else "provided")))
     return _view(store, case_id)
 
 

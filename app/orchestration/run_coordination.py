@@ -59,16 +59,43 @@ class FinishUnchanged(RunWrite):
     observed_payload: dict
 
 
+MAX_QUESTION_CHOICES = 3
+"""Concrete choices per PM question. The UI appends '기타 · 직접 입력', so at most four options show."""
+
+_RESERVED_CHOICES = {"기타", "기타(직접입력)", "기타·직접입력", "직접입력", "모름", "모르겠어요", "unknown", "확인필요", "other"}
+UNKNOWN_ANSWERS = frozenset({"모름", "모르겠어요", "unknown", "확인 필요", "현재 확인 불가"})
+
+
+def clean_choices(choices) -> list[str]:
+    """Trim, de-duplicate and cap model choices; '기타'/'모름' are UI controls, not choices."""
+    result, seen = [], set()
+    for choice in choices or []:
+        text = " ".join(str(choice).split())
+        key = text.casefold().replace(" ", "").replace("·", "")
+        if not text or key in seen or key in {c.replace("·", "") for c in _RESERVED_CHOICES}:
+            continue
+        seen.add(key)
+        result.append(text[:200])
+        if len(result) == MAX_QUESTION_CHOICES:
+            break
+    return result
+
+
 class PMQuestion(_M):
     question_id: str = Field(min_length=1)
     item_ids: list[str] = Field(default_factory=list, description="Empty means a request-wide question")
     field: str = Field(min_length=1)
     text: str = Field(min_length=1)
+    reason: str = ""
+    basis_refs: list[str] = Field(default_factory=list)
+    target: Literal["pm", "client"] = "pm"
     choices: list[str] = Field(default_factory=list, max_length=8)
     allow_other: bool = True
     blocking: bool = True
     status: Literal["open", "resolved"] = "open"
     answer: str | None = None
+    # unknown = PM이 '모름'으로 답함. 질문은 닫고(resolved) 같은 질문을 다시 띄우지 않는다.
+    disposition: Literal["provided", "unknown"] | None = None
     stage: Stage = "agent2"
 
 

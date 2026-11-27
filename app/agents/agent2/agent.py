@@ -59,6 +59,8 @@ class Cite(_LlmOut):
 class QuestionDraft(_LlmOut):
     text: str
     reason: str
+    choices: list[str] = Field(default_factory=list, max_length=3, description=(
+        "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
     field: Optional[str]
     target: Literal["pm", "client"]
     blocking: bool
@@ -326,7 +328,7 @@ class LlmAgent2:
         if q is None:
             return None
         return Question(question_id="", case_id=case_id, stage="agent2", item_ids=[item.item_id], field=q.field,
-                        text=q.text, reason=q.reason, basis_refs=[f"{e.doc_id}:{e.section_id}" for e in j.evidence],
+                        text=q.text, reason=q.reason, choices=q.choices, basis_refs=[f"{e.doc_id}:{e.section_id}" for e in j.evidence],
                         target=q.target, blocking=q.blocking)
 
     @staticmethod

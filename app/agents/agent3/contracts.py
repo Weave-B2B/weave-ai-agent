@@ -59,6 +59,9 @@ class Agent3Need(BaseModel):
     kind: Literal["more_evidence", "client_input", "missing_standard", "not_required"]
     item_ids: list[str] = Field(min_length=1)
     topic: str = Field(min_length=1)
+    reason: str = ""
+    choices: list[str] = Field(default_factory=list, max_length=3, description=(
+        "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
     target: Literal["agent2", "pm", "client", "none"] | None = None
     source: Literal["agent2", "agent3", "server"] = "server"
     question_id: str | None = None

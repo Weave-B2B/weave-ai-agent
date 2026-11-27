@@ -151,8 +151,52 @@ def test_unknown_answer_does_not_call_more_models(setup):
     run = state.get_coordinated_run("run-1")
     runtime(setup).answer(AnswerQuestion(run_id="run-1", expected_state_revision=run.state.state_revision,
         operation_id="unknown", question_id="q1", answer="모름", disposition="unknown", answered_by="pm"))
-    assert runtime(setup).step("run-1")["status"] == "waiting_input"
-    assert not decisions.calls and not workers.agent3.llm.calls
+    # 같은 질문을 다시 띄우지 않는다(이전에는 open으로 남아 무한 반복).
+    run = state.get_coordinated_run("run-1")
+    assert run.state.status == "RUNNING" and run.coordination.questions[0].status == "resolved"
+    # 모름은 새 사실이 아니므로 Agent 1 결과를 다시 만들지 않는다.
+    assert not run.state.agents["agent1"].stale
+
+
+def test_unknown_answer_to_blocking_agent_question_holds_instead_of_repeating(setup):
+    workers = setup[1]
+    original = workers.agent1.run
+    def blocking_question(inp):
+        out = original(inp)
+        out.questions = [Question(question_id="deadline", case_id=inp.context.case_id, stage="agent1",
+            item_ids=[], field="deadline_fixed", text="12월 말 최종 검수일은 변경할 수 없는 확정 일정인가요?",
+            reason="검수일 조정 가능 여부에 따라 반영 범위가 달라집니다", target="pm", blocking=True,
+            choices=["확정 일정이며 변경 불가", "고객과 협의해 조정 가능", "모름"])]
+        out.status = "NEEDS_INPUT"
+        return out
+    workers.agent1.run = blocking_question
+    state = setup[0]
+    runtime(setup).step("run-1")
+    waiting = runtime(setup).step("run-1")
+    q = waiting["run"].coordination.questions[0]
+    assert waiting["status"] == "waiting_input"
+    assert (q.reason, q.target) == ("검수일 조정 가능 여부에 따라 반영 범위가 달라집니다", "pm")
+    # '기타'·'모름'은 화면 컨트롤이라 선택지에서 빠진다 → 화면에는 구체 선택지 2개 + 기타.
+    assert q.choices == ["확정 일정이며 변경 불가", "고객과 협의해 조정 가능"]
+    runtime(setup).answer(AnswerQuestion(run_id="run-1", expected_state_revision=waiting["run"].state.state_revision,
+        operation_id="unknown", question_id="deadline", answer="모름", disposition="unknown", answered_by="pm"))
+    held = runtime(setup).step("run-1")
+    assert held["status"] == "waiting" and "모름" in held["reason"]
+    assert len(held["run"].coordination.questions) == 1  # 같은 질문을 새로 만들지 않는다
+    assert state.get_coordinated_run("run-1").state.status != "WAITING_INPUT"
+    assert not setup[2].calls
+
+
+def test_reworded_duplicate_from_another_agent_is_not_asked_again(setup):
+    from app.orchestration.run_coordination import PMQuestion, SaveCoordination
+    state = setup[0]
+    run = state.get_coordinated_run("run-1")
+    coord = run.coordination.model_copy(deep=True)
+    coord.questions = [PMQuestion(question_id="old", item_ids=["CR-A-001-1"], field="reuse", text="기존 기능을 재사용할 수 있나요?",
+                                  status="resolved", answer="가능", disposition="provided")]
+    # Agent 2가 답변 후 다른 ID·필드로 같은 질문을 다시 낸 상황
+    from app.orchestration.run_supervisor import _question_text_key
+    assert _question_text_key("기존 기능을 재사용할 수 있나요 ?") == _question_text_key(coord.questions[0].text)
 
 
 def test_old_answer_revision_is_rejected(setup):

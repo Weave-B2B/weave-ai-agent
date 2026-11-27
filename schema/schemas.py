@@ -137,6 +137,8 @@ class Question(_M):
     field: Optional[str] = Field(None, description="빠진 정보 이름 (예: photo_limit, open_date)")
     text: str
     reason: str = Field(description="무엇이 왜 빠졌나")
+    choices: list[str] = Field([], max_length=3, description="답변자가 고를 수 있는 구체 선택지(최대 3개). "
+                                                            "'기타·직접 입력'과 '모름'은 화면이 따로 붙이므로 넣지 않는다")
     basis_refs: list[str] = Field([], description="근거 참조: 원문 span·문서 조항·도구 missing 필드")
     target: Literal["pm", "client"]
     blocking: bool = Field(False, description="true면 답변 전까지 다음 단계로 가지 않음")

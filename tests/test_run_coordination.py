@@ -158,14 +158,21 @@ def test_answers_atomically_resume_only_after_all_blockers_resolved(ready):
     assert state.review_bundle is None
 
 
-def test_unknown_answer_keeps_blocker_and_history(ready):
+def test_unknown_answer_closes_question_without_invalidating_results(ready):
+    """'모름'은 질문을 닫는다(Backend와 같은 정책). 열어 두면 Supervisor가 같은 질문을 무한히 다시 띄운다."""
     f = ready
     f.client.save_coordination(f.request(SaveCoordination, state=CoordinationState(questions=[question()])))
     f.client.answer_question(f.request(AnswerQuestion, question_id="q1", answer="모름", answered_by="pm"))
     state = f.client.get_coordinated_run("run")
-    assert state.state.status == "WAITING_INPUT"
-    assert state.coordination.questions[0].status == "open"
+    assert state.state.status == "RUNNING"
+    q = state.coordination.questions[0]
+    assert (q.status, q.disposition, q.answer) == ("resolved", "unknown", "모름")
+    assert state.coordination.answers[-1].text == "모름"
     assert f.client.history("run")[-1]["resolved"] is False
+    # 모름은 새 사실이 아니므로 기존 결과를 무효화하지 않는다.
+    assert not any(a.stale for a in state.state.agents.values())
+    with pytest.raises(InvalidStateTransition):
+        f.client.answer_question(f.request(AnswerQuestion, question_id="q1", answer="예", answered_by="pm"))
 
 
 def test_stale_answer_revision_does_not_change_question(ready):

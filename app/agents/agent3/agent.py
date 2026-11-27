@@ -13,7 +13,7 @@ from app.llm.client import LlmClient
 from app.orchestration.preflight import preflight_a3
 from app.tools.errors import ToolInputError
 from app.tools.get_schedule import get_schedule
-from schema.schemas import Agent3Input, Agent3Output, AgentError, Estimate, Line, Meta, Question, Schedule
+from schema.schemas import Agent3Input, Agent3Output, AgentError, EffortRule, Estimate, Line, Meta, Question, Schedule
 
 
 def _retryable_rule_error(proposal, inp: Agent3Input, rules: dict) -> bool:
@@ -121,14 +121,18 @@ class LlmAgent3:
                     invalid_rule = True
                     continue
                 used_rules.add(line.rule_id)
-                marker = "작업 유형별 임시 기준 · 적용 적합성 PM 확인 필요" if rule.get("kind") == "general_test" else "테스트 공수 기준"
+                effort_rule = EffortRule(
+                    kind="general_test" if rule.get("kind") == "general_test" else "matched_test",
+                    id=line.rule_id,
+                    version=effort_rules["version"],
+                )
                 extra = {"shared_work_key": line.shared_work_key} if provisional else {}
                 if provisional and workbook and (line.assignee or line.after or line.before or line.extends_task):
                     # 이름 대조·계산은 일정 계산 단계(schedule_plan)에서 한다. 모델 제안을 그대로 보존한다.
                     extra["schedule_hint"] = ScheduleHint(assignee=line.assignee, after=line.after,
                                                           before=line.before, extends_task=line.extends_task)
                 lines.append(TaskLine(**extra, task=line.task, item_ids=line_ids, role=line.role,
-                                  md=rule["md"], assumption=f"{line.assumption} [{marker} {effort_rules['version']}:{line.rule_id}]"))
+                                  md=rule["md"], assumption=line.assumption, effort_rule=effort_rule))
             if invalid_rule:
                 missing_rules.extend(item_ids)
                 lines = []
@@ -143,19 +147,19 @@ class LlmAgent3:
         questions = [Question(
             question_id=f"{inp.context.case_id}-A3Q{n}", case_id=inp.context.case_id,
             stage="agent3", item_ids=ids(q.item_numbers), field=q.field,
-            text=q.text, reason=q.reason, target=q.target, blocking=q.blocking,
+            text=q.text, reason=q.reason, choices=q.choices, target=q.target, blocking=q.blocking,
         ) for n, q in enumerate(proposal.questions, 1)]
         if missing_rules:
             questions.append(Question(question_id=f"{inp.context.case_id}-A3QRULE", case_id=inp.context.case_id,
                 stage="agent3", item_ids=sorted(set(missing_rules)), field="effort_rule",
                 text="해당 작업에 적용할 공수 기준을 확인해주세요.",
                 reason="모델이 공수 기준을 찾지 못했거나 기준 ID·직군이 잘못됐거나 중복되었습니다. 입력과 기준을 확인한 뒤 다시 실행해주세요.", target="pm", blocking=True))
-        needs = [Agent3Need(kind=n.kind, item_ids=ids(n.item_numbers), topic=n.topic, source="agent3", target=n.target) for n in proposal.needs]
+        needs = [Agent3Need(kind=n.kind, item_ids=ids(n.item_numbers), topic=n.topic, reason=n.reason, choices=n.choices, source="agent3", target=n.target) for n in proposal.needs]
         if not provisional:
             for n, need in enumerate(needs):
                 questions.append(Question(question_id=f"{inp.context.case_id}-A3NEED{n}",
                     case_id=inp.context.case_id, stage="agent3", item_ids=need.item_ids,
-                    field=need.kind, text=need.topic, reason="잠정 산정을 위한 추가 확인",
+                    field=need.kind, text=need.topic, reason=need.reason or "잠정 산정을 위한 추가 확인", choices=need.choices,
                     target="client" if need.kind == "client_input" else "pm", blocking=True))
         blocked_items = {i for q in questions if q.blocking and q.status == "open" for i in q.item_ids}
         if provisional:

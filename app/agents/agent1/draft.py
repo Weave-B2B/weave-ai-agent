@@ -35,6 +35,8 @@ class DraftQuestion(_DraftModel):
     field: str | None = None
     text: str
     reason: str
+    choices: list[str] = Field(default_factory=list, max_length=3, description=(
+        "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
     target: Literal["pm", "client"]
     blocking: bool = False
     quote: str | None = None
