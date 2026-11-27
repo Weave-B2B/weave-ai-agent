@@ -18,6 +18,6 @@ def calc_cost(lines: list[dict], rate_card_id: str, *, project_id: str | None = 
             raise ToolInputError("md must be a finite JSON number")
     return calculation_client(rate_card_id).labor_totals({
         "rate_card_id": rate_card_id, "project_id": project_id,
-        "lines": [{"key": f"L{n + 1}", "role": line.get("role"), "md": line.get("md")}
+        "lines": [{"key": f"L{n + 1}", "role": line.get("role"), "md": line.get("md"), **({"billable": line["billable"]} if "billable" in line else {})}
                   for n, line in enumerate(lines)],
     })

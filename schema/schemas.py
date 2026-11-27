@@ -331,12 +331,20 @@ class Agent3Input(_M):
         return [i for i in self.items if i.item_id in sel]
 
 
+class EffortRule(_M):
+    kind: Literal["general_test", "matched_test"]
+    id: str = Field(min_length=1, max_length=120)
+    version: str = Field(min_length=1, max_length=256)
+
+
 class Line(_M):
     task: str
     item_ids: list[str]
     role: Role
-    md: float = Field(ge=0, description="0.5 단위. 0 허용")
+    md: float = Field(ge=0, description="0.25 MD 단위. 0 허용. PM 시간 수정 포함")
     assumption: str = ""
+    effort_rule: EffortRule | None = None
+    billable: bool = True
 
 
 class Schedule(_M):
@@ -374,7 +382,7 @@ class Estimate(_M):
             raise ValueError("not_estimable: lines는 비우고 schedule.reason 필수")
         if self.status == "draft" and not self.lines: raise ValueError("draft: lines 필수")
         for l in self.lines:
-            if (l.md * 2) % 1: raise ValueError(f"MD {l.md}는 0.5 단위가 아님")
+            if (l.md * 4) % 1: raise ValueError(f"MD {l.md}는 0.25 단위가 아님")
         if self.totals is not None and self.totals_source != "calc_cost":
             raise ValueError("totals는 calc_cost 결과만")
         return self
