@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from app.agents.agent1.draft import Agent1Draft, DraftItem
 from app.agents.base import AgentFailure
 from schema.schemas import Agent1Input, Agent1Output, AgentError, Item, Question, Span
+from app.agents.gaps import gaps_from_output
 
 
 @dataclass
@@ -328,7 +329,9 @@ def assemble(
         "title": _title(draft.title),
     }
     try:
-        return Agent1Output.model_validate(payload), report
+        output = Agent1Output.model_validate(payload)
+        output.gaps = gaps_from_output("agent1", output)
+        return output, report
     except ValidationError as exc:
         paths = [
             ".".join(str(part) for part in error["loc"]) or "$"
@@ -399,6 +402,7 @@ def _assemble_questions(
             "text": draft_question.text,
             "reason": draft_question.reason,
             "choices": draft_question.choices,
+            "assumption_if_unknown": draft_question.assumption_if_unknown,
             "basis_refs": basis_refs,
             "target": draft_question.target,
             "blocking": draft_question.blocking,

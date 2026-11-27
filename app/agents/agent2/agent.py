@@ -14,6 +14,7 @@ import time
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+from app.agents.gaps import gaps_from_output
 
 from schema.schemas import (
     AgentError, Agent2Input, Agent2Output, Assessment, EvidenceRole, Evidence, Item, Meta, Question, ScopeLabel,
@@ -59,6 +60,8 @@ class QuestionDraft(_LlmOut):
     reason: str
     choices: list[str] = Field(default_factory=list, max_length=3, description=(
         "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
+    assumption_if_unknown: str | None = Field(None, description=(
+        "답이 없을 때 진행할 가정 한 문장. 필수가 아닌 정보는 질문 대신 이 가정으로 진행한다"))
     field: Optional[str]
     target: Literal["pm", "client"]
     blocking: bool
@@ -223,6 +226,7 @@ class LlmAgent2:
         for q in guarded.questions:
             ok = set().union(*(refs[i] for i in q.item_ids if i in refs))
             q.basis_refs = [r for r in q.basis_refs if r in ok]
+        guarded.gaps = gaps_from_output("agent2", guarded)
         return guarded
 
     # ---- 항목 하나 ----
@@ -326,7 +330,7 @@ class LlmAgent2:
         if q is None:
             return None
         return Question(question_id="", case_id=case_id, stage="agent2", item_ids=[item.item_id], field=q.field,
-                        text=q.text, reason=q.reason, choices=q.choices, basis_refs=[f"{e.doc_id}:{e.section_id}" for e in j.evidence],
+                        text=q.text, reason=q.reason, choices=q.choices, assumption_if_unknown=q.assumption_if_unknown, basis_refs=[f"{e.doc_id}:{e.section_id}" for e in j.evidence],
                         target=q.target, blocking=q.blocking)
 
     @staticmethod

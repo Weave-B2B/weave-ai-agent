@@ -62,6 +62,8 @@ class Agent3Need(BaseModel):
     reason: str = ""
     choices: list[str] = Field(default_factory=list, max_length=3, description=(
         "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
+    assumption_if_unknown: str | None = Field(None, description=(
+        "답이 없을 때 진행할 가정 한 문장. 필수가 아닌 정보는 질문 대신 이 가정으로 진행한다"))
     target: Literal["agent2", "pm", "client", "none"] | None = None
     source: Literal["agent2", "agent3", "server"] = "server"
     question_id: str | None = None
