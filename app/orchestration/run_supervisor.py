@@ -426,6 +426,25 @@ class RunSupervisorRuntime:
                     sha256=calculation_context.workbook_sha256)
         return result
 
+    def _probe_activity(self, current):
+        """처음 산정할 때만 진행 자료를 조사해 고정한다. 조회 방식이 없으면 None (자료 없이 산정)."""
+        from datetime import datetime, timezone
+        from app.agents.agent3.activity_probe import ActivityProbe
+        from app.integrations.work_activity.base import WorkActivityError, WorkActivityTools
+        from app.integrations.work_activity.factory import build_work_activity_source
+        from app.integrations.work_activity.models import WorkActivitySnapshot
+        from app.orchestration.progress import record_activity
+        try:
+            source = build_work_activity_source(settings)
+        except WorkActivityError as err:
+            return WorkActivitySnapshot.build(fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                              unavailable_reason=f"진행 자료를 조회하지 못했습니다: {err.message}")
+        if source is None:
+            return None
+        record_activity("Agent 3", "Jira 진행 상황을 조회하고 있습니다")
+        targets = [{"number": n, "text": item.text} for n, item in enumerate(current.targets(), 1)]
+        return ActivityProbe(self.llm, WorkActivityTools(source)).run(targets)
+
     def _impact(self, run, inp, rate, a1, a2, old, items, constraints, choice):
         tools = Agent3Orchestration(self.agents.agent3, draft_llm=self.draft_llm)
         run_inputs = self.state.get_inputs(run.state.run_id)
@@ -433,6 +452,8 @@ class RunSupervisorRuntime:
                                      run.state.agents["agent1"].current_result_id, run_inputs.calculation_context)
         # 진행 자료는 처음 산정 때 고정한 스냅샷을 재산정에서도 그대로 쓴다 (조회는 D단계 조사 단계에서 채운다)
         current.work_activity = old.work_activity if old else None
+        if current.work_activity is None and choice.action == "estimate_impact":
+            current.work_activity = self._probe_activity(current)
         view, previous = None, None
         context_changed = False
         if old and old.source:
