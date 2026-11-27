@@ -227,5 +227,8 @@ def test_general_test_rule_estimates_multiple_pm_selected_items(a3_input):
     assert out.status == 'IMPACT_DRAFT_READY'
     assert [e.item_ids for e in out.estimates] == [[first.item_id], [second.item_id]]
     assert [e.totals.md for e in out.estimates] == [1.0, 1.5]
-    assert all('임시 기준' in e.lines[0].assumption for e in out.estimates)
+    lines = [estimate.lines[0] for estimate in out.estimates]
+    assert [line.assumption for line in lines] == ['기존 화면 변경', '기존 내부 API']
+    assert [line.effort_rule.id for line in lines] == ['general_fe_small', 'general_be_small']
+    assert all(line.effort_rule.kind == 'general_test' and line.effort_rule.version for line in lines)
     assert 'general_fe_small' in model.calls[0]['user']
