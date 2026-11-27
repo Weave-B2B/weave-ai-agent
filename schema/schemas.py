@@ -163,11 +163,33 @@ class Question(_M):
     reason: str = Field(description="무엇이 왜 빠졌나")
     choices: list[str] = Field([], max_length=3, description="답변자가 고를 수 있는 구체 선택지(최대 3개). "
                                                             "'기타·직접 입력'과 '모름'은 화면이 따로 붙이므로 넣지 않는다")
+    assumption_if_unknown: Optional[str] = Field(None, description="답이 없을 때 진행할 가정. 필수가 아닌 정보는 질문 대신 이 가정으로 진행한다")
     basis_refs: list[str] = Field([], description="근거 참조: 원문 span·문서 조항·도구 missing 필드")
     target: Literal["pm", "client"]
     blocking: bool = Field(False, description="true면 답변 전까지 다음 단계로 가지 않음")
     status: Literal["open", "answered", "resolved", "dismissed"] = Field("open", description="resolved는 재검토 후에만")
     gold_origin: Optional[str] = None
+
+
+GapResolver = Literal["docs", "activity", "pm", "client"]
+
+
+class InfoGap(_M):
+    """에이전트가 보고하는 빠진 정보 한 건. 질문 문장이 아니라 '무엇이 빠졌고 왜 필요한가'이다.
+    총괄 Clarifier가 gap을 합치고, 물을지·가정할지 정한 뒤 질문을 쓴다."""
+    gap_id: str = Field(description="단계·항목·slot으로 만든 고정 ID — 같은 정보면 재실행해도 같다")
+    stage: Stage
+    item_ids: list[str] = []
+    slot: str = Field(min_length=1, description="빠진 정보 이름 (예: photo_limit, deadline_fixed)")
+    missing: str = Field(min_length=1, description="무엇이 빠졌나 (사람이 읽는 설명)")
+    impact: str = Field("", description="답이 무엇을 바꾸나")
+    basis_refs: list[str] = []
+    blocking: bool = False
+    assumption_if_unknown: Optional[str] = None
+    target: Literal["pm", "client"] = "pm"
+    suggested_options: list[str] = Field([], max_length=3)
+    resolvable_by: list[GapResolver] = Field(default_factory=lambda: ["pm"])
+    question_id: Optional[str] = Field(None, description="같은 정보를 묻는 에이전트 질문 ID (전환 기간 호환)")
 
 
 class Answer(_M):
@@ -216,6 +238,7 @@ class _Out(_M):
     context: Context
     meta: Meta = Meta()
     questions: list[Question] = []
+    gaps: list[InfoGap] = Field([], description="빠진 정보 보고. 질문 작성은 총괄 Clarifier가 한다")
     error: Optional[AgentError] = Field(None, description="정상·보류는 null, 기술 실패만 객체")
 
     def _status_rules(self, ok: str):

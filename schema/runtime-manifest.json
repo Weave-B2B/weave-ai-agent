@@ -2,7 +2,7 @@
   "recorded_at": "2026-11-27",
   "schema_path": "schema/schemas.py",
   "schema_version": "0.3.0",
-  "schema_sha256": "757d492260a67fb9b85fcf9eaee65f9a79104f6d8c895fd860189e10b06a86eb",
+  "schema_sha256": "a8c493144e22c1d61c96227a28a0255132e9f4d647e3822f453bdf4a07f6eaa9",
   "source_commit": "aff0a109f08a94e949f48f11c94e96a9ced34040",
   "dataset_baseline": {
     "manifest_path": "eval/dataset/manifest.json",
@@ -45,6 +45,10 @@
     {
       "commit": "feat/#20-clarifier-evidence-ref",
       "summary": "EvidenceRef 추가 (근거 출처 request·contract·activity와 시스템 일치 검증, 기존 모델 변경 없음)"
+    },
+    {
+      "commit": "feat/#20-clarifier-evidence-ref",
+      "summary": "InfoGap 추가, Agent1·2·3 출력에 gaps 선택 필드, Question.assumption_if_unknown 선택 필드 추가 (기존 필드 변경 없음)"
     }
   ]
 }
