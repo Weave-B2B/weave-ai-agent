@@ -187,6 +187,26 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
   }
   const STAGE_LABELS = { agent1: 'Agent 1 · 요청 분석', agent2: 'Agent 2 · 범위 검토', agent3: 'Agent 3 · 영향 산정' };
   // 구체 선택지는 최대 3개, '기타 · 직접 입력'을 더해 화면에는 최대 4개만 보인다. '모름'은 별도 버튼이다.
+  const clip = (text, n = 40) => { const t = String(text || '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n)}…` : t; };
+  // 질문의 관련 항목 ID를 화면에 보이는 'R번호 + 항목 요약'으로 바꾼다. 모르는 ID는 그대로 노출하지 않는다.
+  function questionItemLabels(s, q) {
+    const items = s?.realA1?.items || [];
+    const labels = (q?.item_ids || []).map(id => { const i = items.findIndex(item => item.item_id === id); return i < 0 ? null : `R${i + 1} ${clip(items[i].text)}`; });
+    if (!q?.item_ids?.length) return ['요청 전체'];
+    return labels.some(Boolean) ? labels.filter(Boolean) : [`관련 요청 ${q.item_ids.length}건`];
+  }
+  // 근거 참조를 사람이 읽는 문장으로 바꾼다: 원문 위치 → 원문 인용, 문서:조항 → 문서 제목 · 조항.
+  function questionBasisLabels(s, q) {
+    const source = s?.messageText || s?.text || '';
+    const docs = backendProject?.documents || [];
+    return (q?.basis_refs || []).map(ref => {
+      const span = /^message_text\[(\d+):(\d+)\]$/.exec(ref);
+      if (span) { const quote = source.slice(+span[1], +span[2]).trim(); return quote ? `고객 요청 원문 “${clip(quote, 60)}”` : '고객 요청 원문'; }
+      const cite = /^([^:\s]+):(.+)$/.exec(ref);
+      if (cite) { const doc = docs.find(d => d.doc_id === cite[1]); return `${doc?.title || cite[1]} · ${cite[2]} 항목`; }
+      return ref;
+    }).filter((label, index, all) => all.indexOf(label) === index).slice(0, 3);
+  }
   function questionChoiceList(q) {
     const reserved = /^(기타|직접\s*입력|모름|모르겠어요|확인\s*필요|unknown|other)/i;
     const seen = new Set();
@@ -393,6 +413,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
     s.stateRevision = data.state_revision;
     s.realA1 = data.a1 || s.realA1; s.realA2 = data.a2 || null; s.realA3 = data.agent3?.impact || null;
     s.items = (s.realA1?.items || []).map(i => i.text);
+    s.messageText = data.input?.message_text || s.messageText || null;
     s.supervisorQuestion = data.question ? { ...data.question, text: data.question.topic || data.question.text } : null;
     s.emailDraft = data.agent3?.documents?.email || null;
     s.agreementDraft = data.agent3?.documents?.agreement || null;
@@ -709,10 +730,11 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       const q = pendingQuestion(s);
       const options = questionChoiceList(q);
       const concrete = options.some(([v]) => v !== 'other');
-      const meta = [STAGE_LABELS[q?.stage], q?.target === 'client' ? '고객 확인 사항' : 'PM 확인 사항', q?.item_ids?.length ? `관련 요청 ${q.item_ids.join(', ')}` : ''].filter(Boolean);
-      const basis = (q?.basis_refs || []).slice(0, 3);
+      const meta = [STAGE_LABELS[q?.stage], q?.target === 'client' ? '고객 확인 사항' : 'PM 확인 사항'].filter(Boolean);
+      const related = questionItemLabels(s, q);
+      const basis = questionBasisLabels(s, q);
       const disabled = s.running ? 'disabled' : '';
-      return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">추가 확인이 필요합니다</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div>${meta.length ? `<p class="caption">${esc(meta.join(' · '))}</p>` : ''}<p><strong>${esc(q?.text || '질문을 불러오지 못했습니다.')}</strong></p>${q?.reason ? `<div class="notice"><strong>확인이 필요한 이유</strong><p>${esc(q.reason)}</p>${basis.length ? `<p class="caption">근거: ${esc(basis.join(', '))}</p>` : ''}</div>` : ''}${concrete ? `<fieldset class="analysis-choices"><legend class="caption">답변 선택</legend>${options.map(([v, l]) => `<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected === v ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</fieldset>` : ''}${selected === 'other' ? `<label class="field">${concrete ? '기타 내용' : '답변'}<textarea id="analysis-pm-other" placeholder="확인한 내용을 입력해 주세요.">${esc(other)}</textarea></label>` : ''}<div class="form-actions"><button class="button primary" data-demo-action="answer" ${disabled || (!selected ? 'disabled' : '')}>답변하고 계속</button><button class="button" data-demo-action="answer-unknown" ${disabled}>현재 확인 불가 · 미확정으로 처리</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</dialog>`;
+      return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">추가 확인이 필요합니다</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div>${meta.length ? `<p class="caption">${esc(meta.join(' · '))}</p>` : ''}<p class="caption">관련 요청: ${esc(related.join(' / '))}</p><p><strong>${esc(q?.text || '질문을 불러오지 못했습니다.')}</strong></p>${q?.reason ? `<div class="notice"><strong>확인이 필요한 이유</strong><p>${esc(q.reason)}</p>${basis.length ? `<p class="caption">근거: ${esc(basis.join(' / '))}</p>` : ''}</div>` : ''}${concrete ? `<fieldset class="analysis-choices"><legend class="caption">답변 선택</legend>${options.map(([v, l]) => `<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected === v ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</fieldset>` : ''}${selected === 'other' ? `<label class="field">${concrete ? '기타 내용' : '답변'}<textarea id="analysis-pm-other" placeholder="확인한 내용을 입력해 주세요.">${esc(other)}</textarea></label>` : ''}<div class="form-actions"><button class="button primary" data-demo-action="answer" ${disabled || (!selected ? 'disabled' : '')}>답변하고 계속</button><button class="button" data-demo-action="answer-unknown" ${disabled}>현재 확인 불가 · 미확정으로 처리</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</dialog>`;
     }
     const choices = final ? [['approve', '결과 확인 완료'], ['hold', '보류하고 나중에 확인'], ['other', '수정 요청 직접 입력']] : review ? [['범위 판정 결과 확인 완료, 영향 산정 진행', '확인하고 영향 산정 진행'], ['hold', '보류하고 나중에 확인'], ['other', '수정·추가 조건 직접 입력']] : [['기존 기능을 재사용하는 가정으로 초안 작성', '기존 기능 재사용으로 진행'], ['추가 정보 확인 후 진행', '추가 정보를 확인한 뒤 진행'], ['other', '기타 · 직접 입력']];
     return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">${final ? '최종 결과를 확인해 주세요' : review ? '범위 판정 결과를 확인해 주세요' : '진행 조건을 확인해 주세요'}</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div><p>${final ? (realRun(s) ? (s.emailDraft ? '범위 판단·산정과 메일 초안을 확인합니다. 고객 발송 전 검토입니다.' : '확인을 선택하면 먼저 고객 협의 메일 초안을 생성합니다. 초안을 검토한 뒤 다시 확인해 주세요.') : '범위 판단·산정·문서 초안을 한 번에 확인합니다. 실제 고객 발송 전 PM 검토입니다.') : review ? 'Agent 2가 계약 문서를 근거로 판정한 결과입니다. 확인하면 Agent 3 영향 산정을 이어서 실행합니다.' : '확인 내용을 선택한 뒤 Agent 2 범위 검토와 Agent 3 영향 산정을 이어서 실행합니다.'}</p>${review ? scopeSummary(s) : ''}${final && s.supervisor && (s.realA3?.estimates || []).some(e => e.schedule?.business_days == null) ? `<label class="analysis-choice"><input type="checkbox" id="analysis-ack-schedule" ${s.ackUnknownSchedule ? 'checked' : ''}><span>일정 미산정 사실을 확인했습니다. 고객에게 확정 일정으로 안내하지 않습니다.</span></label>` : ''}${final && totalsFor(s) ? `<div class="notice">예상 공수 ${esc(totalsFor(s).md ?? '미산정')} MD · 판매가 ${won(totalsFor(s).price)}</div>` : ''}<fieldset class="analysis-choices"><legend class="caption">${final ? '검토 결과' : review ? '확인 방법' : '진행 방법'} 선택</legend>${choices.map(([v, l]) => `<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</fieldset>${selected === 'other' ? `<label class="field">기타 내용<textarea id="analysis-pm-other" placeholder="추가 조건이나 수정할 내용을 입력하세요.">${esc(other)}</textarea></label><div class="form-actions"><button class="button primary" data-demo-action="answer">입력 내용 반영</button></div>` : ''}${final && s.supervisor ? `<div class="form-actions"><button class="button primary" data-demo-action="answer" ${!selected || s.running ? 'disabled' : ''}>최종 검토 저장</button></div>` : ''}${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</dialog>`;

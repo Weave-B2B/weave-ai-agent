@@ -353,8 +353,9 @@ test('restoring a case loads real server data and does not invent final approval
 
 test('PM question dialog shows at most four options including direct input and submits only on explicit click',async t=>{
   const q={question_id:'Q-REUSE',stage:'agent2',text:'기존 사진 업로드 기능을 재사용할 수 있나요?',reason:'원문만으로 확정되지 않았습니다.',target:'pm',blocking:true,status:'open',
-    basis_refs:['FSP-A-001:F-11'],choices:['기존 기능 재사용 가능','신규 구현 필요','일부 재사용 후 보완','네 번째 선택지','기타(직접입력)','모름']};
-  const session={id:'CR-UI-QCHOICE',caseId:'C-QC',stateRevision:3,text:'요청',created:'2026-11-10',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q};
+    item_ids:['C-QC-2'],basis_refs:['FSP-A-001:F-11','message_text[0:9]'],choices:['기존 기능 재사용 가능','신규 구현 필요','일부 재사용 후 보완','네 번째 선택지','기타(직접입력)','모름']};
+  const a1={items:[{item_id:'C-QC-1',text:'리뷰 목록 정렬 변경'},{item_id:'C-QC-2',text:'리뷰 사진 업로드 최대 3장으로 확대'}]};
+  const session={id:'CR-UI-QCHOICE',caseId:'C-QC',stateRevision:3,text:'사진 업로드 늘려 주세요',created:'2026-11-10',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q,realA1:a1,messageText:'사진 업로드 늘려 주세요'};
   const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
   const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
   let submitted=null;
@@ -366,7 +367,7 @@ test('PM question dialog shows at most four options including direct input and s
     if (url.endsWith('/step')) {
       return {ok:true,json:async()=>({event:{action:'draft_documents',status:'ready'},state:{state_revision:4,a1:{items:[]},ready_for_review:true,agent3:{impact:{status:'NOT_REQUIRED',estimates:[]},snapshot_hash:'H1',documents:{email:{subject:'제목',body:'본문'}}}}})};
     }
-    return {ok:true,json:async()=>({state_revision:3,a1:{items:[]},question:q})};
+    return {ok:true,json:async()=>({state_revision:3,a1,input:{message_text:'사진 업로드 늘려 주세요'},question:q})};
   };
   h.demo.enter(session.id);
   await new Promise(resolve=>setTimeout(resolve,10));
@@ -378,7 +379,12 @@ test('PM question dialog shows at most four options including direct input and s
   assert.doesNotMatch(html,/네 번째 선택지/);
   assert.match(html,/기타 · 직접 입력/);
   assert.match(html,/확인이 필요한 이유/);
-  assert.match(html,/FSP-A-001:F-11/);
+  // 내부 ID·위치 표기 대신 사람이 읽는 표기
+  assert.match(html,/관련 요청: R2 리뷰 사진 업로드 최대 3장으로 확대/);
+  assert.doesNotMatch(html,/C-QC-2/);
+  assert.match(html,/FSP-A-001 · F-11 항목/);
+  assert.match(html,/고객 요청 원문 “사진 업로드 늘려”/);
+  assert.doesNotMatch(html,/message_text\[/);
   assert.doesNotMatch(html,/id="analysis-pm-other"/);
   h.choice('기존 기능 재사용 가능');
   await new Promise(resolve=>setTimeout(resolve,10));
