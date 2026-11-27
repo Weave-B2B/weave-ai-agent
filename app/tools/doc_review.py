@@ -16,6 +16,8 @@ import difflib
 import re
 from typing import Iterable
 
+from app.indexing.doc_dates import extract_dates
+
 MAX_VERSIONS = 5
 # 조항 코드: [A-F12] / TB-F10 / C-03 / Q-06 / CO-02 / REQ-001 / 제3조 (문서번호 CTR-A-001 속 A-001은 제외)
 _CODE = re.compile(r"\[([A-Z]{1,5}-[A-Z]{0,3}\d{1,3}[A-Z]?)\]|(?<![A-Za-z0-9-])([A-Z]{1,5}-[A-Z]{0,3}\d{1,3}[A-Z]?)(?![A-Za-z0-9-])|(제\s*\d+\s*조)")
@@ -53,10 +55,11 @@ def item_map(chunks: Iterable[dict]) -> list[dict]:
 def open_document(doc: dict) -> dict:
     """문서 정보 + 항목 지도(원문 제외). 원문은 항목 원문 보기 도구로 꺼낸다."""
     items = doc.get("items") or []
+    dates = extract_dates({"text": i.get("text"), "section_id": i.get("item_id")} for i in items)   # #92: 원문에서 찾은 날짜
     return {
         "document_id": doc.get("document_id"), "document_type": doc.get("document_type"), "version_no": doc.get("version_no"),
         "extraction_status": doc.get("extraction_status", "READY" if items else "FAILED"),
-        "effective_date": doc.get("effective_date"), "baseline_relation": doc.get("baseline_relation"), "judgment_role": doc.get("judgment_role"),
+        "effective_date": doc.get("effective_date") or dates["effective_date"], "dates": {k: v for k, v in dates.items() if k != "evidence"}, "baseline_relation": doc.get("baseline_relation"), "judgment_role": doc.get("judgment_role"),
         "items": [{"item_id": i["item_id"], "code": i.get("code"), "title": _title(i["heading"]), "page": i.get("page")} for i in items],
     }
 

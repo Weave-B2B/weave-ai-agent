@@ -15,6 +15,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.indexing.doc_dates import effect_status
+
 from schema.schemas import (
     AgentError, Agent2Input, Agent2Output, Assessment, EvidenceRole, Evidence, Item, Meta, Question, ScopeLabel,
 )
@@ -347,8 +349,17 @@ class LlmAgent2:
 
     @staticmethod
     def _shared_context(inp: Agent2Input, baseline: dict) -> str:
-        docs = [{"doc_id": d["doc_id"], "title": d.get("title") or d["doc_id"], "doc_type": d["doc_type"],
-                 "priority_rank": d["priority_rank"]} for d in baseline["documents"]]
+        as_of = inp.context.baseline_as_of
+        docs = []
+        for d in baseline["documents"]:
+            dates = d.get("text_dates") or {}
+            row = {"doc_id": d["doc_id"], "title": d.get("title") or d["doc_id"], "doc_type": d["doc_type"],
+                   "priority_rank": d["priority_rank"]}
+            for k in ("effective_date", "signed_date", "period_start", "period_end"):
+                if dates.get(k):
+                    row[k] = dates[k]
+            row["effect_status"] = effect_status(dates, as_of)
+            docs.append(row)
         return "\n".join([
             f"<baseline id=\"{inp.context.baseline_id}\" as_of=\"{inp.context.baseline_as_of}\">",
             json.dumps(docs, ensure_ascii=False), "</baseline>",

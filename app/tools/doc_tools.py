@@ -5,6 +5,7 @@ import re
 from collections import Counter
 from functools import lru_cache
 
+from app.indexing.doc_dates import extract_dates
 from app.kb.loader import baselines, documents, sections, superseded_by
 from app.tools.errors import BaselineSuperseded, ToolInputError
 from app.tools.trace import traced
@@ -32,7 +33,13 @@ def require_active_baseline(baseline_id: str) -> None:
 @traced("list_baseline_docs")
 def list_baseline_docs(baseline_id: str) -> dict:
     b = _baseline(baseline_id)
-    docs = [documents()[d] for d in b["document_ids"]]
+    secs = sections()
+    docs = []
+    for d in b["document_ids"]:
+        doc = dict(documents()[d])
+        # 효력일 등은 문서 원문에서 판단한다 (#92 / 정책 4). 백엔드 입력값 effective_date는 그대로 둔다
+        doc["text_dates"] = extract_dates(s for (doc_id, _), s in secs.items() if doc_id == d)
+        docs.append(doc)
     return {"baseline_id": baseline_id, **b, "documents": docs}
 
 
