@@ -238,9 +238,18 @@ def load_workbook(project_id: str, *, expected_source=_UNPINNED):
 
 
 def assert_workbook_current(output):
+    reference = getattr(output,'impact_workbook',None) or (output.meta.debug or {}).get('impact_workbook')
+    # A reply without estimation has not consumed a workbook to pin or invalidate.
+    # Keep checking malformed NOT_REQUIRED outputs that still carry derived data.
+    if (getattr(output, 'status', None) == 'NOT_REQUIRED'
+            and not getattr(output, 'estimates', None)
+            and getattr(output, 'pricing', None) is None
+            and getattr(output, 'plan_detail', None) is None
+            and getattr(output, 'schedule_detail', None) is None
+            and reference is None):
+        return
     project_id = output.context.project_id
     source = current_source(project_id)
-    reference = getattr(output,'impact_workbook',None) or (output.meta.debug or {}).get('impact_workbook')
     expected = (reference or {}).get('source') or {}
     if (source or {}).get('documentVersionId') != expected.get('documentVersionId') or (source or {}).get('sha256') != expected.get('sha256'):
         raise ToolInputError('일정·공수 자료가 변경되었습니다. 재산정 후 검토해주세요.')
