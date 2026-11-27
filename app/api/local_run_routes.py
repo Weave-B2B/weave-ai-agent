@@ -174,7 +174,7 @@ def create(body: StartBody, store=Depends(get_store)):
     # Validate credentials/configuration before creating any durable state.
     provider_workers(body.provider)
     if is_backend_project_id(context.project_id):
-        sync_change_request_to_backend(
+        request_id = sync_change_request_to_backend(
             context.project_id,
             context.case_id,
             body.input.subject or "",
@@ -182,6 +182,8 @@ def create(body: StartBody, store=Depends(get_store)):
             body.input.sender_name or "직접 입력",
             body.input.channel or "OTHER",
         )
+        if request_id is None or request_id != context.case_id:
+            raise HTTPException(422, "신규 Run은 백엔드에 등록된 변경 요청 UUID로 시작해야 합니다.")
     state = store.create_run(context.case_id, RunInputs(agent1_input=body.input, rate_card_id=body.rate_card_id), provider=body.provider)
     _perform(store, context.case_id, lambda: _runtime(store, context.case_id).step(context.case_id, expected_revision=state.state_revision))
     return _view(store, context.case_id)

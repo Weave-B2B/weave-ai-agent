@@ -165,6 +165,26 @@ def _ensure_rate_card(conn, project_id: str, company_id: str, actor_member_id: s
     return rc_id
 
 
+def legacy_cr_key(value: str) -> bool:
+    """Only pre-sequence CR-UUID keys are eligible for legacy Run lookup."""
+    if not value or not value.startswith("CR-"):
+        return False
+    try:
+        uuid.UUID(value[3:])
+        return True
+    except ValueError:
+        return False
+
+
+def select_project_run_id(cr_id: str, cr_number: str, project_runs: dict[str, Any]) -> str | None:
+    """Resolve only UUID or verified legacy keys from the already project-filtered runs."""
+    if cr_id in project_runs:
+        return cr_id
+    if legacy_cr_key(cr_number) and cr_number in project_runs:
+        return cr_number
+    return None
+
+
 def sync_change_request_to_backend(
     project_id: str,
     case_id: str,
@@ -173,78 +193,31 @@ def sync_change_request_to_backend(
     requester: str = "직접 입력",
     channel: str = "OTHER",
 ) -> str | None:
-    """Ensure a change_request + request_source row exists in weave-postgres for this case_id."""
+    """Resolve an existing request. Registration and numbering belong to the Backend API."""
     if not is_backend_project_id(project_id):
         return None
     import psycopg
 
-    channel_code = (channel or "OTHER").upper()
-    if channel_code not in ("EMAIL", "MEETING", "PHONE", "MESSENGER", "OTHER"):
-        channel_code = "EMAIL" if "mail" in channel_code.lower() else "OTHER"
-
     try:
+        try:
+            request_id = str(uuid.UUID(case_id))
+        except ValueError:
+            request_id = None
+        if request_id is None and not legacy_cr_key(case_id):
+            return None
         with psycopg.connect(backend_db_url(), autocommit=True) as conn:
-            proj = conn.execute(
-                """
-                SELECT p.company_id, COALESCE(
-                    (SELECT pm.company_member_id FROM project_member pm WHERE pm.project_id = p.project_id LIMIT 1),
-                    (SELECT cm.company_member_id FROM company_member cm WHERE cm.company_id = p.company_id LIMIT 1)
-                )
-                FROM project p
-                WHERE p.project_id = %s
-                """,
-                (project_id,),
-            ).fetchone()
-            if not proj or not proj[1]:
-                return None
-            actor_id = str(proj[1])
-
-            existing = conn.execute(
-                "SELECT change_request_id, change_request_title FROM change_request WHERE project_id = %s AND (cr_number = %s OR change_request_id::text = %s) LIMIT 1",
-                (project_id, case_id, case_id),
-            ).fetchone()
-            short_title = ((message_text.splitlines()[0] if message_text else title) or "신규 변경 요청").strip()[:40] or "신규 변경 요청"
-            if existing:
-                cr_uuid = str(existing[0])
-                if existing[1] in ("요청분석", "신규 변경 요청", "") and short_title not in ("요청분석", "신규 변경 요청"):
-                    conn.execute(
-                        "UPDATE change_request SET change_request_title = %s WHERE change_request_id = %s",
-                        (short_title, cr_uuid),
-                    )
-                return cr_uuid
-
-            try:
-                cr_uuid = str(uuid.UUID(case_id))
-            except ValueError:
-                cr_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"weave-cr:{project_id}:{case_id}"))
-
-            conn.execute(
-                """
-                INSERT INTO change_request (
-                    change_request_id, project_id, cr_number, change_request_title,
-                    progress_status, priority, needs_reanalysis, lock_version,
-                    company_member_id, created_at, created_by
-                )
-                VALUES (%s, %s, %s, %s, 'RECEIVED', 'NORMAL', false, 0, %s, now(), %s)
-                ON CONFLICT DO NOTHING
-                """,
-                (cr_uuid, project_id, case_id, short_title, actor_id, actor_id),
-            )
-            src_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"weave-cr-src:{cr_uuid}:1"))
-            text_hash = hashlib.sha256((message_text or "").encode("utf-8")).hexdigest()
-            conn.execute(
-                """
-                INSERT INTO request_source (
-                    request_source_id, change_request_id, request_channel,
-                    request_original_text, requester, received_at,
-                    source_content_hash, created_at, created_by
-                )
-                VALUES (%s, %s, %s, %s, %s, now(), %s, now(), %s)
-                ON CONFLICT DO NOTHING
-                """,
-                (src_uuid, cr_uuid, channel_code, message_text or short_title, requester or "직접 입력", text_hash, actor_id),
-            )
-            return cr_uuid
+            if request_id is not None:
+                existing = conn.execute(
+                    "SELECT change_request_id FROM change_request WHERE project_id = %s AND change_request_id = %s",
+                    (project_id, request_id),
+                ).fetchone()
+            else:
+                # Compatibility for existing CR-UUID local runs only; never resolve CR-01 as an internal ID.
+                existing = conn.execute(
+                    "SELECT change_request_id FROM change_request WHERE project_id = %s AND cr_number = %s",
+                    (project_id, case_id),
+                ).fetchone()
+            return str(existing[0]) if existing else None
     except Exception:
         return None
 
@@ -805,10 +778,8 @@ def _materialize_backend_cr_to_local_store(
             existing_body = json.loads(row[0])
 
     if existing_body:
-        ex_agents = existing_body.get("agents") or {}
-        ex_has_a3 = bool((ex_agents.get("agent3") or {}).get("current_result_id")) and (ex_agents.get("agent3") or {}).get("status") == "COMPLETED"
-        if ex_has_a3:
-            return True
+        existing_context = ((existing_body.get("inputs") or {}).get("agent1_input") or {}).get("context") or {}
+        return existing_context.get("project_id") == project_id and existing_context.get("case_id") == case_key
 
     a1_input = Agent1Input.model_validate({
         "context": ctx,
@@ -881,11 +852,19 @@ def _materialize_backend_cr_to_local_store(
         progress_events.append({"seq": 4, "kind": "step", "agent": "Agent 3", "title": "문서 초안을 작성했습니다", "body": "고객에게 전달할 초안을 검토할 수 있습니다.", "tab": "draft"})
 
     with closing(sqlite3.connect(local_store.path, timeout=10)) as sdb, sdb:
-        sdb.execute(
-            "INSERT INTO local_run (id, provider, body) VALUES (?, 'gpt', ?) ON CONFLICT(id) DO UPDATE SET body = excluded.body",
+        sdb.execute("BEGIN IMMEDIATE")
+        cursor = sdb.execute(
+            "INSERT INTO local_run (id, provider, body) VALUES (?, 'gpt', ?) ON CONFLICT(id) DO NOTHING",
             (case_key, local_store._dump(run)),
         )
-    local_store.save_progress(case_key, progress_events)
+        if not cursor.rowcount:
+            existing = sdb.execute("SELECT body FROM local_run WHERE id = ?", (case_key,)).fetchone()
+            existing_context = (((json.loads(existing[0]).get("inputs") or {}).get("agent1_input") or {}).get("context") or {}) if existing else {}
+            return existing_context.get("project_id") == project_id and existing_context.get("case_id") == case_key
+        sdb.execute(
+            "INSERT INTO local_run_progress (id, body) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
+            (case_key, json.dumps(progress_events, ensure_ascii=False)),
+        )
     return True
 
 
@@ -1137,39 +1116,6 @@ def load_backend_project_context(project_id: str) -> dict[str, Any]:
         except Exception:
             pass
 
-    # Materialize any Backend-analyzed CRs into LocalRunStore so Developer Prototype shows their full results
-    for r in cr_rows:
-        cr_id = str(r[0])
-        cr_number = r[1]
-        cr_title = r[2]
-        created_at = r[4].isoformat() if hasattr(r[4], "isoformat") else str(r[4])
-        orig_text = r[5] or cr_title
-        requester = r[6] or "고객사 담당자"
-        channel = r[7] or "EMAIL"
-        received_at = r[8].isoformat() if hasattr(r[8], "isoformat") else (str(r[8]) if r[8] else created_at)
-        adata = cr_analysis_data.get(cr_id)
-        if adata and (adata["db_items"] or adata["decomp"]):
-            _materialize_backend_cr_to_local_store(
-                local_store,
-                cr_number,
-                pid,
-                project_name,
-                customer_name,
-                active_baseline_id or "",
-                active_baseline_as_of or "",
-                rate_card_id or "",
-                cr_title,
-                orig_text,
-                requester,
-                channel,
-                received_at,
-                adata["db_items"],
-                adata["decomp"],
-                adata["scope"],
-                adata["impact"],
-                adata["proposal_text"],
-            )
-
     # Check LocalRunStore for all runs belonging to this project
     project_runs: dict[str, dict[str, Any]] = {}
     if local_store.path.is_file():
@@ -1179,7 +1125,7 @@ def load_backend_project_context(project_id: str) -> dict[str, Any]:
                     body = json.loads(body_str)
                     inp = (body.get("inputs") or {}).get("agent1_input") or {}
                     ctx = inp.get("context") or {}
-                    if ctx.get("project_id") == pid:
+                    if ctx.get("project_id") == pid and ctx.get("case_id") == run_id:
                         project_runs[run_id] = {
                             "case_id": run_id,
                             "provider": provider,
@@ -1194,7 +1140,6 @@ def load_backend_project_context(project_id: str) -> dict[str, Any]:
                     continue
 
     change_requests: list[dict[str, Any]] = []
-    seen_case_ids: set[str] = set()
 
     for r in cr_rows:
         cr_id = str(r[0])
@@ -1207,12 +1152,22 @@ def load_backend_project_context(project_id: str) -> dict[str, Any]:
         channel = r[7] or "EMAIL"
         received_at = r[8].isoformat() if hasattr(r[8], "isoformat") else (str(r[8]) if r[8] else created_at)
 
-        matched_run_id = cr_number if cr_number in project_runs else (cr_id if cr_id in project_runs else None)
-        case_key = matched_run_id or cr_number
-        seen_case_ids.add(case_key)
-        seen_case_ids.add(cr_id)
+        # UUID is the canonical Run key. Retain a verified pre-sequence CR-UUID
+        # Run as a compatibility alias without rewriting its immutable history.
+        matched_run_id = select_project_run_id(cr_id, cr_number, project_runs)
+        adata = cr_analysis_data.get(cr_id)
+        if matched_run_id is None and adata and (adata["db_items"] or adata["decomp"]):
+            if _materialize_backend_cr_to_local_store(
+                local_store, cr_id, pid, project_name, customer_name,
+                active_baseline_id or "", active_baseline_as_of or "", rate_card_id or "",
+                cr_title, orig_text, requester, channel, received_at,
+                adata["db_items"], adata["decomp"], adata["scope"],
+                adata["impact"], adata["proposal_text"],
+            ):
+                matched_run_id = cr_id
         change_requests.append({
-            "id": case_key,
+            "id": cr_id,
+            "run_id": matched_run_id,
             "change_request_id": cr_id,
             "cr_number": cr_number,
             "title": cr_title,
