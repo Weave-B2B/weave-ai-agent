@@ -169,6 +169,40 @@ class RunSupervisorRuntime:
             texts.add(text_key)
         return self._save(run, coord) if coord != run.coordination else run
 
+    def _clarify(self, run, outputs):
+        """Clarifier로 에이전트 gap을 질문·가정으로 정리한다. 새로 물을 필수 정보가 있을 때만 모델을 호출한다."""
+        from app.orchestration.clarifier import Clarifier, collect_gaps
+        a1 = outputs.get("agent1")
+        item_text = {i.item_id: i.text for i in (a1.items if a1 else [])}
+        request = None
+
+        def evidence_context():
+            nonlocal request
+            request = request or self.state.get_inputs(run.state.run_id).agent1_input
+            return {"message_text": request.message_text, "doc_titles": baseline_doc_titles(request.context.baseline_id)}
+
+        def search(query):
+            from app.tools.doc_tools import search_docs
+            baseline = (request or self.state.get_inputs(run.state.run_id).agent1_input).context.baseline_id
+            return search_docs(query, baseline, top_k=3)
+
+        coord = Clarifier(self.llm, search=search).reconcile(
+            run.coordination.model_copy(deep=True), collect_gaps(run, outputs),
+            item_text=item_text, evidence_context=evidence_context)
+        if coord == run.coordination:
+            return run
+        fresh = self.state.get_coordinated_run(run.state.run_id)
+        if fresh.state.state_revision != run.state.state_revision:
+            # 질문 작성 모델 호출은 호출 횟수를 기록하며 revision을 올린다. 그 외 변경이 있으면 충돌로 본다.
+            signature = lambda r: [r.state.agents, r.coordination.questions, r.coordination.answers,
+                                   r.coordination.assumptions, r.coordination.quote_links, r.coordination.hold_reason]
+            if signature(fresh) != signature(run):
+                raise StateRevisionConflict("질문 정리 중 실행 상태가 변경되었습니다.", run_id=run.state.run_id)
+            merged = fresh.coordination.model_copy(deep=True)
+            merged.questions, merged.assumptions, merged.hold_reason = coord.questions, coord.assumptions, coord.hold_reason
+            run, coord = fresh, merged
+        return self._save(run, coord)
+
     def step(self, run_id, *, expected_revision=None):
         from app.llm.attempts import account_attempts
         def reserve():
@@ -208,7 +242,7 @@ class RunSupervisorRuntime:
             coord.quote_links = {}
             coord.quote_source_result_id = None
             run = self._save(run, coord)
-        run = self._questions(run, outputs)
+        run = self._clarify(run, outputs) if settings.supervisor_clarifier_enabled else self._questions(run, outputs)
         if run.state.status in ("WAITING_INPUT", "WAITING_PM_REVIEW"):
             return {"status": "waiting_input" if run.state.status == "WAITING_INPUT" else "waiting_final_review", "run": run}
         if run.coordination.hold_reason:

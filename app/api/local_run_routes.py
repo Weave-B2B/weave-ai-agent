@@ -133,6 +133,7 @@ def _view(store, case_id):
         "input": inp_obj.model_dump(mode="json"),
         "provider": store.provider(case_id), "run_status": run.state.status,
         "answers": [a.model_dump(mode="json") for a in run.coordination.answers],
+        "assumptions": [a.model_dump(mode="json") for a in run.coordination.assumptions],
         "a1": outputs["agent1"], "a2": outputs["agent2"], "agent3": view,
         "question": pending.model_dump(mode="json") if pending else None,
         "ready_for_review": bool(target), "review": reviewed if run.state.status == "COMPLETED" or hold else None,

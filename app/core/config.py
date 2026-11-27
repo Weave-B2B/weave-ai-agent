@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     calculation_mode: Literal["backend", "fixture"] = "backend"
     # true면 계산 정책 미확정·경비 미입력(잠정) 결과의 최종 승인을 막는다. 합성 테스트 흐름은 false.
     calc_require_confirmed_policy: bool = False
+    # 총괄 Clarifier: 에이전트 gap을 합쳐 질문·가정으로 정리 (꺼져 있으면 기존 질문 정리 방식)
+    supervisor_clarifier_enabled: bool = False
     prototype_run_db: Path = ROOT / ".prototype-runs" / "runs.sqlite3"
 
     # fixture: 데이터셋 정답을 에이전트 대신 돌려줌 (오케스트레이션 개발·계약 테스트용)
