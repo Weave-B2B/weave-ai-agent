@@ -75,7 +75,7 @@ _VALUE_PATTERNS = [
     ("amount", re.compile(r"(\d{1,3}(?:,\d{3})+|\d+)\s*(만\s*)?원")),
     ("percent", re.compile(r"(\d+(?:\.\d+)?)\s*%")),
     ("duration", re.compile(r"(\d+)\s*(영업일|개월|주|일)(?![자시])")),
-    ("count", re.compile(r"(\d+)\s*(개|건|종|명|회|MD)")),
+    ("count", re.compile(r"(\d+)\s*(개|건|종|명|회|장|페이지|화면|시간|대|부|MD)")),
 ]
 
 
