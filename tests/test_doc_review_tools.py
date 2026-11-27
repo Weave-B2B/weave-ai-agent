@@ -65,3 +65,21 @@ def test_version_diff_limits():
 def test_rule_baseline_solves_version_cases():
     s = run()["score"]
     assert s["recall_required"] == 1.0 and s["forbidden_hits"] == 0 and s["extra_for_review"] == 0
+
+
+def test_version_diff_handles_renumbering_and_code_reuse():
+    v1 = _doc(1, [("제2조", "범위", "## 제2조 과업 범위\n발주자 요청 기능을 구현한다"), ("제3조", "기간", "## 제3조 계약 기간\n2026-09-01부터 2026-11-23까지"),
+                  ("제4조", "대금", "## 제4조 계약 대금\n금 60,000,000원")])
+    v2 = _doc(2, [("제2조", "범위", "## 제2조 과업 범위\n발주자 요청 기능을 구현한다"), ("제3조", "장소", "## 제3조 수행 장소\n원격 근무를 원칙으로 한다"),
+                  ("제4조", "기간", "## 제4조 계약 기간\n2026-09-01부터 2026-11-23까지"), ("제5조", "대금", "## 제5조 계약 대금\n금 60,000,000원")])
+    items = version_diff([v1, v2])["items"]
+    renumbered = [i for i in items if i["summary"]["change"] == "renumbered"]
+    assert sorted(i["codes"][0] for i in renumbered) == ["제3조", "제4조"]  # 기존 제3·4조는 번호만 밀림
+    assert all(i["summary"]["code_changed"] for i in renumbered)
+    assert [i["code"] for i in items if i["summary"]["change"] == "added"] == ["제3조"]  # 새 제3조(수행 장소)만 추가
+
+    w1 = _doc(1, [("A-F09", "결제 오류", "| A-F09 | 포함 (IN) | 결제 오류를 안내한다. 검수기준: 오류 문구 노출 |")])
+    w2 = _doc(2, [("A-F09", "위시리스트", "| A-F09 | 포함 (IN) | 관심 상품을 저장한다. 검수기준: 100개 저장 |")])
+    reused = version_diff([w1, w2])["items"]
+    assert sorted(i["summary"]["change"] for i in reused) == ["added", "removed"]
+    assert all(i["summary"].get("code_reused") for i in reused)
