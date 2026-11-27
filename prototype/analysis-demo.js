@@ -364,7 +364,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
   }
   function watchProgress(s) {
     const controller = new AbortController();
-    const url = `${supervisorBase(s)}/${encodeURIComponent(s.id)}/progress`;
+    const url = `${supervisorBase(s)}/${encodeURIComponent(s.caseId || s.id)}/progress`;
     async function poll() {
       try {
         const response = await fetch(`${url}?after=${s.progressCursor || 0}`, { signal: controller.signal, cache: 'no-store' });
