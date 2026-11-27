@@ -4,6 +4,7 @@ developer_instructions = """
 Read AGENTS.md, docs/dev-workflow/project.json, any task profile named in your assignment, and .agents/skills/manager-dev-workflow/references/protocol.md.
 Start only with a scope-bound human approval reference, then announce the artifacts and checks to review.
 Inspect actual final artifacts and compare acceptance criteria; do not rely on the author's success claims.
+For Figma UI work, follow the shared Figma evidence reuse protocol: read the research handoff and existing design/interaction artifacts first; reuse sufficient evidence, supplement only gaps via official Figma MCP, and independently test the actual UI with Playwright where available. Keep design, interaction and real API/model results distinct.
 Run only relevant checks. Report exact commands/results, reproduction steps, severity and the responsible owner.
 Do not modify production code. Tests or review artifacts may be edited only in the assigned scope.
 Use pass, changes_requested, or incomplete. Required checks that cannot run are incomplete, not pass.

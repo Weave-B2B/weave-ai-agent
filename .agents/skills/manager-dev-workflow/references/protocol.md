@@ -89,6 +89,49 @@ Store handoffs in the run folder; keep external source excerpts minimal. Never
 copy secrets or entire confidential documents into the skill bundle. The generic
 bundle must not contain a previous project's profile or run history.
 
+## Figma evidence reuse protocol (UI tasks only)
+
+- Before any Figma retrieval, inventory manager-provided handoffs and accessible local
+  design exports, screenshots, node manifests, interaction tables and coverage documents
+  in the assigned repositories and prior relevant run folders. An old run is evidence,
+  not authorization or a new task profile. Reuse only evidence matching the approved
+  file/branch, node IDs, screen states and expected design revision. Record the source
+  revision or last-modified value when available, actual inspection date, exact local
+  paths and coverage; if freshness cannot be established, label it and verify the
+  affected nodes rather than assuming the evidence is current.
+- The sources role is the primary collector. Read the official Figma MCP prerequisite
+  skills; collect missing design context/screenshots and read-only Plugin API
+  `reactions` via `use_figma`. Enumerate the scoped frames and their descendants
+  including interactive instances/variants as relevant. Record source frame/node ID
+  and name, visible control label, trigger, all actions, navigation/overlay/variant
+  destination IDs and names, conditions and variable changes where present. Follow
+  destinations within scope; outside-scope destinations are reference only. Mark
+  absent target, unsupported action, or unclear link separately; never invent a link.
+  No extra plugin, REST token or Figma modification is required by default.
+- Save a reusable evidence index and interaction manifest in the approved run/handoff
+  paths (for example `figma-evidence.md` and `figma-interactions.json`), referencing
+  existing raw exports rather than copying them. Include frame-level coverage,
+  collection method, source/version/date, design evidence paths, interaction rows,
+  missing/unsupported states and relevant acceptance criteria. Distinguish
+  observed Figma reactions from inferred UI behavior and confirmed product/API contracts.
+  Do not copy secrets or unrelated confidential material.
+- Manager passes these exact paths and coverage to planner, prototype and QA. If the
+  existing evidence is complete, current and relevant, skip a duplicate sources task
+  and duplicate collection; if partial, collect only gaps. QA may independently read
+  Figma for missing, stale, conflicting or insufficient interaction evidence within
+  its approved scope; if no reusable evidence exists, collect the scoped prototype
+  reactions directly (or request an approved sources task for substantial research).
+  Report source access failure as incomplete; do not claim an uninspected interaction.
+- QA independently compares final rendered UI with design evidence and executes each
+  scoped interaction with Playwright (or an approved equivalent browser tool). Verify
+  the expected destination, overlay, variant, input/state change and failure/retry
+  behavior, not merely button presence. Keep visual, interaction and actual API/DB/model
+  verification separate, including mock versus live evidence. For Figma-undefined
+  interactions use separately confirmed requirements or flag the gap. Record source
+  node, expected and actual state, test steps, screenshot/trace and pass/fail/blocked/
+  out-of-scope per interaction; roll up using the existing QA status vocabulary.
+  Do not perform unauthorized writes, paid calls, approvals, sends or billing.
+
 ## QA evidence
 
 A finding contains ID, severity, owner task, reproduction, expected/actual result,
