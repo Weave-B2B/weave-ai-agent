@@ -304,3 +304,65 @@ def version_diff(versions: list[dict]) -> dict:
         if item["summary"]["change"] == "removed" and item["code"] in {i["code"] for i in result["items"] if i["summary"]["change"] == "added"}:
             item["summary"]["code_reused"] = True
     return result
+
+
+# ───────── 같은 항목 찾기 · 항목 원문 보기 · 기존 AI 판단 근거 (#91) ─────────
+
+_TOKEN = re.compile(r"[A-Za-z]+-?[A-Za-z]*\d+|[가-힣]{2,}|[A-Za-z]{2,}|\d[\d,]*")
+
+
+def _tokens(text: str) -> set[str]:
+    return {t.lower() for t in _TOKEN.findall(text)}
+
+
+def find_same_items(query: str, docs: list[dict], *, exclude: set[str] | None = None, top_k: int = 5) -> list[dict]:
+    """다른 문서·버전에서 같은 내용을 말하는 항목 후보 (어휘 겹침 + 조항 코드 일치).
+
+    운영에서는 Agent2 하이브리드 검색으로 바꿀 수 있다. 평가·로컬은 이 어휘 검색으로 충분하다.
+    반환 항목 키는 "<문서ID>@v<버전>#<item_id>" — 기록·원문 보기에 그대로 쓴다.
+    """
+    q = _tokens(query)
+    codes = {m for m in (re.sub(r"\s+", "", g) for t in _CODE.findall(query) for g in t if g)}
+    scored = []
+    for doc in docs:
+        for item in doc.get("items") or []:
+            key = item_key(doc, item)
+            if exclude and key in exclude:
+                continue
+            toks = _tokens(item["heading"] + " " + item["text"])
+            overlap = len(q & toks) / (len(q) or 1)
+            bonus = 0.5 if item.get("code") and item["code"] in codes else 0.0
+            if overlap + bonus > 0.15:
+                scored.append((overlap + bonus, key, doc, item))
+    scored.sort(key=lambda x: -x[0])
+    return [{"key": key, "document_id": doc["document_id"], "version_no": doc.get("version_no"), "code": item.get("code"),
+             "title": _title(item["heading"]), "score": round(s, 2), "snippet": item["text"][:120]} for s, key, doc, item in scored[:top_k]]
+
+
+def item_key(doc: dict, item: dict) -> str:
+    return f"{doc['document_id']}@v{doc.get('version_no') or 1}#{item['item_id']}"
+
+
+def read_items(keys: list[str], docs: list[dict], *, max_chars: int = 1200) -> list[dict]:
+    """항목 원문 보기. 키가 없으면 error로 알려 에이전트가 고칠 수 있게 한다."""
+    index = {item_key(d, i): (d, i) for d in docs for i in d.get("items") or []}
+    out = []
+    for key in keys:
+        if key not in index:
+            out.append({"key": key, "error": "없는 항목 키 — 문서 열기 결과의 키를 쓰세요"})
+            continue
+        doc, item = index[key]
+        out.append({"key": key, "document_id": doc["document_id"], "version_no": doc.get("version_no"), "code": item.get("code"),
+                    "heading": item["heading"], "page": item.get("page"), "text": item["text"][:max_chars]})
+    return out
+
+
+def prior_judgment_refs(prior_judgments: list[dict], document_id: str, codes: list[str]) -> list[dict]:
+    """이 문서·항목을 근거로 쓴 기존 AI 판단. 운영에서는 BE #127 조회 API 결과를 같은 모양으로 넘긴다."""
+    want = set(codes)
+    out = []
+    for j in prior_judgments or []:
+        refs = [e for e in j.get("evidence", []) if e.get("doc") == document_id and (not want or e.get("code") in want)]
+        if refs:
+            out.append({"change_request": j.get("change_request"), "item": j.get("item"), "label": j.get("label"), "evidence": refs})
+    return out
