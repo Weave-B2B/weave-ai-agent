@@ -197,6 +197,14 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
   }
   // 근거 참조를 사람이 읽는 문장으로 바꾼다: 원문 위치 → 원문 인용, 문서:조항 → 문서 제목 · 조항.
   function questionBasisLabels(s, q) {
+    // 서버가 출처 종류를 붙인 근거(evidence)가 있으면 그대로 쓴다: 원문 인용 · 계약 문서 · 진행 자료
+    if (q?.evidence?.length) {
+      const prefix = { request: '고객 요청 원문', contract: '계약 문서', activity: '진행 자료' };
+      return q.evidence.map(e => e.source_type === 'request'
+        ? (e.title ? `${prefix.request} “${clip(e.title, 60)}”` : prefix.request)
+        : `${prefix[e.source_type] || '근거'} ${e.title || e.ref}`)
+        .filter((label, index, all) => all.indexOf(label) === index).slice(0, 3);
+    }
     const source = s?.messageText || s?.text || '';
     const docs = backendProject?.documents || [];
     return (q?.basis_refs || []).map(ref => {
