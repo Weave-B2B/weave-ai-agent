@@ -28,6 +28,7 @@ from app.kb.vector_store import IndexMismatch
 from app.llm.factory import LlmConfigError
 from app.orchestration.ids import new_result_id, now_iso
 from app.services.analysis_result_client import AnalysisReportError, build_client
+from app.services.doc_review_job import DocReviewJobInput, DocReviewSourceError
 from app.tools.errors import BaselineSuperseded, ToolInputError
 
 log = logging.getLogger(__name__)
@@ -40,11 +41,11 @@ REPORT_BACKOFF_SEC = 2.0
 class AnalysisRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
     ai_analysis_id: UUID
-    analysis_type: Literal["DECOMPOSITION", "SCOPE", "IMPACT"]
+    analysis_type: Literal["DECOMPOSITION", "SCOPE", "IMPACT", "DOC_REVIEW"]
     input: dict
 
 
-INPUT_MODELS = {"DECOMPOSITION": Agent1Input, "SCOPE": Agent2Input, "IMPACT": Agent3Input}
+INPUT_MODELS = {"DECOMPOSITION": Agent1Input, "SCOPE": Agent2Input, "IMPACT": Agent3Input, "DOC_REVIEW": DocReviewJobInput}
 
 
 class AnalysisAccepted(BaseModel):
@@ -82,6 +83,13 @@ def resolve(req: AnalysisRequest):
     except ValidationError as exc:
         raise InvalidAnalysisRequest(f"input이 {req.analysis_type} 입력 스키마와 맞지 않습니다: {exc.errors()[:3]}") from None
     # 항목 분해는 요청 원문만 보므로 기준선이 없어도 된다. 범위 분석·영향 산정은 기준선 문서로 판단한다
+    if req.analysis_type == "DOC_REVIEW":                   # 문서 검토는 기준선이 아니라 고른 문서 버전을 본다 (#93)
+        from app.services.doc_review_job import check_limits
+        try:
+            check_limits(inp)
+        except ValueError as exc:
+            raise InvalidAnalysisRequest(str(exc)) from None
+        return run_doc_review, inp
     if req.analysis_type != "DECOMPOSITION" and not inp.context.baseline_id:
         raise InvalidAnalysisRequest("context.baseline_id가 필요합니다.")
     task = {"DECOMPOSITION": run_decomposition, "SCOPE": run_scope_analysis,
@@ -192,6 +200,34 @@ def run_impact_analysis(ai_analysis_id: UUID, inp: Agent3Input) -> None:
         failure = ("INTERNAL_ERROR", True)
     if failure:
         log.warning("영향 산정 실패 ai_analysis_id=%s code=%s retryable=%s", ai_analysis_id, *failure)
+    _report(ai_analysis_id, output, failure)
+
+
+def run_doc_review(ai_analysis_id: UUID, inp: DocReviewJobInput) -> None:
+    """문서 검토 에이전트(#91)를 실행하고 결과·실패를 백엔드에 보낸다 (#93). 결과는 후보이며 기준선·판단을 바꾸지 않는다."""
+    from app.services import doc_review_job
+
+    failure: Optional[tuple[str, bool]] = None
+    output: Optional[dict] = None
+    try:
+        output = doc_review_job.run(inp)
+    except DocReviewSourceError as exc:                     # 원문을 못 읽음 — 일시 장애면 재시도 가능
+        log.warning("문서 검토 원문 조회 실패 ai_analysis_id=%s: %s", ai_analysis_id, exc)
+        failure = ("RETRIEVAL_UNAVAILABLE", exc.retryable)
+    except AgentFailure as exc:
+        failure = (exc.error.code, exc.error.retryable)
+    except LlmConfigError:
+        failure = ("INTERNAL_ERROR", False)
+    except ValidationError:
+        failure = ("OUTPUT_INVALID", True)
+    except (ValueError, KeyError):
+        log.exception("문서 검토 입력 오류 ai_analysis_id=%s", ai_analysis_id)
+        failure = ("INVALID_INPUT", False)
+    except Exception:
+        log.exception("문서 검토 실패 ai_analysis_id=%s", ai_analysis_id)
+        failure = ("INTERNAL_ERROR", True)
+    if failure:
+        log.warning("문서 검토 실패 ai_analysis_id=%s code=%s retryable=%s", ai_analysis_id, *failure)
     _report(ai_analysis_id, output, failure)
 
 

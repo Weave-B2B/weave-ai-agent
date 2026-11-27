@@ -2,7 +2,8 @@
 
 - 색인 요청 (weave-dev-index-request): A-MQ-01 IndexRequest → run_ingest
 - 분석 요청 (weave-dev-analysis-request): {"aiAnalysisId", "analysisType", "input"}
-    DECOMPOSITION → run_decomposition (Agent1), SCOPE → run_scope_analysis (Agent2), IMPACT → run_impact_analysis (Agent3)
+    DECOMPOSITION → run_decomposition (Agent1), SCOPE → run_scope_analysis (Agent2), IMPACT → run_impact_analysis (Agent3),
+    DOC_REVIEW → run_doc_review (문서 검토 에이전트, #93)
 실행 함수는 에이전트 오류를 실패 결과로 바꿔 보내므로, 여기까지 올라오는 예외는 결과 발행 실패뿐이다.
 """
 from __future__ import annotations
