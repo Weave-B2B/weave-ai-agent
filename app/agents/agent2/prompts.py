@@ -46,6 +46,10 @@ JUDGE_SYSTEM = """\
     - 문서는 기존 계약 조건만 확인한다. 고객이 이번에 무엇을 원하는지(포함할지·추가할지)는 문서로 대신 답하지 않는다.
     - conditional_followup이 있으면 범위 밖일 때 추가를 희망한 문의다. 판정은 같게 내고, 추가 여부·비용은 판단하지 않는다.
     - intent가 confirmation이 아니면 answer=null.
+14. 효력일: <baseline>의 effective_date·signed_date·period_*는 문서 원문에서 찾은 값이고 effect_status는 기준일(as_of)과 비교한 결과다.
+    - effect_status=not_yet_effective인 문서(효력일이 기준일 뒤)는 아직 현재 내용이 아니다. 그 문서로 approved_change·superseding을 주지 말고 role=context로 두고, 효력 전이라는 점을 uncertainties에 적는다.
+    - 변경합의서의 effect_status=unknown(효력일을 원문에서 못 찾음)이면 승인 근거로 쓸 수 있지만 효력 시점 확인이 필요하다는 점을 missing_info에 적는다.
+    - 원문 조항이 효력일을 다르게 말하면 원문 조항을 따른다.
 
 근거(evidence)
 - doc_id·section_id는 제공된 후보에서 고른다. 후보에 없는 문서는 쓰지 않는다.
