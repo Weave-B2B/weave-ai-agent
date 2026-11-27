@@ -3,7 +3,8 @@
 도구
 - item_map / open_document : 새 파서 청크(heading·text·page) → 항목 지도(조항 코드·제목·쪽). 원문은 빼고 지도만 준다
 - version_diff             : 같은 문서 2개 이상(최대 5개) 버전을 이웃끼리 비교해 항목별 변경 이력을 만든다
-                             (수정·추가·삭제·되돌림·사소한 변경·짝 불확실, 금액·날짜·기간·수량 변화)
+                             (수정·추가·삭제·되돌림·번호만 바뀜·사소한 변경·짝 불확실, 금액·날짜·기간·수량 변화)
+                             짝은 원문 유사도로 짓고 같은 코드는 가산점만 준다(번호가 밀리거나 다시 매겨도 찾는다)
 - extract_values / compare_values : 금액·날짜·기간·수량·비율을 뽑아 규칙으로 비교한다
 
 판단(의미가 바뀌었는가, 문서끼리 어긋나는가)은 LLM이 한다. 이 도구는 "어디가 어떻게 바뀌었는지"를 정확히 준다.
@@ -22,6 +23,8 @@ _CODE = re.compile(r"\[([A-Z]{1,5}-[A-Z]{0,3}\d{1,3}[A-Z]?)\]|(?<![A-Za-z0-9-])(
 _SCOPE_WORDS = ("포함", "제외", "IN", "OUT", "불가", "가능", "필수", "선택", "의무", "금지", "허용", "승인", "효력", "무상", "유상")
 _MINOR_RATIO = 0.9
 _PAIR_RATIO = 0.6
+# 같은 코드는 내용이 꽤 바뀌어도(짧은 조항의 포함→제외 등) 같은 항목으로 본다. 이보다 낮으면 같은 번호를 다른 조항에 다시 쓴 것으로 본다
+_SAME_CODE_RATIO = 0.35
 
 
 # ───────── 항목 지도 ─────────
@@ -124,45 +127,64 @@ def _scope_words(text: str) -> set[str]:
     return {w for w in _SCOPE_WORDS if (re.search(rf"\b{w}\b", text) if w.isascii() else w in text)}
 
 
+def _strip_codes(text: str) -> str:
+    """조항 코드를 지운 원문 — 번호만 바뀐 항목을 알아보기 위해."""
+    return _norm(_CODE.sub("", text))
+
+
 def _pair(old: list[dict], new: list[dict]) -> tuple[list[tuple[int, int, bool]], list[int], list[int]]:
-    """(old_i, new_j, uncertain) 짝, 짝 없는 old, 짝 없는 new. 코드가 같으면 바로 짝, 없으면 제목+원문 유사도."""
-    pairs, used_new = [], set()
-    by_code = {}
+    """(old_i, new_j, uncertain) 짝, 짝 없는 old, 짝 없는 new.
+
+    번호가 밀리거나(제3조→제4조) 코드를 다시 매겨도(A-F09→A-F17) 찾도록 **원문 유사도로 짝을 짓고, 같은 코드는 가산점만** 준다.
+    ① 코드를 지운 원문이 같으면 바로 짝 ② 남은 항목은 (원문 유사도 + 같은 코드 0.1)이 높은 순으로 짝(0.6 이상)
+    같은 코드는 원문 유사도 0.35, 다른 코드는 0.6 이상일 때만 짝(같은 번호를 다른 조항에 다시 쓴 경우를 거른다). 0.8 미만은 불확실.
+    """
+    pairs, used_old, used_new = [], set(), set()
+    stripped_new: dict[str, list[int]] = {}
     for j, item in enumerate(new):
-        if item.get("code"):
-            by_code.setdefault(item["code"], []).append(j)
-    rest_old = []
+        stripped_new.setdefault(_strip_codes(item["text"]), []).append(j)
     for i, item in enumerate(old):
-        js = [j for j in by_code.get(item.get("code") or "", []) if j not in used_new]
-        if item.get("code") and js:
-            pairs.append((i, js[0], False))
-            used_new.add(js[0])
-        else:
-            rest_old.append(i)
-    unmatched_old = []
-    for i in rest_old:
-        best, score = None, 0.0
-        for j, item in enumerate(new):
-            if j in used_new or (item.get("code") and old[i].get("code") and item["code"] != old[i]["code"]):
+        key = _strip_codes(item["text"])
+        js = [j for j in stripped_new.get(key, []) if j not in used_new] if key else []
+        if js:
+            j = next((j for j in js if new[j].get("code") == item.get("code")), js[0])
+            pairs.append((i, j, False))
+            used_old.add(i)
+            used_new.add(j)
+    candidates = []
+    for i, o in enumerate(old):
+        if i in used_old:
+            continue
+        for j, n in enumerate(new):
+            if j in used_new:
                 continue
-            # 제목은 마지막 경로만 본다 (문서 제목이 앞에 공통으로 붙어 유사도가 부풀려지지 않게)
-            title = _ratio(_title(old[i]["heading"]), _title(item["heading"]))
-            body = _ratio(old[i]["text"], item["text"])
-            s = body if old[i].get("code") else max(title, body)
-            if s > score:
-                best, score = j, s
-        if best is not None and score >= _PAIR_RATIO:
-            pairs.append((i, best, score < 0.8))
-            used_new.add(best)
-        else:
-            unmatched_old.append(i)
-    unmatched_new = [j for j in range(len(new)) if j not in used_new]
-    return pairs, unmatched_old, unmatched_new
+            same_code = bool(o.get("code")) and o.get("code") == n.get("code")
+            floor = _SAME_CODE_RATIO if same_code else _PAIR_RATIO
+            sm = difflib.SequenceMatcher(None, _norm(o["text"]), _norm(n["text"]), autojunk=False)
+            if sm.real_quick_ratio() < floor or sm.quick_ratio() < floor:
+                continue
+            body = sm.ratio()
+            if same_code and body < _PAIR_RATIO and _ratio(_CODE.sub("", _title(o["heading"])), _CODE.sub("", _title(n["heading"]))) < 0.5:
+                continue  # 같은 번호지만 제목도 다르다 → 다른 조항에 번호를 다시 쓴 것
+            if not o.get("code") and not n.get("code"):
+                body = max(body, _ratio(_title(o["heading"]), _title(n["heading"])) * 0.9)
+            bonus = 0.1 if same_code else 0.0
+            if body >= floor:
+                candidates.append((body + bonus, body, i, j))
+    for _, body, i, j in sorted(candidates, reverse=True):
+        if i in used_old or j in used_new:
+            continue
+        pairs.append((i, j, body < 0.8))
+        used_old.add(i)
+        used_new.add(j)
+    return pairs, [i for i in range(len(old)) if i not in used_old], [j for j in range(len(new)) if j not in used_new]
 
 
 def _classify(before: str, after: str) -> dict:
     if before == after:
         return {"status": "same"}
+    if _norm(before) != _norm(after) and _strip_codes(before) == _strip_codes(after):
+        return {"status": "renumbered"}
     values = compare_values(before, after)
     ratio = _ratio(before, after)
     scope = _scope_words(before) ^ _scope_words(after)
@@ -188,7 +210,8 @@ def version_diff(versions: list[dict]) -> dict:
     """같은 문서의 버전들(version_no 오름차순으로 정렬해 비교) → 항목별 이력.
 
     반환: {document_id, versions:[번호...], items:[{key, code, title, history:[{from,to,status,...}], summary}], unchecked:[...]}
-    summary.change: added / removed / modified / reverted / minor / same.  추출 실패 버전은 비교하지 않고 unchecked로 알린다.
+    summary.change: added / removed / modified / reverted / renumbered(번호만 바뀜) / minor / same.
+    summary.code_changed(번호가 바뀐 항목), code_reused(같은 번호를 다른 조항에 다시 씀), pairing_uncertain(짝 불확실).  추출 실패 버전은 비교하지 않고 unchecked로 알린다.
     """
     if len(versions) < 2:
         raise ValueError("버전을 2개 이상 주세요.")
@@ -209,8 +232,8 @@ def version_diff(versions: list[dict]) -> dict:
     tracks: list[dict] = []  # {key, code, title, texts: {version_no: text}}
     current: dict[int, dict] = {}
     for idx, item in enumerate(usable[0]["items"]):
-        track = {"key": item.get("code") or item["item_id"], "code": item.get("code"), "title": _title(item["heading"]),
-                 "texts": {usable[0]["version_no"]: item["text"]}, "uncertain": False}
+        track = {"key": item.get("code") or item["item_id"], "codes": {usable[0]["version_no"]: item.get("code")},
+                 "title": _title(item["heading"]), "texts": {usable[0]["version_no"]: item["text"]}, "uncertain": False}
         tracks.append(track)
         current[idx] = track
     for prev, nxt in zip(usable, usable[1:]):
@@ -221,12 +244,14 @@ def version_diff(versions: list[dict]) -> dict:
             if track is None:
                 continue
             track["texts"][nxt["version_no"]] = nxt["items"][j]["text"]
+            track["codes"][nxt["version_no"]] = nxt["items"][j].get("code")
+            track["title"] = _title(nxt["items"][j]["heading"])
             track["uncertain"] = track["uncertain"] or uncertain
             following[j] = track
         for j in added:
             item = nxt["items"][j]
-            track = {"key": item.get("code") or item["item_id"], "code": item.get("code"), "title": _title(item["heading"]),
-                     "texts": {nxt["version_no"]: item["text"]}, "uncertain": False}
+            track = {"key": item.get("code") or item["item_id"], "codes": {nxt["version_no"]: item.get("code")},
+                     "title": _title(item["heading"]), "texts": {nxt["version_no"]: item["text"]}, "uncertain": False}
             tracks.append(track)
             following[j] = track
         current = following
@@ -243,7 +268,11 @@ def version_diff(versions: list[dict]) -> dict:
             elif tb is None:
                 history.append({"from": a, "to": b, "status": "removed"})
             else:
-                history.append({"from": a, "to": b, **_classify(ta, tb)})
+                entry = {"from": a, "to": b, **_classify(ta, tb)}
+                ca, cb = track["codes"].get(a), track["codes"].get(b)
+                if ca != cb:
+                    entry["code_change"] = {"from": ca, "to": cb}
+                history.append(entry)
         statuses = [h["status"] for h in history]
         first, last = track["texts"].get(numbers[0]), track["texts"].get(numbers[-1])
         if all(s == "same" for s in statuses):
@@ -254,11 +283,24 @@ def version_diff(versions: list[dict]) -> dict:
             change = "removed"
         elif first is not None and last is not None and _norm(first) == _norm(last) and any(s in ("modified", "added", "removed") for s in statuses):
             change = "reverted"
-        elif all(s in ("same", "minor") for s in statuses):
+        elif all(s in ("same", "renumbered") for s in statuses):
+            change = "renumbered"
+        elif all(s in ("same", "minor", "renumbered") for s in statuses):
             change = "minor"
         else:
             change = "modified"
         value_change = any(h.get("value_changes") for h in history)
-        result["items"].append({"key": track["key"], "code": track["code"], "title": track["title"], "history": history,
-                                "summary": {"change": change, "value_change": value_change, "pairing_uncertain": track["uncertain"]}})
+        codes = [c for _, c in sorted(track["codes"].items())]
+        last_code = next((c for c in reversed(codes) if c), None)
+        result["items"].append({"key": track["key"], "code": last_code, "codes": [c for c in dict.fromkeys(codes) if c],
+                                "title": track["title"], "history": history,
+                                "summary": {"change": change, "value_change": value_change, "pairing_uncertain": track["uncertain"],
+                                            "code_changed": len({c for c in codes if c}) > 1}})
+    # 같은 번호를 다른 조항에 다시 쓴 경우: 삭제된 항목과 새 항목의 코드가 같다
+    gone = {i["code"] for i in result["items"] if i["summary"]["change"] == "removed" and i["code"]}
+    for item in result["items"]:
+        if item["summary"]["change"] == "added" and item["code"] in gone:
+            item["summary"]["code_reused"] = True
+        if item["summary"]["change"] == "removed" and item["code"] in {i["code"] for i in result["items"] if i["summary"]["change"] == "added"}:
+            item["summary"]["code_reused"] = True
     return result
