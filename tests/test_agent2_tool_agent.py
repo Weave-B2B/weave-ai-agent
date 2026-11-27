@@ -360,3 +360,44 @@ def test_non_rate_limit_errors_are_not_retried(monkeypatch, code, retryable):
     with pytest.raises(AgentFailure):
         ToolAgent2(llm).run(Agent2Input.model_validate(INPUTS["CR-A-001"]))
     assert slept == []
+
+
+# ---- #100 같은 항목 찾기·값 비교 ----
+def _read(agent, allowed, seen, read, key):
+    agent._run_tool(AgentStep(thought="", action="get_section", doc_id=key[0], section_id=key[1]), "P-COM-101:BL-2", allowed, seen, read)
+
+
+def test_find_same_items_searches_other_baseline_docs_and_allows_citation():
+    agent = ToolAgent2(ScriptLLM(GOLD["CR-A-001"]))
+    allowed = agent._baseline_docs("P-COM-101:BL-2")
+    spec = next(k for k, s in sections().items() if k[0] in allowed and s["doc_type"] == "functional_spec" and len(s["text"]) > 40)
+    seen, read = [], {}
+    step = AgentStep(thought="", action="find_same_items", doc_id=spec[0], section_id=spec[1])
+    assert "error" in agent._run_tool(step, "P-COM-101:BL-2", allowed, seen, read)          # 읽기 전에는 못 쓴다
+    _read(agent, allowed, seen, read, spec)
+    res = agent._run_tool(step, "P-COM-101:BL-2", allowed, seen, read)["results"]
+    assert res and all(r["doc_id"] != spec[0] and r["doc_id"] in allowed for r in res)      # 다른 기준선 문서만
+    assert all((r["doc_id"], r["section_id"]) in seen for r in res)                         # 찾은 섹션은 근거 후보
+
+
+def test_compare_values_needs_two_read_sections_and_reports_differences():
+    agent = ToolAgent2(ScriptLLM(GOLD["CR-A-001"]))
+    allowed = agent._baseline_docs("P-COM-101:BL-2")
+    seen, read = [], {}
+    a, b = [k for k, s in sections().items() if k[0] in allowed and any(c.isdigit() for c in s["text"])][:2]
+    step = AgentStep(thought="", action="compare_values", refs=[f"{a[0]}:{a[1]}", f"{b[0]}:{b[1]}"])
+    assert "먼저 get_section" in agent._run_tool(step, "P-COM-101:BL-2", allowed, seen, read)["error"]
+    assert "2개 이상" in agent._run_tool(AgentStep(thought="", action="compare_values", refs=[f"{a[0]}:{a[1]}"]),
+                                        "P-COM-101:BL-2", allowed, seen, read)["error"]
+    _read(agent, allowed, seen, read, a)
+    _read(agent, allowed, seen, read, b)
+    out = agent._run_tool(step, "P-COM-101:BL-2", allowed, seen, read)
+    assert set(out["values"]) == {f"{a[0]}:{a[1]}", f"{b[0]}:{b[1]}"} and len(out["differences"]) == 1
+
+
+def test_compare_values_pairs_changed_numbers():
+    read = {("Q", "1"): {"text": "사진 첨부는 최대 3장, 금액 1,200,000원"}, ("S", "2"): {"text": "사진 첨부는 최대 5장, 금액 1,200,000원"}}
+    out = ToolAgent2._compare(["Q:1", "S:2"], read)
+    diffs = out["differences"]["Q:1 → S:2"]
+    assert any(d["before"] == "3장" and d["after"] == "5장" for d in diffs)
+    assert not any(d["kind"] == "amount" for d in diffs)                                   # 같은 금액은 차이가 아니다
