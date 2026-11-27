@@ -136,7 +136,7 @@ test('Supervisor automatically retries a temporary failure and stops for a PM an
       const {operation_id,...payload}=JSON.parse(options.body);
       assert.equal(typeof operation_id,'string');
       assert.match(url,/\/prototype\/runs\/cases\//);
-      assert.deepEqual(payload,{question_id:'Q1',text:'포함해 주세요',state_revision:2});
+      assert.deepEqual(payload,{question_id:'Q1',text:'포함해 주세요',state_revision:2,disposition:'provided'});
       result={a1,state_revision:3};
     } else result=steps.shift();
     return {ok:true,json:async()=>result};
@@ -159,7 +159,7 @@ test('Supervisor automatically retries a temporary failure and stops for a PM an
   assert.match(demo.page(),/최종 검토하기/);
 });
 
-test('common Run exposes server choices and unknown answers stay pending',async t=>{
+test('common Run exposes server choices; picking one waits for submit and unknown is a separate action',async t=>{
   const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
   const calls=[];
   const a1={items:[{item_id:'R1',item_type:'function',intent:'change_request',text:'리뷰'}]};
@@ -178,13 +178,19 @@ test('common Run exposes server choices and unknown answers stay pending',async 
   await new Promise(setImmediate);
   assert.ok(calls.every(call=>call.url.startsWith('/prototype/runs/cases')));
   assert.match(demo.page(),/신규 구현/);
+  // '모름'은 선택지가 아니라 별도 버튼이다.
+  assert.doesNotMatch(demo.page(),/name="analysis-pm-choice" value="모름"/);
+  assert.match(demo.page(),/data-demo-action="answer-unknown"/);
   assert.doesNotMatch(demo.page(),/id="analysis-pm-other"/);
-  await demo.change({name:'analysis-pm-choice',value:'모름'});
+  await demo.change({name:'analysis-pm-choice',value:'신규 구현'});
   await new Promise(setImmediate);
-  assert.equal(demo.current().supervisorQuestion.question_id,'Q1');
-  assert.equal(demo.current().running,false);
-  assert.equal(calls.find(c=>c.url.endsWith('/answer')).body.text,'모름');
-  assert.ok(calls.find(c=>c.url.endsWith('/answer')).body.operation_id);
+  assert.ok(!calls.some(c=>c.url.endsWith('/answer')), '선택만으로 제출하지 않는다');
+  demo.click({closest:s=>s==='[data-demo-action]'?{dataset:{demoAction:'answer-unknown'}}:null});
+  await new Promise(setImmediate);
+  const sent=calls.find(c=>c.url.endsWith('/answer')).body;
+  assert.equal(sent.text,'모름');
+  assert.equal(sent.disposition,'unknown');
+  assert.ok(sent.operation_id);
 });
 
 test('Supervisor groups repeated live tool events under a single Agent 2 result',{timeout:3000},async t=>{
@@ -345,8 +351,9 @@ test('restoring a case loads real server data and does not invent final approval
   assert.match(demo.page(),/메일 초안 생성/);
 });
 
-test('PM question dialog offers contextual quick choices and submits immediately on click',async t=>{
-  const q={question_id:'Q-REUSE',stage:'agent2',text:'기존 사진 업로드 기능을 재사용할 수 있는지 확인이 필요합니다.',reason:'원문만으로 확정되지 않았습니다.',target:'pm',blocking:true,status:'open'};
+test('PM question dialog shows at most four options including direct input and submits only on explicit click',async t=>{
+  const q={question_id:'Q-REUSE',stage:'agent2',text:'기존 사진 업로드 기능을 재사용할 수 있나요?',reason:'원문만으로 확정되지 않았습니다.',target:'pm',blocking:true,status:'open',
+    basis_refs:['FSP-A-001:F-11'],choices:['기존 기능 재사용 가능','신규 구현 필요','일부 재사용 후 보완','네 번째 선택지','기타(직접입력)','모름']};
   const session={id:'CR-UI-QCHOICE',caseId:'C-QC',stateRevision:3,text:'요청',created:'2026-11-10',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q};
   const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
   const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
@@ -365,13 +372,20 @@ test('PM question dialog offers contextual quick choices and submits immediately
   await new Promise(resolve=>setTimeout(resolve,10));
   h.click('agent3-question');
   const html=h.demo.page();
+  assert.equal((html.match(/name="analysis-pm-choice"/g)||[]).length,4);
   assert.match(html,/기존 기능 재사용 가능/);
-  assert.match(html,/신규 구현 필요/);
+  assert.match(html,/일부 재사용 후 보완/);
+  assert.doesNotMatch(html,/네 번째 선택지/);
   assert.match(html,/기타 · 직접 입력/);
+  assert.match(html,/확인이 필요한 이유/);
+  assert.match(html,/FSP-A-001:F-11/);
   assert.doesNotMatch(html,/id="analysis-pm-other"/);
-  h.choice('기존 기능을 재사용할 수 있습니다 (기존 모듈 활용)');
+  h.choice('기존 기능 재사용 가능');
   await new Promise(resolve=>setTimeout(resolve,10));
-  assert.deepEqual(submitted,{question_id:'Q-REUSE',text:'기존 기능을 재사용할 수 있습니다 (기존 모듈 활용)',state_revision:3});
+  assert.equal(submitted,null);
+  h.click('answer');
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.deepEqual(submitted,{question_id:'Q-REUSE',text:'기존 기능 재사용 가능',state_revision:3});
 });
 
 test('calc-v1 list and final review display supply amount rather than labor subtotal',()=>{
