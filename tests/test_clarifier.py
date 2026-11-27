@@ -152,3 +152,53 @@ def test_question_limit_holds():
     gaps = [gap(blocking=True, slot=f"s{i}", missing=f"정보 {i}는 무엇인가요?") for i in range(5)]
     coord = run(Clarifier(StubLlm(error=RuntimeError()), search=SEARCH), gaps)
     assert len(coord.questions) == 4 and "한도" in coord.hold_reason
+
+
+# ---- 실제 모델 확인에서 나온 보완 ----
+def test_single_fact_check_and_fallback_assumption_text():
+    from app.orchestration.clarifier import is_single_fact, unasked_assumption_text
+    assert is_single_fact("변경할 화면은 어디인가요?")
+    assert not is_single_fact("변경 대상 화면은 무엇이며, 바꾸려는 결과는 각각 무엇인가요?")
+    assert not is_single_fact("화면은 어디인가요? 결과는 무엇인가요?")
+    coord = run(Clarifier(StubLlm(), search=SEARCH), [gap(blocking=False, missing="맛집은 몇 곳을 보여줄까요?")])
+    assert coord.assumptions[0].text == "확인 전까지 미확정으로 두고 진행합니다 (확인할 내용: 맛집은 몇 곳을 보여줄까요?)"
+
+
+def test_compound_model_question_falls_back_to_single_fact_agent_question():
+    g = gap(blocking=True, question_id="A2Q", missing="변경할 화면은 어디인가요?")
+    llm = StubLlm({"questions": [{"gap_id": g.gap_id, "action": "ask", "choices": [],
+                                  "question": "변경 대상 화면은 무엇이며, 결과는 각각 무엇인가요?"}]})
+    assert run(Clarifier(llm, search=SEARCH), [g]).questions[0].text == "변경할 화면은 어디인가요?"
+
+
+def test_model_marks_same_information_and_one_question_covers_both():
+    first = gap(stage="agent1", slot="target_screen", missing="어느 화면을 바꾸나요?", blocking=True)
+    second = gap(stage="agent2", slot="scope_target", missing="변경 대상 화면이 무엇인가요?", blocking=True)
+    llm = StubLlm({"questions": [
+        {"gap_id": first.gap_id, "action": "ask", "question": "어느 화면을 바꾸나요?", "choices": []},
+        {"gap_id": second.gap_id, "action": "ask", "question": "변경 대상 화면이 무엇인가요?", "choices": [],
+         "same_as": first.gap_id}]})
+    coord = run(Clarifier(llm, search=SEARCH), [first, second])
+    assert len(coord.questions) == 1
+    assert set(coord.questions[0].gap_ids) == {first.gap_id, second.gap_id}
+
+
+def test_question_supersedes_assumption_about_same_information():
+    earlier = gap(stage="agent1", slot="화면_변경_내용", missing="어떤 화면을 바꾸나요?", blocking=False)
+    coord = run(Clarifier(StubLlm(), search=SEARCH), [earlier])
+    assert len(coord.assumptions) == 1
+    later = gap(stage="agent2", slot="target_screen_and_expected_change", missing="변경 대상 화면이 무엇인가요?", blocking=True)
+    llm = StubLlm({"questions": [{"gap_id": later.gap_id, "action": "ask", "question": "변경 대상 화면이 무엇인가요?",
+                                  "choices": [], "supersedes": [earlier.gap_id, "gap-unknown"]}]})
+    coord = run(Clarifier(llm, search=SEARCH), [earlier, later], coord)
+    assert coord.assumptions == []
+    assert earlier.gap_id in coord.questions[0].gap_ids and "gap-unknown" not in coord.questions[0].gap_ids
+    assert coord.questions[0].text == "변경 대상 화면이 무엇인가요?"  # 질문 문장·근거는 대체한 gap이 아닌 원래 gap 기준
+
+
+def test_gap_becoming_blocking_retires_its_earlier_assumption_without_model_help():
+    non_blocking = gap(blocking=False)
+    coord = run(Clarifier(StubLlm(), search=SEARCH), [non_blocking])
+    now_blocking = gap(blocking=True)  # 같은 항목·slot — 다시 실행된 에이전트가 필수로 올림
+    coord = run(Clarifier(StubLlm(error=RuntimeError()), search=SEARCH), [now_blocking], coord)
+    assert coord.assumptions == [] and len(coord.questions) == 1
