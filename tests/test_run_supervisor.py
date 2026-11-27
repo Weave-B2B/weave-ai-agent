@@ -187,6 +187,26 @@ def test_unknown_answer_to_blocking_agent_question_holds_instead_of_repeating(se
     assert not setup[2].calls
 
 
+def test_new_pm_question_carries_structured_evidence(setup):
+    workers = setup[1]
+    original = workers.agent1.run
+    def cited_question(inp):
+        out = original(inp)
+        out.questions = [Question(question_id="cited", case_id=inp.context.case_id, stage="agent1",
+            item_ids=[], field="photo_count", text="사진은 몇 장까지 올릴 수 있어야 하나요?", reason="수량 미정",
+            basis_refs=["message_text[0:6]", "SOW-A-001-v1.0:2.1", "TRIP-7", "QA"], target="pm", blocking=True)]
+        out.status = "NEEDS_INPUT"
+        return out
+    workers.agent1.run = cited_question
+    runtime(setup).step("run-1")
+    q = runtime(setup).step("run-1")["run"].coordination.questions[0]
+    message = setup[0].get_inputs("run-1").agent1_input.message_text
+    assert [(e.source_type, e.ref) for e in q.evidence] == [
+        ("request", "message_text[0:6]"), ("contract", "SOW-A-001-v1.0:2.1"), ("activity", "TRIP-7")]
+    assert q.evidence[0].title == message[0:6].strip()
+    assert q.basis_refs[-1] == "QA"  # 형식을 모르는 근거는 원문 문자열로만 남는다
+
+
 def test_reworded_duplicate_from_another_agent_is_not_asked_again(setup):
     from app.orchestration.run_coordination import PMQuestion, SaveCoordination
     state = setup[0]

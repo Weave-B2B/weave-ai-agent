@@ -394,6 +394,23 @@ test('PM question dialog shows at most four options including direct input and s
   assert.deepEqual(submitted,{question_id:'Q-REUSE',text:'기존 기능 재사용 가능',state_revision:3});
 });
 
+test('PM question dialog labels structured evidence by source type',async t=>{
+  const q={question_id:'Q-EV',stage:'agent3',text:'검수일은 확정 일정인가요?',reason:'일정 산정에 필요합니다.',target:'pm',blocking:true,status:'open',
+    basis_refs:['message_text[0:4]','FSP-A:F-1','TRIP-7'],choices:[],
+    evidence:[{source_type:'request',system:'message',ref:'message_text[0:4]',title:'검수 일정'},
+      {source_type:'contract',system:'doc',ref:'FSP-A:F-1',title:'기능 명세서 · F-1'},
+      {source_type:'activity',system:'jira',ref:'TRIP-7',title:null}]};
+  const session={id:'CR-UI-QEV',caseId:'C-EV',stateRevision:2,text:'검수 일정',created:'2026-11-27',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
+  globalThis.fetch=async()=>({ok:true,json:async()=>({state_revision:2,a1:{items:[]},question:q})});
+  h.demo.enter(session.id);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  h.click('agent3-question');
+  const html=h.demo.page();
+  assert.match(html,/근거: 고객 요청 원문 “검수 일정” \/ 계약 문서 기능 명세서 · F-1 \/ 진행 자료 TRIP-7/);
+});
+
 test('calc-v1 list and final review display supply amount rather than labor subtotal',()=>{
   const session={id:'CR-UI-CALC',text:'조정 견적',created:'2026-11-18',events:[],step:6,ready:true,analysisId:'calc',
     realA3:{contract_version:'agent3-run/2',status:'IMPACT_DRAFT_READY',estimates:[{totals:{md:2,price:1400000,cost:1000000},lines:[]}],
