@@ -226,6 +226,20 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
     if (!rows.length) return '';
     return `<div class="notice"><strong>질문하지 않고 진행한 조건 ${rows.length}건</strong><ul>${rows.map(a => `<li>${esc(a.text)}${a.kind === 'resolved' && a.evidence?.length ? ` <span class="caption">(근거: ${esc(a.evidence.map(e => e.title || e.ref).join(', '))})</span>` : ''}</li>`).join('')}</ul></div>`;
   }
+  // 영향 산정이 참고한 작업 진행 자료(Jira·GitHub). 계약 근거가 아니라 진행 상황 참고 자료다.
+  const ACTIVITY_STATUS = { done: '완료', in_progress: '진행 중', todo: '할 일', unknown: '상태 미확인' };
+  function workActivitySection(impact) {
+    const activity = impact?.work_activity;
+    if (!activity) return '';
+    const issues = activity.issues || [];
+    const prs = activity.pull_requests || [];
+    const link = (url, label) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label);
+    const rows = [
+      ...issues.map(i => `<li>${link(i.url, i.key)} ${esc(i.title)} <span class="caption">· ${esc(ACTIVITY_STATUS[i.status_category] || i.status)}${i.assignee ? ` · ${esc(i.assignee)}` : ''}${i.remaining_estimate_hours != null ? ` · 남은 ${esc(i.remaining_estimate_hours)}시간` : ''}</span></li>`),
+      ...prs.map(p => `<li>${link(p.url, `${p.repo}#${p.number}`)} ${esc(p.title)} <span class="caption">· ${esc(p.state === 'merged' ? '병합됨' : p.state === 'open' ? '진행 중' : '닫힘')}</span></li>`)];
+    const body = rows.length ? `<ul>${rows.join('')}</ul>` : `<p class="caption">${esc(activity.unavailable_reason || '관련 진행 자료를 찾지 못했습니다.')}</p>`;
+    return `<h3>참고한 진행 자료</h3><p class="caption">Jira·GitHub 조회 결과 · ${esc(activity.fetched_at || '')} 기준 · 계약 근거가 아닌 진행 상황 참고 자료입니다.</p>${body}`;
+  }
   function questionChoiceList(q) {
     const reserved = /^(기타|직접\s*입력|모름|모르겠어요|확인\s*필요|unknown|other)/i;
     const seen = new Set();
@@ -717,8 +731,8 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       const t = totalsFor(s) || {};
       const margin = t.price && typeof t.cost === 'number' ? ((t.price - t.cost) / t.price * 100).toFixed(1) : null;
       const rate = estimate.rate_card_id ? `<button type="button" class="rate-card-link" data-rate-card="${esc(estimate.rate_card_id)}" aria-label="${esc(estimate.rate_card_id)} 단가표 보기">${esc(estimate.rate_card_id)}</button>` : '미선택';
-      const lines = (s.realA3.estimates.flatMap(row => row.lines || [])).map(l => `<tr><td>${esc(l.task)}</td><td>${esc(l.role)}</td><td>${esc(l.md)}</td></tr>`).join('');
-      return `<h2>영향 산정 결과</h2><div class="analysis-numbers"><div><small>총 공수</small><strong>${t.md ?? '미산정'} <small>MD</small></strong></div><div><small>예상 직접원가 · 내부 확인용</small><strong>${typeof t.cost === 'number' ? won(t.cost) : '미산정'}</strong></div><div><small>고객 제안가 · VAT 별도</small><strong>${t.price != null ? won(t.price) : '미산정'}</strong></div></div><p class="caption">단가표 ${rate}${margin !== null ? ` · 예상 마진 ${margin}%` : ''}</p>${pricingSummary(s.realA3)}${lines ? `<table class="rate-card-table"><thead><tr><th>작업</th><th>직군</th><th>MD</th></tr></thead><tbody>${lines}</tbody></table>` : ''}<p class="caption">Orchestration Agent 3 결과입니다.</p>`;
+      const lines = (s.realA3.estimates.flatMap(row => row.lines || [])).map(l => `<tr><td>${esc(l.task)}${l.assumption ? `<small class="caption" style="display:block">가정: ${esc(l.assumption)}</small>` : ''}</td><td>${esc(l.role)}</td><td>${esc(l.md)}</td></tr>`).join('');
+      return `<h2>영향 산정 결과</h2><div class="analysis-numbers"><div><small>총 공수</small><strong>${t.md ?? '미산정'} <small>MD</small></strong></div><div><small>예상 직접원가 · 내부 확인용</small><strong>${typeof t.cost === 'number' ? won(t.cost) : '미산정'}</strong></div><div><small>고객 제안가 · VAT 별도</small><strong>${t.price != null ? won(t.price) : '미산정'}</strong></div></div><p class="caption">단가표 ${rate}${margin !== null ? ` · 예상 마진 ${margin}%` : ''}</p>${pricingSummary(s.realA3)}${lines ? `<table class="rate-card-table"><thead><tr><th>작업</th><th>직군</th><th>MD</th></tr></thead><tbody>${lines}</tbody></table>` : ''}<p class="caption">Orchestration Agent 3 결과입니다.</p>` + workActivitySection(s.realA3);
     }
     if (realRun(s)) {
       const draft = s.emailDraft;
@@ -842,6 +856,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
     setBackendProject,
     refresh: refreshSession,
     page, byId, current, resultPreview(id, tab) { const s = byId(id); return s ? preview(s, tab) : ''; },
+    workActivity(id) { const s = byId(id); return s ? workActivitySection(s.realA3) : ''; },
     enter(id) {
       currentId = byId(id) ? id : null; modal = null; error = '';
       const s = current();
