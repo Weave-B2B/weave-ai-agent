@@ -1,19 +1,26 @@
 """총괄 Clarifier: gap 합치기·질문/가정 선별·근거 검증·되풀이 방지."""
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from app.agents.gaps import gaps_from_output, make_gap_id
-from app.orchestration.clarifier import Clarifier, ClarifierDraft, is_question_sentence, merge_gaps
+from app.orchestration.clarifier import Clarifier, ClarifierDraft, ClarifierSearchPlan, is_question_sentence, merge_gaps
 from app.orchestration.run_coordination import CoordinationState, PMQuestion
 from schema.schemas import InfoGap, Question
 
 
 class StubLlm:
-    def __init__(self, draft=None, error=None):
-        self.draft, self.error, self.calls = draft, error, []
+    """질문 작성 호출은 calls, 검색어 결정 호출은 plan_calls에 따로 기록한다."""
+    def __init__(self, draft=None, error=None, plan=None):
+        self.draft, self.error, self.plan, self.calls, self.plan_calls = draft, error, plan, [], []
 
     def complete_structured(self, **kw):
+        if kw["schema"] is ClarifierSearchPlan:
+            self.plan_calls.append(kw)
+            if self.error or self.plan is None:
+                raise self.error or RuntimeError("검색어 미제공")
+            return SimpleNamespace(parsed=ClarifierSearchPlan.model_validate(self.plan))
         self.calls.append(kw)
         if self.error:
             raise self.error
@@ -202,3 +209,180 @@ def test_gap_becoming_blocking_retires_its_earlier_assumption_without_model_help
     now_blocking = gap(blocking=True)  # 같은 항목·slot — 다시 실행된 에이전트가 필수로 올림
     coord = run(Clarifier(StubLlm(error=RuntimeError()), search=SEARCH), [now_blocking], coord)
     assert coord.assumptions == [] and len(coord.questions) == 1
+
+
+# ---- F단계: 진행 자료(Jira)를 선택지·조회 해결에 쓴다 ----
+def _activity():
+    from app.integrations.work_activity.base import WorkActivityTools
+    from app.integrations.work_activity.fake import FakeWorkActivitySource
+    from app.orchestration.clarifier import ActivityCandidates
+    return ActivityCandidates(WorkActivityTools(FakeWorkActivitySource(), clock=lambda: "2026-11-27T10:00:00+00:00"))
+
+
+def test_only_agent3_information_can_be_filled_from_activity():
+    q = lambda stage: Question(question_id=f"{stage}-q", case_id="C", stage=stage, item_ids=["R1"], field="reuse",
+                               text="기존 카드를 재사용할 수 있나요?", reason="r", target="pm", blocking=True)
+    resolvers = [gaps_from_output(stage, SimpleNamespace(gaps=[], questions=[q(stage)]))[0].resolvable_by
+                 for stage in ("agent1", "agent2", "agent3")]
+    assert [("activity" in r, "docs" in r) for r in resolvers] == [(False, False), (False, False), (True, True)]
+
+
+def test_activity_candidates_back_choices_with_progress_evidence():
+    g = gap(stage="agent1", slot="target_screen", missing="어느 추천 화면을 바꾸나요?", blocking=True)
+    llm = StubLlm({"questions": [{"gap_id": g.gap_id, "action": "ask", "question": "어느 추천 화면을 바꾸나요?",
+        "choices": [{"label": "관광지 추천 카드", "evidence_refs": ["TRIP-101"]},
+                    {"label": "추천 고도화 에픽 전체", "evidence_refs": ["TRIP-100"]}]}]})
+    coord = run(Clarifier(llm, search=SEARCH, activity=_activity()), [g])
+    sent = llm.calls[0]["user"]
+    assert '"source": "activity"' in sent and '"source": "contract"' in sent
+    assert sent.count('"ref": "TRIP-100"') == 1  # 검색에도 걸린 에픽은 후보에 한 번만
+    q = coord.questions[0]
+    assert q.choices == ["관광지 추천 카드", "추천 고도화 에픽 전체"]
+    ev = q.choice_evidence["관광지 추천 카드"][0]
+    assert (ev.source_type, ev.system, ev.ref, ev.title) == ("activity", "jira", "TRIP-101", "관광지 추천 답변 카드 UI")
+
+
+@pytest.mark.parametrize("stage, resolvable, asked", [("agent3", ["pm", "activity"], False), ("agent1", ["pm"], True)])
+def test_activity_resolves_only_progress_information(stage, resolvable, asked):
+    g = gap(stage=stage, slot="existing_card", missing="추천 카드가 이미 구현돼 있나요?", blocking=True, resolvable_by=resolvable)
+    llm = StubLlm({"questions": [{"gap_id": g.gap_id, "action": "resolved", "question": "추천 카드가 이미 구현돼 있나요?",
+                                  "resolved_answer": "추천 카드 UI는 TRIP-101로 완료되어 재사용할 수 있습니다.",
+                                  "resolved_refs": ["TRIP-101"]}]})
+    coord = run(Clarifier(llm, search=SEARCH, activity=_activity()), [g])
+    assert bool(coord.questions) is asked
+    if not asked:
+        a = coord.assumptions[0]
+        assert (a.kind, a.evidence[0].source_type, a.evidence[0].ref) == ("resolved", "activity", "TRIP-101")
+
+
+def test_activity_lookup_failure_still_asks_with_contract_candidates():
+    from app.integrations.work_activity.base import WorkActivityError, WorkActivityTools
+    from app.integrations.work_activity.fake import FakeWorkActivitySource
+    from app.orchestration.clarifier import ActivityCandidates
+
+    class Down(FakeWorkActivitySource):
+        def list_project_components(self):
+            raise WorkActivityError("unavailable", "Jira 인증 실패")
+
+    g = gap(blocking=True)
+    llm = StubLlm({"questions": [{"gap_id": g.gap_id, "action": "ask", "question": "검수일은 확정 일정인가요?", "choices": []}]})
+    coord = run(Clarifier(llm, search=SEARCH, activity=ActivityCandidates(WorkActivityTools(Down()))), [g])
+    assert coord.questions and '"source": "activity"' not in llm.calls[0]["user"]
+
+
+def test_supervisor_builds_activity_candidates_only_when_configured(monkeypatch):
+    from app.core.config import settings
+    from app.orchestration.clarifier import ActivityCandidates
+    from app.orchestration.run_supervisor import RunSupervisorRuntime
+    assert RunSupervisorRuntime._clarifier_activity() is None  # 테스트 기본값 none
+    monkeypatch.setattr(settings, "work_activity_source", "fake")
+    built = RunSupervisorRuntime._clarifier_activity()
+    assert isinstance(built, ActivityCandidates) and built.tools.budget == 6
+    monkeypatch.setattr(settings, "work_activity_source", "jira")
+    monkeypatch.delenv("PROTOTYPE_LAB", raising=False)
+    assert RunSupervisorRuntime._clarifier_activity() is None  # lab 밖에서는 Jira 직접 조회를 쓰지 않는다
+
+
+# ---- 진행 자료 검색어 ----
+@pytest.mark.parametrize("text, expected", [
+    ("변경하려는 관광지 추천 조건은 무엇인가요? 관광지 추천 조건 — 운영 방침에 맞게 변경", ["관광지", "추천", "조건", "운영"]),
+    ("휠체어 이용자도 갈 수 있는 무장애 관광지만 골라서 보여주는 옵션", ["휠체어", "이용자", "무장애", "관광지"]),
+    ("어떤 화면을 변경하면 될까요?", []),
+])
+def test_search_keywords_drop_particles_and_weak_words(text, expected):
+    from app.integrations.work_activity.base import search_keywords
+    assert search_keywords(text) == expected
+
+
+def test_activity_search_narrows_then_widens():
+    from app.orchestration.clarifier import ActivityCandidates
+    assert ActivityCandidates.queries("주변 맛집 정보를 맛집 카드에 추가할까요?") == ["맛집 주변", "맛집"]
+    assert ActivityCandidates.queries("무엇인가요?") == []
+
+    calls = []
+    activity = _activity()
+    original = activity.tools.search_jira_issues
+    # 실제 Jira는 여러 단어를 모두 포함해야 걸린다 — 두 단어 검색이 비면 한 단어로 넓히는지 본다
+    activity.tools.search_jira_issues = lambda q, **kw: calls.append(q) or ([] if " " in q else original(q, **kw))
+    found = [c["ref"] for c in activity.for_query("관광지 맛집 연동은 어떻게 할까요?")]
+    assert calls == ["관광지 맛집", "관광지"]
+    assert "TRIP-101" in found
+
+
+
+# ---- 총괄 LLM이 검색어를 정한다 ----
+def test_model_chosen_queries_drive_document_and_jira_search():
+    g = gap(stage="agent1", slot="target_condition", missing="변경하려는 관광지 추천 조건은 무엇인가요?", blocking=True)
+    doc_queries, jira_queries = [], []
+    activity = _activity()
+    original = activity.tools.search_jira_issues
+    activity.tools.search_jira_issues = lambda q, **kw: jira_queries.append(q) or original(q, **kw)
+    llm = StubLlm({"questions": [{"gap_id": g.gap_id, "action": "ask", "question": g.missing, "choices": []}]},
+                  plan={"searches": [{"gap_id": g.gap_id, "doc_query": "추천 필터 조건", "jira_query": "맛집"}]})
+    clarifier = Clarifier(llm, search=lambda q: doc_queries.append(q) or SEARCH(q), activity=activity)
+    run(clarifier, [g])
+    assert doc_queries == ["추천 필터 조건"] and jira_queries[0] == "맛집"
+    plan_payload = json.loads(llm.plan_calls[0]["user"])
+    assert plan_payload["activity_available"] is True and plan_payload["gaps"][0]["gap_id"] == g.gap_id
+    assert '"ref": "TRIP-118"' in llm.calls[0]["user"]  # 모델 검색어로 찾은 이슈가 질문 작성에 후보로 간다
+
+
+def test_search_plan_failure_falls_back_to_rule_keywords():
+    g = gap(stage="agent1", slot="target_condition", missing="변경하려는 관광지 추천 조건은 무엇인가요?", blocking=True)
+    doc_queries, jira_queries = [], []
+    activity = _activity()
+    activity.tools.search_jira_issues = lambda q, **kw: jira_queries.append(q) or []
+    llm = StubLlm({"questions": [{"gap_id": g.gap_id, "action": "ask", "question": g.missing, "choices": []}]})  # plan 없음
+    run(Clarifier(llm, search=lambda q: doc_queries.append(q) or [], activity=activity), [g])
+    assert len(llm.plan_calls) == 1
+    assert doc_queries[0].startswith("변경하려는 관광지 추천 조건은")  # 문서는 gap 문장으로
+    assert jira_queries[:2] == ["관광지 추천", "관광지"]          # Jira는 규칙 기반 핵심 단어로
+
+
+def test_no_search_plan_call_when_nothing_to_ask():
+    llm = StubLlm()
+    run(Clarifier(llm, search=SEARCH), [gap(blocking=False)])
+    assert not llm.plan_calls and not llm.calls
+
+
+def test_orchestration_prompts_carry_no_test_project_knowledge():
+    """새 Jira·문서를 연결해도 같은 지침이어야 한다 — 테스트 프로젝트 분야 단어를 지침에 넣지 않는다."""
+    from pathlib import Path
+    from app.agents.agent3.activity_probe import PROBE_SYSTEM
+    from app.orchestration.clarifier import SEARCH_SYSTEM, WRITER_SYSTEM
+    v4 = (Path(__file__).resolve().parents[1] / "app/agents/agent1/prompts/a1-draft-v4.txt").read_text(encoding="utf-8")
+    v3 = (Path(__file__).resolve().parents[1] / "app/agents/agent1/prompts/a1-draft-v3.txt").read_text(encoding="utf-8")
+    added_in_v4 = "\n".join(line for line in v4.splitlines() if line not in v3.splitlines())
+    for prompt in (SEARCH_SYSTEM, WRITER_SYSTEM, PROBE_SYSTEM, added_in_v4):
+        for word in ("관광", "맛집", "무장애", "휠체어", "챗봇", "휴무", "TripBranch", "TRIP-", "TP-"):
+            assert word not in prompt, word
+
+
+# ---- 총괄 LLM이 조회할 곳을 고른다 ----
+@pytest.mark.parametrize("sources, docs_called, jira_called", [
+    (["docs"], True, False),
+    (["jira"], False, True),
+    ([], False, False),          # 기록이 없을 정보 — 조회 없이 직접 입력으로 묻는다
+    (None, True, True),          # 모델이 고르지 않으면 둘 다 조회한다
+])
+def test_model_chosen_sources_limit_lookups(sources, docs_called, jira_called):
+    g = gap(stage="agent1", slot="target_condition", missing="변경하려는 관광지 추천 조건은 무엇인가요?", blocking=True)
+    doc_queries, jira_queries = [], []
+    activity = _activity()
+    original = activity.tools.search_jira_issues
+    activity.tools.search_jira_issues = lambda q, **kw: jira_queries.append(q) or original(q, **kw)
+    plan = {"gap_id": g.gap_id, "doc_query": "추천 조건", "jira_query": "맛집"}
+    if sources is not None:
+        plan["sources"] = sources
+    llm = StubLlm({"questions": [{"gap_id": g.gap_id, "action": "ask", "question": g.missing, "choices": []}]},
+                  plan={"searches": [plan]})
+    coord = run(Clarifier(llm, search=lambda q: doc_queries.append(q) or SEARCH(q), activity=activity), [g])
+    sent = llm.calls[0]["user"]
+    assert bool(doc_queries) is docs_called and ('"source": "contract"' in sent) is docs_called
+    assert bool(jira_queries) is jira_called and ('"source": "activity"' in sent) is jira_called
+    assert coord.questions  # 조회 대상과 무관하게 질문은 만든다
+
+
+def test_search_prompt_explains_source_choice():
+    from app.orchestration.clarifier import SEARCH_SYSTEM
+    assert "sources" in SEARCH_SYSTEM and '"docs"' in SEARCH_SYSTEM and '"jira"' in SEARCH_SYSTEM

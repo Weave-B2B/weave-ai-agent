@@ -82,6 +82,35 @@ def clean_query(query: str) -> str:
     return text[:QUERY_CHARS]
 
 
+# 검색어에서 빼는 조사·어미(긴 것부터)와 의미가 약한 말. 질문·요청 문장에서 기능·화면 이름만 남기려는 규칙이다.
+_ENDINGS = sorted(["으로부터", "에서는", "에게서", "까지는", "하려는", "하려고", "인가요", "할까요", "될까요", "나요", "인지", "으로",
+                   "에서", "에게", "까지", "부터", "처럼", "보다", "하는", "하고", "해서", "하면", "에는", "과의", "와의", "이나",
+                   "은", "는", "이", "가", "을", "를", "의", "에", "로", "와", "과", "도", "만", "요"], key=len, reverse=True)
+_STOPWORDS = {"무엇", "무엇인가", "어떤", "어느", "어떻게", "얼마", "몇", "언제", "누가", "저희", "우리", "고객", "담당자",
+              "변경", "추가", "수정", "반영", "확인", "검토", "요청", "부탁", "부탁드립니다", "견적", "비용", "하나", "중", "때",
+              "것", "등", "및", "또는", "그", "이번", "지난", "관련", "내용", "부분", "기능", "화면", "맞게", "같이", "함께",
+              "있나요", "없나요", "있는", "없는", "주세요", "드립니다", "합니다", "싶습니다", "말씀", "회의", "보고"}
+
+
+def search_keywords(text: str, limit: int = 4) -> list[str]:
+    """문장에서 검색할 핵심 단어를 뽑는다. 여러 번 나온 단어를 앞에, 같으면 먼저 나온 순서."""
+    counts, order = {}, []
+    for raw in re.split(r"[^0-9A-Za-z가-힣]+", text or ""):
+        if raw in _ENDINGS or raw in _STOPWORDS:  # "될까요"처럼 단어 전체가 어미·약한 말이면 자르기 전에 뺀다
+            continue
+        word = raw
+        for ending in _ENDINGS:
+            if len(word) > len(ending) + 1 and word.endswith(ending):
+                word = word[: -len(ending)]
+                break
+        if len(word) < 2 or word in _STOPWORDS or word in _ENDINGS or word.isdigit():
+            continue
+        if word not in counts:
+            order.append(word)
+        counts[word] = counts.get(word, 0) + 1
+    return sorted(order, key=lambda w: (-counts[w], order.index(w)))[:limit]
+
+
 class WorkActivityTools:
     """조사 단계가 부르는 도구. 인자 검증·허용 범위·호출 상한을 강제하고, 읽은 자료를 모은다."""
 

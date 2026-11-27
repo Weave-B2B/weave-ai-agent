@@ -169,6 +169,18 @@ class RunSupervisorRuntime:
             texts.add(text_key)
         return self._save(run, coord) if coord != run.coordination else run
 
+    @staticmethod
+    def _clarifier_activity():
+        """Clarifier 선택지 후보용 진행 자료 조회기. 조회 방식이 없거나 설정 오류면 None (계약 문서만 쓴다)."""
+        from app.integrations.work_activity.base import WorkActivityError, WorkActivityTools
+        from app.integrations.work_activity.factory import build_work_activity_source
+        from app.orchestration.clarifier import ActivityCandidates
+        try:
+            source = build_work_activity_source(settings)
+        except WorkActivityError:
+            return None
+        return ActivityCandidates(WorkActivityTools(source, budget=6)) if source else None
+
     def _clarify(self, run, outputs):
         """Clarifier로 에이전트 gap을 질문·가정으로 정리한다. 새로 물을 필수 정보가 있을 때만 모델을 호출한다."""
         from app.orchestration.clarifier import Clarifier, collect_gaps
@@ -186,7 +198,7 @@ class RunSupervisorRuntime:
             baseline = (request or self.state.get_inputs(run.state.run_id).agent1_input).context.baseline_id
             return search_docs(query, baseline, top_k=3)
 
-        coord = Clarifier(self.llm, search=search).reconcile(
+        coord = Clarifier(self.llm, search=search, activity=self._clarifier_activity()).reconcile(
             run.coordination.model_copy(deep=True), collect_gaps(run, outputs),
             item_text=item_text, evidence_context=evidence_context)
         if coord == run.coordination:

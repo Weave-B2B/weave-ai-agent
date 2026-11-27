@@ -23,8 +23,11 @@ def make_gap_id(stage: str, item_ids, slot: str) -> str:
     return "gap-" + hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-def _resolvers(target: str) -> list[str]:
-    return ["client"] if target == "client" else ["pm"]
+def _resolvers(target: str, stage: str = "") -> list[str]:
+    """누가 채울 수 있나. Agent 3 정보(기존 기능·판정 기준·규모·진행 상황)는 기준선 문서와 진행 자료로도 채울 수 있다.
+    원문 해석(Agent 1, 고객이 원하는 것)은 사람만 답한다. 범위 판단(Agent 2)은 계약 문서로만 채운다."""
+    people = ["client"] if target == "client" else ["pm"]
+    return people + (["docs", "activity"] if stage == "agent3" else [])
 
 
 def question_gap(stage: str, q: Question) -> InfoGap:
@@ -32,7 +35,7 @@ def question_gap(stage: str, q: Question) -> InfoGap:
     return InfoGap(gap_id=make_gap_id(stage, q.item_ids, slot), stage=stage, item_ids=list(q.item_ids), slot=slot,
                    missing=q.text, impact=q.reason, basis_refs=list(q.basis_refs), blocking=q.blocking,
                    assumption_if_unknown=q.assumption_if_unknown, target=q.target,
-                   suggested_options=list(q.choices)[:3], resolvable_by=_resolvers(q.target), question_id=q.question_id)
+                   suggested_options=list(q.choices)[:3], resolvable_by=_resolvers(q.target, stage), question_id=q.question_id)
 
 
 def gaps_from_output(stage: str, output) -> list[InfoGap]:
@@ -70,7 +73,7 @@ def gaps_from_output(stage: str, output) -> list[InfoGap]:
                         slot=slot, missing=need.topic, impact=getattr(need, "reason", "") or "영향 산정에 필요합니다.",
                         blocking=need.blocking, assumption_if_unknown=getattr(need, "assumption_if_unknown", None),
                         target=target, suggested_options=list(getattr(need, "choices", []) or [])[:3],
-                        resolvable_by=_resolvers(target), question_id=need.question_id))
+                        resolvable_by=_resolvers(target, stage), question_id=need.question_id))
     return list(gaps.values())
 
 
