@@ -19,7 +19,7 @@ def predict(case: dict) -> list[dict]:
         if change == "same":
             continue
         preds.append({"type": "CHANGE", "docs": [diff["document_id"]], "codes": [item["code"] or item["key"]],
-                      "change": change, "minor": change == "minor", "value_change": item["summary"]["value_change"]})
+                      "change": change, "minor": change in ("minor", "renumbered"), "value_change": item["summary"]["value_change"]})
     for u in diff["unchecked"]:
         preds.append({"type": "UNCHECKED", "docs": [diff["document_id"]], "codes": []})
     return preds

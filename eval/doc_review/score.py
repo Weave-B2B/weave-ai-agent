@@ -6,6 +6,7 @@
 
 맞춤 기준 — 기대 후보 하나에 대해 예측 후보가
   ① type이 같고 ② 기대 docs 중 하나 이상을 포함하고 ③ 기대 codes 중 하나 이상을 포함하면(기대 codes가 비면 생략) 맞힌 것으로 본다.
+  ④ 기대에 change가 있고 예측에도 change가 있으면 같아야 한다.
 지표
   recall(required)     필수 기대 후보를 찾은 비율
   forbidden hits       음성 사례에서 보고하면 안 되는 후보를 보고한 수 (minor=true로 접은 CHANGE는 제외)
@@ -26,6 +27,8 @@ def matches(pred: dict, exp: dict) -> bool:
         return False
     if exp.get("codes") and not set(pred.get("codes", [])) & set(exp["codes"]):
         return False
+    if exp.get("change") and pred.get("change") and pred["change"] != exp["change"]:
+        return False  # 변경 종류(added·removed·reverted 등)를 예측에 적었으면 같아야 한다
     return True
 
 
