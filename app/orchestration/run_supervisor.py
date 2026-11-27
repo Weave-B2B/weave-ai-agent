@@ -22,7 +22,7 @@ from app.orchestration.run_agent3_payload import Agent2RunOutput, Agent3RunOutpu
 from app.orchestration.run_coordination import (
     AnswerQuestion, FinalReviewDecision, PMQuestion, RequestFinalReview, ReviewBundle,
     SaveCoordination, payload_fingerprint,
-    ReserveLlmAttempt,
+    ReserveLlmAttempt, MAX_QUESTION_CHOICES, clean_choices,
 )
 from app.orchestration.run_state import InvalidStateTransition, StateRevisionConflict
 from app.orchestration.tool_state import SharedToolState
@@ -31,6 +31,15 @@ from schema.schemas import Agent1Output, Agent2Output
 
 def _as(model, payload):
     return model.model_validate({k: v for k, v in payload.items() if k in model.model_fields})
+
+
+def _question_key(item_ids, field):
+    return tuple(sorted(item_ids)), (field or "").strip().casefold()
+
+
+def _question_text_key(text):
+    """Same question re-worded only by spacing/punctuation is the same question."""
+    return "".join(ch for ch in (text or "").casefold() if ch.isalnum())
 
 
 class RunSupervisorRuntime:
@@ -74,8 +83,24 @@ class RunSupervisorRuntime:
         """
         coord = run.coordination.model_copy(deep=True)
         known = {q.question_id for q in coord.questions}
-        keys = {(tuple(sorted(q.item_ids)), q.field.strip().casefold()) for q in coord.questions}
+        keys = {_question_key(q.item_ids, q.field) for q in coord.questions}
+        # 에이전트가 답변 후 다른 ID·필드로 같은 질문을 다시 내도(에이전트 간 중복 포함) 같은 질문으로 본다.
+        texts = {_question_text_key(q.text) for q in coord.questions}
         candidates = []
+
+        def previous_of(qid, item_ids, field, text):
+            return next((p for p in coord.questions if p.question_id == qid
+                         or _question_key(p.item_ids, p.field) == _question_key(item_ids, field)
+                         or _question_text_key(p.text) == _question_text_key(text)), None)
+
+        def unresolved_hold(previous):
+            # 이미 답한 필수 질문이 다시 필수로 나오면 같은 질문을 되풀이하지 않고 보류한다.
+            if previous.disposition == "unknown":
+                coord.hold_reason = (f"필수 확인 사항이 '모름'으로 남아 분석을 보류합니다: {previous.text} "
+                                     "담당자가 확인한 뒤 요청 내용을 보완해 다시 진행해 주세요.")
+            else:
+                coord.hold_reason = "앞선 답변으로 필수 질문이 해소되지 않았습니다. 담당자 추가 검토가 필요합니다."
+
         for stage, output in outputs.items():
             if output is None or run.state.agents[stage].stale or run.state.agents[stage].status != "COMPLETED":
                 continue
@@ -84,19 +109,23 @@ class RunSupervisorRuntime:
                 # blocking PM round after every otherwise-complete estimate.
                 if stage in ("agent1", "agent3") and not q.blocking:
                     continue
-                previous = next((p for p in coord.questions if p.question_id == q.question_id), None)
-                if previous and previous.status == "resolved" and q.blocking and output.status == "NEEDS_INPUT":
-                    coord.hold_reason = "앞선 답변으로 필수 질문이 해소되지 않았습니다. 담당자 추가 검토가 필요합니다."
+                field = q.field or f"question:{q.question_id}"
+                previous = previous_of(q.question_id, q.item_ids, field, q.text)
+                if (previous and previous.status == "resolved" and q.blocking
+                        and (output.status == "NEEDS_INPUT" or previous.disposition == "unknown")):
+                    unresolved_hold(previous)
                 if q.status in ("open", "answered"):
                     candidates.append(PMQuestion(question_id=q.question_id, item_ids=q.item_ids,
-                        field=q.field or f"question:{q.question_id}", text=q.text, stage=stage,
-                        choices=["가능합니다", "불가능합니다", "모름"] if "재사용" in q.text else ["모름"]))
+                        field=field, text=q.text, stage=stage, reason=q.reason, basis_refs=q.basis_refs,
+                        target=q.target, choices=clean_choices(q.choices)))
             if stage == "agent2":
                 for assessment in output.assessments:
                     if assessment.label == "unclear" and not any(assessment.item_id in q.item_ids for q in output.questions):
                         candidates.append(PMQuestion(question_id=f"scope-{assessment.item_id}",
                             item_ids=[assessment.item_id], field="scope_missing", stage=stage,
-                            text=" / ".join(assessment.missing_info) or "범위를 판단할 추가 정보를 확인해 주세요.", choices=["모름"]))
+                            text=" / ".join(assessment.missing_info) or "범위를 판단할 추가 정보를 확인해 주세요.",
+                            reason=assessment.rationale or "계약 범위를 판단할 사실이 부족합니다.",
+                            basis_refs=[f"{e.doc_id}:{e.section_id}" for e in assessment.evidence]))
             if stage == "agent3":
                 for need in output.needs:
                     exhausted = any(self._attempts(run, i) >= 1 for i in need.item_ids)
@@ -111,11 +140,17 @@ class RunSupervisorRuntime:
                         continue
                     field = f"need:{need.kind}:{' '.join(need.topic.split()).casefold()}"
                     qid = need.question_id or f"run-q-{_hash([need.item_ids, field])[:20]}"
+                    previous = previous_of(qid, need.item_ids, field, need.topic)
+                    if previous and previous.status == "resolved":
+                        unresolved_hold(previous)
                     candidates.append(PMQuestion(question_id=qid, item_ids=need.item_ids,
-                        field=field, text=need.topic, stage=stage, choices=["모름"]))
+                        field=field, text=need.topic, stage=stage,
+                        reason=need.reason or "영향 산정을 진행하려면 확인이 필요합니다.",
+                        target="client" if need.target == "client" else "pm",
+                        choices=clean_choices(need.choices)))
         for q in candidates:
-            key = (tuple(sorted(q.item_ids)), q.field.strip().casefold())
-            if q.question_id in known or key in keys:
+            key, text_key = _question_key(q.item_ids, q.field), _question_text_key(q.text)
+            if q.question_id in known or key in keys or text_key in texts:
                 continue
             if len(coord.questions) >= 4:
                 coord.hold_reason = "추가 질문 한도에 도달했습니다. 담당자 검토가 필요합니다."
@@ -123,6 +158,7 @@ class RunSupervisorRuntime:
             coord.questions.append(q)
             known.add(q.question_id)
             keys.add(key)
+            texts.add(text_key)
         return self._save(run, coord) if coord != run.coordination else run
 
     def step(self, run_id, *, expected_revision=None):
@@ -274,8 +310,11 @@ class RunSupervisorRuntime:
                 if len(coord.questions) >= 4:
                     coord.hold_reason = "추가 질문 한도에 도달했습니다. 견적 대상을 확인해 주세요."
                     return {"status": "waiting", "run": self._save(run, coord)}
+                # 선택지는 최대 3개(+기타). 대상이 더 많으면 직접 입력으로 받는다.
                 coord.questions.append(PMQuestion(question_id=f"quote-{qid}", item_ids=[qid],
-                    field="quote_target", text="어떤 요청 항목의 견적인가요?", choices=sorted(scope_ids)))
+                    field="quote_target", text="어떤 요청 항목의 견적인가요?",
+                    reason="견적 요청이 어느 변경 요청에 대한 것인지 알아야 산정 대상을 정할 수 있습니다.",
+                    choices=sorted(scope_ids) if len(scope_ids) <= MAX_QUESTION_CHOICES else []))
             return {"status": "ready" if linked else "waiting_input", "action": "link_quote", "run": self._save(run, coord)}
         if choice.action == "analyze_request":
             worker = lambda: self._analyze(inp)
