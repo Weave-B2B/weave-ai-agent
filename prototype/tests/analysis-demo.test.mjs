@@ -394,6 +394,41 @@ test('PM question dialog shows at most four options including direct input and s
   assert.deepEqual(submitted,{question_id:'Q-REUSE',text:'기존 기능 재사용 가능',state_revision:3});
 });
 
+test('PM question dialog labels structured evidence by source type',async t=>{
+  const q={question_id:'Q-EV',stage:'agent3',text:'검수일은 확정 일정인가요?',reason:'일정 산정에 필요합니다.',target:'pm',blocking:true,status:'open',
+    basis_refs:['message_text[0:4]','FSP-A:F-1','TRIP-7'],choices:[],
+    evidence:[{source_type:'request',system:'message',ref:'message_text[0:4]',title:'검수 일정'},
+      {source_type:'contract',system:'doc',ref:'FSP-A:F-1',title:'기능 명세서 · F-1'},
+      {source_type:'activity',system:'jira',ref:'TRIP-7',title:null}]};
+  const session={id:'CR-UI-QEV',caseId:'C-EV',stateRevision:2,text:'검수 일정',created:'2026-11-27',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
+  globalThis.fetch=async()=>({ok:true,json:async()=>({state_revision:2,a1:{items:[]},question:q})});
+  h.demo.enter(session.id);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  h.click('agent3-question');
+  const html=h.demo.page();
+  assert.match(html,/근거: 고객 요청 원문 “검수 일정” \/ 계약 문서 기능 명세서 · F-1 \/ 진행 자료 TRIP-7/);
+});
+
+test('PM question dialog shows the fallback assumption and evidence for each choice',async t=>{
+  const q={question_id:'Q-AS',stage:'agent1',text:'검수일은 확정 일정인가요?',reason:'일정 산정에 필요합니다.',target:'pm',blocking:true,status:'open',
+    choices:['확정 일정','조정 가능'],assumption_if_unknown:'확정 일정으로 가정합니다',
+    choice_evidence:{'확정 일정':[{source_type:'contract',system:'doc',ref:'SOW-1:4.2',title:'과업지시서 · 4.2'}]}};
+  const session={id:'CR-UI-QAS',caseId:'C-AS',stateRevision:2,text:'검수',created:'2026-11-27',events:[],step:3,ready:false,supervisor:true,supervisorQuestion:q};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  const old=globalThis.fetch; t.after(()=>{globalThis.fetch=old;});
+  globalThis.fetch=async()=>({ok:true,json:async()=>({state_revision:2,a1:{items:[]},question:q,
+    assumptions:[{kind:'unasked',slot:'photo_order',stage:'agent1',item_ids:[],text:'업로드 순서대로 표시',evidence:[]}]})});
+  h.demo.enter(session.id);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  h.click('agent3-question');
+  const html=h.demo.page();
+  assert.match(html,/확인이 어려우면 이렇게 가정하고 진행합니다: 확정 일정으로 가정합니다/);
+  assert.match(html,/확정 일정<small class="caption" style="display:block">근거: 계약 문서 과업지시서 · 4.2<\/small>/);
+  assert.equal(h.demo.current().assumptions.length,1);
+});
+
 test('calc-v1 list and final review display supply amount rather than labor subtotal',()=>{
   const session={id:'CR-UI-CALC',text:'조정 견적',created:'2026-11-18',events:[],step:6,ready:true,analysisId:'calc',
     realA3:{contract_version:'agent3-run/2',status:'IMPACT_DRAFT_READY',estimates:[{totals:{md:2,price:1400000,cost:1000000},lines:[]}],
@@ -407,6 +442,24 @@ test('calc-v1 list and final review display supply amount rather than labor subt
   const html=h.demo.resultPreview(session.id,'impact');
   assert.match(html,/1,650,000원/);
   assert.match(html,/잠정/);
+});
+
+test('impact tab shows task assumptions and the work activity it referenced',()=>{
+  const activity={fetched_at:'2026-11-27T10:00:00+00:00',snapshot_hash:'h',issues:[
+    {key:'TP-202',title:'무장애 정보가 있는 장소만 후보로',status:'완료',status_category:'done',url:'https://team.atlassian.net/browse/TP-202',assignee:'김서연'},
+    {key:'TP-224',title:'이동수단 판정',status:'할 일',status_category:'todo',url:null,remaining_estimate_hours:6}],pull_requests:[],commits:[]};
+  const session={id:'CR-UI-ACT',text:'무장애 옵션',created:'2026-11-27',events:[],step:6,ready:true,analysisId:'act',
+    realA3:{status:'IMPACT_DRAFT_READY',work_activity:activity,estimates:[{totals:{md:3},lines:[
+      {task:'무장애 옵션 추가',role:'FE',md:3,assumption:'완료된 TP-202 필터 경로를 재사용한다'}]}]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  const html=h.demo.resultPreview(session.id,'impact');
+  assert.match(html,/가정: 완료된 TP-202 필터 경로를 재사용한다/);
+  assert.match(html,/참고한 진행 자료/);
+  assert.match(html,/<a href="https:\/\/team.atlassian.net\/browse\/TP-202" target="_blank" rel="noopener noreferrer">TP-202<\/a> 무장애 정보가 있는 장소만 후보로 <span class="caption">· 완료 · 김서연/);
+  assert.match(html,/TP-224 이동수단 판정 <span class="caption">· 할 일 · 남은 6시간/);
+  const none={...session,id:'CR-UI-ACT2',realA3:{...session.realA3,work_activity:{...activity,issues:[],unavailable_reason:'진행 자료를 조회하지 못했습니다: Jira 인증'}}};
+  const h2=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([none])]]));
+  assert.match(h2.demo.resultPreview(none.id,'impact'),/진행 자료를 조회하지 못했습니다: Jira 인증/);
 });
 
 test('schedule plan summary shows backend completion date and impact, or the reason it was not calculated', async () => {

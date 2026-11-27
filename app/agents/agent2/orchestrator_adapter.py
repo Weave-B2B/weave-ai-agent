@@ -10,6 +10,7 @@ from typing import Literal, Optional, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 
+from app.agents.gaps import gaps_from_output
 from schema.schemas import Agent2Input, Agent2Output, Answer, Context, Item, Question
 from app.agents.agent3.workflow import WorkflowConflict, _hash
 from app.agents.base import AgentFailure
@@ -243,6 +244,7 @@ class Agent2OrchestratorAdapter:
             "debug": {**fresh.meta.debug, "processed_item_ids": processed,
                       "previous_result_id": prev.meta.result_id if prev else None}})
         merged = Agent2Output(context=snapshot.context, status=status, assessments=assessments, questions=questions, meta=meta)
+        merged.gaps = gaps_from_output("agent2", merged)
         return merged, resolved, superseded
 
     @staticmethod

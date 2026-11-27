@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from app.integrations.work_activity.models import WorkActivitySnapshot
 from schema.schemas import Agent3Input, PMReview, Line, Estimate, Agent3Output
 from pydantic import BaseModel, ConfigDict
 
@@ -21,6 +22,7 @@ class ProvisionalAgent3Input(Agent3Input):
     customer_questions: list[str] = Field(default_factory=list)
     workbook_source_pinned: bool = False
     workbook_source: WorkbookReference | None = None
+    work_activity: WorkActivitySnapshot | None = Field(None, description="Jira·GitHub 진행 자료 스냅샷. 계약 근거 아님")
     quote_links: dict[str, list[str]] = Field(default_factory=dict,
         description="estimate_request item_id -> 견적 대상 item_ids. 오케스트레이터 에이전트가 Agent 1 결과로 채운다.")
 
@@ -62,6 +64,8 @@ class Agent3Need(BaseModel):
     reason: str = ""
     choices: list[str] = Field(default_factory=list, max_length=3, description=(
         "답변자가 고를 구체 선택지 0~3개. '기타·직접 입력'·'모름'은 화면이 붙이므로 넣지 않는다"))
+    assumption_if_unknown: str | None = Field(None, description=(
+        "답이 없을 때 진행할 가정 한 문장. 필수가 아닌 정보는 질문 대신 이 가정으로 진행한다"))
     target: Literal["agent2", "pm", "client", "none"] | None = None
     source: Literal["agent2", "agent3", "server"] = "server"
     question_id: str | None = None

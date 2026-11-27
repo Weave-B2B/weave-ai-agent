@@ -47,6 +47,8 @@ def _no_embedding_api(monkeypatch):
     monkeypatch.setattr(settings, "agent_mode", "fixture")     # .env의 AGENT_MODE=llm이 실제 LLM을 부르지 않게
     monkeypatch.setattr(settings, "calculation_mode", "fixture")
     monkeypatch.setattr(settings, "result_transport", "http")
+    monkeypatch.setattr(settings, "work_activity_source", "none")  # .env의 WORK_ACTIVITY_SOURCE=jira가 실제 Jira를 부르지 않게
+    monkeypatch.setattr(settings, "supervisor_clarifier_enabled", False)
     monkeypatch.setattr(settings, "pdf_parser", "legacy")      # 색인 테스트는 기존 파서 기준. r2 경로는 각 테스트가 켠다  # .env의 RESULT_TRANSPORT=sqs(로컬 기본)가 결과를 큐로 보내지 않게
     doc_tools.vector_backend.cache_clear()
     yield

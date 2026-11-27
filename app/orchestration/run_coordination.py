@@ -13,7 +13,7 @@ from pydantic import Field, model_validator
 from app.orchestration.run_state import (
     CommitResultRequest, RunStateSnapshot, Stage, StartAgentRequest, StateChangeReceipt,
 )
-from schema.schemas import Answer, _M
+from schema.schemas import Answer, EvidenceRef, _M
 
 
 def payload_fingerprint(payload: dict) -> str:
@@ -88,6 +88,7 @@ class PMQuestion(_M):
     text: str = Field(min_length=1)
     reason: str = ""
     basis_refs: list[str] = Field(default_factory=list)
+    evidence: list[EvidenceRef] = Field(default_factory=list, description="basis_refs를 출처 종류와 함께 구조화한 근거")
     target: Literal["pm", "client"] = "pm"
     choices: list[str] = Field(default_factory=list, max_length=8)
     allow_other: bool = True
@@ -97,6 +98,22 @@ class PMQuestion(_M):
     # unknown = PM이 '모름'으로 답함. 질문은 닫고(resolved) 같은 질문을 다시 띄우지 않는다.
     disposition: Literal["provided", "unknown"] | None = None
     stage: Stage = "agent2"
+    # Clarifier가 만든 질문: 어떤 빠진 정보(gap)를 묻는지, 선택지별 근거, 답이 없을 때의 가정
+    gap_ids: list[str] = Field(default_factory=list)
+    slot: str | None = None
+    choice_evidence: dict[str, list[EvidenceRef]] = Field(default_factory=dict)
+    assumption_if_unknown: str | None = None
+
+
+class Assumption(_M):
+    """질문하지 않고 진행하는 조건. 최종 검토에서 PM이 확인한다."""
+    gap_ids: list[str] = Field(default_factory=list)
+    slot: str
+    item_ids: list[str] = Field(default_factory=list)
+    stage: Stage
+    kind: Literal["unasked", "resolved"] = Field(description="unasked=필수가 아니라 묻지 않음, resolved=문서 근거로 채움")
+    text: str = Field(min_length=1)
+    evidence: list[EvidenceRef] = Field(default_factory=list)
 
 
 class CoordinationState(_M):
@@ -109,6 +126,7 @@ class CoordinationState(_M):
     segment_llm_calls: int = Field(default=0, ge=0, le=40)
     segment_steps: int = Field(default=0, ge=0, le=12)
     answers: list[Answer] = Field(default_factory=list)
+    assumptions: list[Assumption] = Field(default_factory=list)
     hold_reason: str | None = None
 
     @model_validator(mode="after")

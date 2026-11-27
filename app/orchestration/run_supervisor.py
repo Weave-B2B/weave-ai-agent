@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.agents.base import AgentFailure
 from app.orchestration.coordinated_execution import CoordinatedAgentRunner
 from app.orchestration.decision import choose_action, InvalidDecision
+from app.orchestration.evidence import baseline_doc_titles, parse_basis_refs
 from app.orchestration.run_agent3_payload import Agent2RunOutput, Agent3RunOutput, Agent3Source
 from app.orchestration.run_coordination import (
     AnswerQuestion, FinalReviewDecision, PMQuestion, RequestFinalReview, ReviewBundle,
@@ -148,6 +149,7 @@ class RunSupervisorRuntime:
                         reason=need.reason or "영향 산정을 진행하려면 확인이 필요합니다.",
                         target="client" if need.target == "client" else "pm",
                         choices=clean_choices(need.choices)))
+        evidence_context = None
         for q in candidates:
             key, text_key = _question_key(q.item_ids, q.field), _question_text_key(q.text)
             if q.question_id in known or key in keys or text_key in texts:
@@ -155,11 +157,63 @@ class RunSupervisorRuntime:
             if len(coord.questions) >= 4:
                 coord.hold_reason = "추가 질문 한도에 도달했습니다. 담당자 검토가 필요합니다."
                 break
+            if q.basis_refs:
+                if evidence_context is None:  # 새 질문이 있을 때만 원문·기준선 문서 제목을 읽는다
+                    request = self.state.get_inputs(run.state.run_id).agent1_input
+                    evidence_context = {"message_text": request.message_text,
+                                        "doc_titles": baseline_doc_titles(request.context.baseline_id)}
+                q.evidence = parse_basis_refs(q.basis_refs, **evidence_context)
             coord.questions.append(q)
             known.add(q.question_id)
             keys.add(key)
             texts.add(text_key)
         return self._save(run, coord) if coord != run.coordination else run
+
+    @staticmethod
+    def _clarifier_activity():
+        """Clarifier 선택지 후보용 진행 자료 조회기. 조회 방식이 없거나 설정 오류면 None (계약 문서만 쓴다)."""
+        from app.integrations.work_activity.base import WorkActivityError, WorkActivityTools
+        from app.integrations.work_activity.factory import build_work_activity_source
+        from app.orchestration.clarifier import ActivityCandidates
+        try:
+            source = build_work_activity_source(settings)
+        except WorkActivityError:
+            return None
+        return ActivityCandidates(WorkActivityTools(source, budget=6)) if source else None
+
+    def _clarify(self, run, outputs):
+        """Clarifier로 에이전트 gap을 질문·가정으로 정리한다. 새로 물을 필수 정보가 있을 때만 모델을 호출한다."""
+        from app.orchestration.clarifier import Clarifier, collect_gaps
+        a1 = outputs.get("agent1")
+        item_text = {i.item_id: i.text for i in (a1.items if a1 else [])}
+        request = None
+
+        def evidence_context():
+            nonlocal request
+            request = request or self.state.get_inputs(run.state.run_id).agent1_input
+            return {"message_text": request.message_text, "doc_titles": baseline_doc_titles(request.context.baseline_id)}
+
+        def search(query):
+            from app.tools.doc_tools import search_docs
+            baseline = (request or self.state.get_inputs(run.state.run_id).agent1_input).context.baseline_id
+            return search_docs(query, baseline, top_k=3)
+
+        coord = Clarifier(self.llm, search=search, activity=self._clarifier_activity()).reconcile(
+            run.coordination.model_copy(deep=True), collect_gaps(run, outputs),
+            item_text=item_text, evidence_context=evidence_context)
+        if coord == run.coordination:
+            return run
+        fresh = self.state.get_coordinated_run(run.state.run_id)
+        if fresh.state.state_revision != run.state.state_revision:
+            # 질문 작성 모델 호출은 호출 횟수를 기록하며 revision을 올린다. 그 외 변경이 있으면 충돌로 본다.
+            signature = lambda r: [r.state.agents, r.coordination.questions, r.coordination.answers,
+                                   r.coordination.assumptions, r.coordination.quote_links, r.coordination.hold_reason]
+            if signature(fresh) != signature(run):
+                raise StateRevisionConflict("질문 정리 중 실행 상태가 변경되었습니다.", run_id=run.state.run_id)
+            merged = fresh.coordination.model_copy(deep=True)
+            merged.questions, merged.assumptions, merged.hold_reason = coord.questions, coord.assumptions, coord.hold_reason
+            run, coord = fresh, merged
+        return self._save(run, coord)
 
     def step(self, run_id, *, expected_revision=None):
         from app.llm.attempts import account_attempts
@@ -200,7 +254,7 @@ class RunSupervisorRuntime:
             coord.quote_links = {}
             coord.quote_source_result_id = None
             run = self._save(run, coord)
-        run = self._questions(run, outputs)
+        run = self._clarify(run, outputs) if settings.supervisor_clarifier_enabled else self._questions(run, outputs)
         if run.state.status in ("WAITING_INPUT", "WAITING_PM_REVIEW"):
             return {"status": "waiting_input" if run.state.status == "WAITING_INPUT" else "waiting_final_review", "run": run}
         if run.coordination.hold_reason:
@@ -384,11 +438,34 @@ class RunSupervisorRuntime:
                     sha256=calculation_context.workbook_sha256)
         return result
 
+    def _probe_activity(self, current):
+        """처음 산정할 때만 진행 자료를 조사해 고정한다. 조회 방식이 없으면 None (자료 없이 산정)."""
+        from datetime import datetime, timezone
+        from app.agents.agent3.activity_probe import ActivityProbe
+        from app.integrations.work_activity.base import WorkActivityError, WorkActivityTools
+        from app.integrations.work_activity.factory import build_work_activity_source
+        from app.integrations.work_activity.models import WorkActivitySnapshot
+        from app.orchestration.progress import record_activity
+        try:
+            source = build_work_activity_source(settings)
+        except WorkActivityError as err:
+            return WorkActivitySnapshot.build(fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                              unavailable_reason=f"진행 자료를 조회하지 못했습니다: {err.message}")
+        if source is None:
+            return None
+        record_activity("Agent 3", "Jira 진행 상황을 조회하고 있습니다")
+        targets = [{"number": n, "text": item.text} for n, item in enumerate(current.targets(), 1)]
+        return ActivityProbe(self.llm, WorkActivityTools(source)).run(targets)
+
     def _impact(self, run, inp, rate, a1, a2, old, items, constraints, choice):
         tools = Agent3Orchestration(self.agents.agent3, draft_llm=self.draft_llm)
         run_inputs = self.state.get_inputs(run.state.run_id)
         current = self._agent3_input(inp, a1, a2, rate, run.coordination.quote_links,
                                      run.state.agents["agent1"].current_result_id, run_inputs.calculation_context)
+        # 진행 자료는 처음 산정 때 고정한 스냅샷을 재산정에서도 그대로 쓴다 (조회는 D단계 조사 단계에서 채운다)
+        current.work_activity = old.work_activity if old else None
+        if current.work_activity is None and choice.action == "estimate_impact":
+            current.work_activity = self._probe_activity(current)
         view, previous = None, None
         context_changed = False
         if old and old.source:
@@ -400,6 +477,7 @@ class RunSupervisorRuntime:
                                           source.quote_links, source.a1_result_id)
             previous.workbook_source_pinned = source.workbook_source_pinned
             previous.workbook_source = source.workbook_source
+            previous.work_activity = old.work_activity
             context_changed = (source.rate_card_id != rate
                 or source.calculation_context_revision != run_inputs.calculation_context_revision
                 or previous.workbook_source_pinned != current.workbook_source_pinned
@@ -439,7 +517,9 @@ class RunSupervisorRuntime:
             pm_edit_id=old.source.pm_edit_id if old and old.source else None,
             calculation_context_revision=run_inputs.calculation_context_revision,
             workbook_source_pinned=current.workbook_source_pinned,
-            workbook_source=current.workbook_source).model_dump()
+            workbook_source=current.workbook_source,
+            activity_snapshot_hash=current.work_activity.snapshot_hash if current.work_activity else None).model_dump()
+        raw["work_activity"] = current.work_activity.model_dump(mode="json") if current.work_activity else None
         return Agent3RunOutput.model_validate(raw)
 
     def answer(self, request: AnswerQuestion):

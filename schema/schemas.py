@@ -101,6 +101,30 @@ class Evidence(_M):
     verified: Optional[bool] = Field(None, description="인용 존재 검증 결과 — 코드가 채움")
 
 
+EvidenceSourceType = Literal["request", "contract", "activity"]
+EvidenceSystem = Literal["message", "doc", "jira", "github", "workbook"]
+_EVIDENCE_SYSTEMS: dict[str, set[str]] = {
+    "request": {"message"}, "contract": {"doc"}, "activity": {"jira", "github", "workbook"}}
+
+
+class EvidenceRef(_M):
+    """질문·선택지·가정이 기대는 근거 한 건. 범위 판단 근거가 될 수 있는 것은 contract뿐이다.
+    activity(Jira·GitHub·운영 엑셀)는 진행 상황 참고 자료이며 계약 근거·지시가 아니다."""
+    source_type: EvidenceSourceType = Field(description="request=고객 요청 원문, contract=기준선 문서, activity=작업 진행 자료")
+    system: EvidenceSystem
+    ref: str = Field(min_length=1, examples=["message_text[74:91]", "FSP-TB-001-v2.0:F-11", "TRIP-123", "Weave-B2B/app#88"])
+    title: Optional[str] = Field(None, description="사람이 읽는 표기 (문서 제목, 원문 인용, 이슈·PR 제목)")
+    url: Optional[str] = None
+    fetched_at: Optional[str] = Field(None, description="외부 조회 시각 (activity)")
+    snapshot_hash: Optional[str] = Field(None, description="조회 결과를 고정한 스냅샷 해시 (activity)")
+
+    @model_validator(mode="after")
+    def system_matches_source(self):
+        if self.system not in _EVIDENCE_SYSTEMS[self.source_type]:
+            raise ValueError(f"{self.system} is not a {self.source_type} evidence system")
+        return self
+
+
 class Item(_M):
     item_id: str = Field(description="{case_id}-{n}. 같은 의미면 재실행해도 유지", examples=["CR-A-001-1"])
     case_id: str
@@ -139,11 +163,33 @@ class Question(_M):
     reason: str = Field(description="무엇이 왜 빠졌나")
     choices: list[str] = Field([], max_length=3, description="답변자가 고를 수 있는 구체 선택지(최대 3개). "
                                                             "'기타·직접 입력'과 '모름'은 화면이 따로 붙이므로 넣지 않는다")
+    assumption_if_unknown: Optional[str] = Field(None, description="답이 없을 때 진행할 가정. 필수가 아닌 정보는 질문 대신 이 가정으로 진행한다")
     basis_refs: list[str] = Field([], description="근거 참조: 원문 span·문서 조항·도구 missing 필드")
     target: Literal["pm", "client"]
     blocking: bool = Field(False, description="true면 답변 전까지 다음 단계로 가지 않음")
     status: Literal["open", "answered", "resolved", "dismissed"] = Field("open", description="resolved는 재검토 후에만")
     gold_origin: Optional[str] = None
+
+
+GapResolver = Literal["docs", "activity", "pm", "client"]
+
+
+class InfoGap(_M):
+    """에이전트가 보고하는 빠진 정보 한 건. 질문 문장이 아니라 '무엇이 빠졌고 왜 필요한가'이다.
+    총괄 Clarifier가 gap을 합치고, 물을지·가정할지 정한 뒤 질문을 쓴다."""
+    gap_id: str = Field(description="단계·항목·slot으로 만든 고정 ID — 같은 정보면 재실행해도 같다")
+    stage: Stage
+    item_ids: list[str] = []
+    slot: str = Field(min_length=1, description="빠진 정보 이름 (예: photo_limit, deadline_fixed)")
+    missing: str = Field(min_length=1, description="무엇이 빠졌나 (사람이 읽는 설명)")
+    impact: str = Field("", description="답이 무엇을 바꾸나")
+    basis_refs: list[str] = []
+    blocking: bool = False
+    assumption_if_unknown: Optional[str] = None
+    target: Literal["pm", "client"] = "pm"
+    suggested_options: list[str] = Field([], max_length=3)
+    resolvable_by: list[GapResolver] = Field(default_factory=lambda: ["pm"])
+    question_id: Optional[str] = Field(None, description="같은 정보를 묻는 에이전트 질문 ID (전환 기간 호환)")
 
 
 class Answer(_M):
@@ -192,6 +238,7 @@ class _Out(_M):
     context: Context
     meta: Meta = Meta()
     questions: list[Question] = []
+    gaps: list[InfoGap] = Field([], description="빠진 정보 보고. 질문 작성은 총괄 Clarifier가 한다")
     error: Optional[AgentError] = Field(None, description="정상·보류는 null, 기술 실패만 객체")
 
     def _status_rules(self, ok: str):

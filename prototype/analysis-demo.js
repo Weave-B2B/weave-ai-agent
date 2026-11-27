@@ -197,6 +197,14 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
   }
   // 근거 참조를 사람이 읽는 문장으로 바꾼다: 원문 위치 → 원문 인용, 문서:조항 → 문서 제목 · 조항.
   function questionBasisLabels(s, q) {
+    // 서버가 출처 종류를 붙인 근거(evidence)가 있으면 그대로 쓴다: 원문 인용 · 계약 문서 · 진행 자료
+    if (q?.evidence?.length) {
+      const prefix = { request: '고객 요청 원문', contract: '계약 문서', activity: '진행 자료' };
+      return q.evidence.map(e => e.source_type === 'request'
+        ? (e.title ? `${prefix.request} “${clip(e.title, 60)}”` : prefix.request)
+        : `${prefix[e.source_type] || '근거'} ${e.title || e.ref}`)
+        .filter((label, index, all) => all.indexOf(label) === index).slice(0, 3);
+    }
     const source = s?.messageText || s?.text || '';
     const docs = backendProject?.documents || [];
     return (q?.basis_refs || []).map(ref => {
@@ -206,6 +214,31 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       if (cite) { const doc = docs.find(d => d.doc_id === cite[1]); return `${doc?.title || cite[1]} · ${cite[2]} 항목`; }
       return ref;
     }).filter((label, index, all) => all.indexOf(label) === index).slice(0, 3);
+  }
+  const SOURCE_LABEL = { request: '고객 요청 원문', contract: '계약 문서', activity: '진행 자료' };
+  function choiceEvidence(q, value) {
+    const refs = q?.choice_evidence?.[value] || [];
+    return refs.length ? `<small class="caption" style="display:block">근거: ${esc(refs.map(e => `${SOURCE_LABEL[e.source_type] || '근거'} ${e.title || e.ref}`).join(' / '))}</small>` : '';
+  }
+  // 질문하지 않고 진행한 조건 — 최종 검토에서 PM이 확인한다
+  function assumptionsSummary(s) {
+    const rows = s?.assumptions || [];
+    if (!rows.length) return '';
+    return `<div class="notice"><strong>질문하지 않고 진행한 조건 ${rows.length}건</strong><ul>${rows.map(a => `<li>${esc(a.text)}${a.kind === 'resolved' && a.evidence?.length ? ` <span class="caption">(근거: ${esc(a.evidence.map(e => e.title || e.ref).join(', '))})</span>` : ''}</li>`).join('')}</ul></div>`;
+  }
+  // 영향 산정이 참고한 작업 진행 자료(Jira·GitHub). 계약 근거가 아니라 진행 상황 참고 자료다.
+  const ACTIVITY_STATUS = { done: '완료', in_progress: '진행 중', todo: '할 일', unknown: '상태 미확인' };
+  function workActivitySection(impact) {
+    const activity = impact?.work_activity;
+    if (!activity) return '';
+    const issues = activity.issues || [];
+    const prs = activity.pull_requests || [];
+    const link = (url, label) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label);
+    const rows = [
+      ...issues.map(i => `<li>${link(i.url, i.key)} ${esc(i.title)} <span class="caption">· ${esc(ACTIVITY_STATUS[i.status_category] || i.status)}${i.assignee ? ` · ${esc(i.assignee)}` : ''}${i.remaining_estimate_hours != null ? ` · 남은 ${esc(i.remaining_estimate_hours)}시간` : ''}</span></li>`),
+      ...prs.map(p => `<li>${link(p.url, `${p.repo}#${p.number}`)} ${esc(p.title)} <span class="caption">· ${esc(p.state === 'merged' ? '병합됨' : p.state === 'open' ? '진행 중' : '닫힘')}</span></li>`)];
+    const body = rows.length ? `<ul>${rows.join('')}</ul>` : `<p class="caption">${esc(activity.unavailable_reason || '관련 진행 자료를 찾지 못했습니다.')}</p>`;
+    return `<h3>참고한 진행 자료</h3><p class="caption">Jira·GitHub 조회 결과 · ${esc(activity.fetched_at || '')} 기준 · 계약 근거가 아닌 진행 상황 참고 자료입니다.</p>${body}`;
   }
   function questionChoiceList(q) {
     const reserved = /^(기타|직접\s*입력|모름|모르겠어요|확인\s*필요|unknown|other)/i;
@@ -414,6 +447,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
     s.realA1 = data.a1 || s.realA1; s.realA2 = data.a2 || null; s.realA3 = data.agent3?.impact || null;
     s.items = (s.realA1?.items || []).map(i => i.text);
     s.messageText = data.input?.message_text || s.messageText || null;
+    s.assumptions = data.assumptions || [];
     s.supervisorQuestion = data.question ? { ...data.question, text: data.question.topic || data.question.text } : null;
     s.emailDraft = data.agent3?.documents?.email || null;
     s.agreementDraft = data.agent3?.documents?.agreement || null;
@@ -697,8 +731,8 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       const t = totalsFor(s) || {};
       const margin = t.price && typeof t.cost === 'number' ? ((t.price - t.cost) / t.price * 100).toFixed(1) : null;
       const rate = estimate.rate_card_id ? `<button type="button" class="rate-card-link" data-rate-card="${esc(estimate.rate_card_id)}" aria-label="${esc(estimate.rate_card_id)} 단가표 보기">${esc(estimate.rate_card_id)}</button>` : '미선택';
-      const lines = (s.realA3.estimates.flatMap(row => row.lines || [])).map(l => `<tr><td>${esc(l.task)}</td><td>${esc(l.role)}</td><td>${esc(l.md)}</td></tr>`).join('');
-      return `<h2>영향 산정 결과</h2><div class="analysis-numbers"><div><small>총 공수</small><strong>${t.md ?? '미산정'} <small>MD</small></strong></div><div><small>예상 직접원가 · 내부 확인용</small><strong>${typeof t.cost === 'number' ? won(t.cost) : '미산정'}</strong></div><div><small>고객 제안가 · VAT 별도</small><strong>${t.price != null ? won(t.price) : '미산정'}</strong></div></div><p class="caption">단가표 ${rate}${margin !== null ? ` · 예상 마진 ${margin}%` : ''}</p>${pricingSummary(s.realA3)}${lines ? `<table class="rate-card-table"><thead><tr><th>작업</th><th>직군</th><th>MD</th></tr></thead><tbody>${lines}</tbody></table>` : ''}<p class="caption">Orchestration Agent 3 결과입니다.</p>`;
+      const lines = (s.realA3.estimates.flatMap(row => row.lines || [])).map(l => `<tr><td>${esc(l.task)}${l.assumption ? `<small class="caption" style="display:block">가정: ${esc(l.assumption)}</small>` : ''}</td><td>${esc(l.role)}</td><td>${esc(l.md)}</td></tr>`).join('');
+      return `<h2>영향 산정 결과</h2><div class="analysis-numbers"><div><small>총 공수</small><strong>${t.md ?? '미산정'} <small>MD</small></strong></div><div><small>예상 직접원가 · 내부 확인용</small><strong>${typeof t.cost === 'number' ? won(t.cost) : '미산정'}</strong></div><div><small>고객 제안가 · VAT 별도</small><strong>${t.price != null ? won(t.price) : '미산정'}</strong></div></div><p class="caption">단가표 ${rate}${margin !== null ? ` · 예상 마진 ${margin}%` : ''}</p>${pricingSummary(s.realA3)}${lines ? `<table class="rate-card-table"><thead><tr><th>작업</th><th>직군</th><th>MD</th></tr></thead><tbody>${lines}</tbody></table>` : ''}<p class="caption">Orchestration Agent 3 결과입니다.</p>` + workActivitySection(s.realA3);
     }
     if (realRun(s)) {
       const draft = s.emailDraft;
@@ -734,10 +768,10 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
       const related = questionItemLabels(s, q);
       const basis = questionBasisLabels(s, q);
       const disabled = s.running ? 'disabled' : '';
-      return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">추가 확인이 필요합니다</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div>${meta.length ? `<p class="caption">${esc(meta.join(' · '))}</p>` : ''}<p class="caption">관련 요청: ${esc(related.join(' / '))}</p><p><strong>${esc(q?.text || '질문을 불러오지 못했습니다.')}</strong></p>${q?.reason ? `<div class="notice"><strong>확인이 필요한 이유</strong><p>${esc(q.reason)}</p>${basis.length ? `<p class="caption">근거: ${esc(basis.join(' / '))}</p>` : ''}</div>` : ''}${concrete ? `<fieldset class="analysis-choices"><legend class="caption">답변 선택</legend>${options.map(([v, l]) => `<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected === v ? 'checked' : ''}><span>${esc(l)}</span></label>`).join('')}</fieldset>` : ''}${selected === 'other' ? `<label class="field">${concrete ? '기타 내용' : '답변'}<textarea id="analysis-pm-other" placeholder="확인한 내용을 입력해 주세요.">${esc(other)}</textarea></label>` : ''}<div class="form-actions"><button class="button primary" data-demo-action="answer" ${disabled || (!selected ? 'disabled' : '')}>답변하고 계속</button><button class="button" data-demo-action="answer-unknown" ${disabled}>현재 확인 불가 · 미확정으로 처리</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</dialog>`;
+      return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">추가 확인이 필요합니다</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div>${meta.length ? `<p class="caption">${esc(meta.join(' · '))}</p>` : ''}<p class="caption">관련 요청: ${esc(related.join(' / '))}</p><p><strong>${esc(q?.text || '질문을 불러오지 못했습니다.')}</strong></p>${q?.reason ? `<div class="notice"><strong>확인이 필요한 이유</strong><p>${esc(q.reason)}</p>${basis.length ? `<p class="caption">근거: ${esc(basis.join(' / '))}</p>` : ''}${q.assumption_if_unknown ? `<p class="caption">확인이 어려우면 이렇게 가정하고 진행합니다: ${esc(q.assumption_if_unknown)}</p>` : ''}</div>` : ''}${concrete ? `<fieldset class="analysis-choices"><legend class="caption">답변 선택</legend>${options.map(([v, l]) => `<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected === v ? 'checked' : ''}><span>${esc(l)}${choiceEvidence(q, v)}</span></label>`).join('')}</fieldset>` : ''}${selected === 'other' ? `<label class="field">${concrete ? '기타 내용' : '답변'}<textarea id="analysis-pm-other" placeholder="확인한 내용을 입력해 주세요.">${esc(other)}</textarea></label>` : ''}<div class="form-actions"><button class="button primary" data-demo-action="answer" ${disabled || (!selected ? 'disabled' : '')}>답변하고 계속</button><button class="button" data-demo-action="answer-unknown" ${disabled}>현재 확인 불가 · 미확정으로 처리</button></div>${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</dialog>`;
     }
     const choices = final ? [['approve', '결과 확인 완료'], ['hold', '보류하고 나중에 확인'], ['other', '수정 요청 직접 입력']] : review ? [['범위 판정 결과 확인 완료, 영향 산정 진행', '확인하고 영향 산정 진행'], ['hold', '보류하고 나중에 확인'], ['other', '수정·추가 조건 직접 입력']] : [['기존 기능을 재사용하는 가정으로 초안 작성', '기존 기능 재사용으로 진행'], ['추가 정보 확인 후 진행', '추가 정보를 확인한 뒤 진행'], ['other', '기타 · 직접 입력']];
-    return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">${final ? '최종 결과를 확인해 주세요' : review ? '범위 판정 결과를 확인해 주세요' : '진행 조건을 확인해 주세요'}</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div><p>${final ? (realRun(s) ? (s.emailDraft ? '범위 판단·산정과 메일 초안을 확인합니다. 고객 발송 전 검토입니다.' : '확인을 선택하면 먼저 고객 협의 메일 초안을 생성합니다. 초안을 검토한 뒤 다시 확인해 주세요.') : '범위 판단·산정·문서 초안을 한 번에 확인합니다. 실제 고객 발송 전 PM 검토입니다.') : review ? 'Agent 2가 계약 문서를 근거로 판정한 결과입니다. 확인하면 Agent 3 영향 산정을 이어서 실행합니다.' : '확인 내용을 선택한 뒤 Agent 2 범위 검토와 Agent 3 영향 산정을 이어서 실행합니다.'}</p>${review ? scopeSummary(s) : ''}${final && s.supervisor && (s.realA3?.estimates || []).some(e => e.schedule?.business_days == null) ? `<label class="analysis-choice"><input type="checkbox" id="analysis-ack-schedule" ${s.ackUnknownSchedule ? 'checked' : ''}><span>일정 미산정 사실을 확인했습니다. 고객에게 확정 일정으로 안내하지 않습니다.</span></label>` : ''}${final && totalsFor(s) ? `<div class="notice">예상 공수 ${esc(totalsFor(s).md ?? '미산정')} MD · 판매가 ${won(totalsFor(s).price)}</div>` : ''}<fieldset class="analysis-choices"><legend class="caption">${final ? '검토 결과' : review ? '확인 방법' : '진행 방법'} 선택</legend>${choices.map(([v, l]) => `<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</fieldset>${selected === 'other' ? `<label class="field">기타 내용<textarea id="analysis-pm-other" placeholder="추가 조건이나 수정할 내용을 입력하세요.">${esc(other)}</textarea></label><div class="form-actions"><button class="button primary" data-demo-action="answer">입력 내용 반영</button></div>` : ''}${final && s.supervisor ? `<div class="form-actions"><button class="button primary" data-demo-action="answer" ${!selected || s.running ? 'disabled' : ''}>최종 검토 저장</button></div>` : ''}${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</dialog>`;
+    return `<dialog id="analysis-pm-dialog" aria-labelledby="analysis-pm-title"><div class="dialog-heading"><h2 id="analysis-pm-title">${final ? '최종 결과를 확인해 주세요' : review ? '범위 판정 결과를 확인해 주세요' : '진행 조건을 확인해 주세요'}</h2><button class="button plain" data-demo-action="close-dialog" aria-label="확인 창 닫기">닫기</button></div><p>${final ? (realRun(s) ? (s.emailDraft ? '범위 판단·산정과 메일 초안을 확인합니다. 고객 발송 전 검토입니다.' : '확인을 선택하면 먼저 고객 협의 메일 초안을 생성합니다. 초안을 검토한 뒤 다시 확인해 주세요.') : '범위 판단·산정·문서 초안을 한 번에 확인합니다. 실제 고객 발송 전 PM 검토입니다.') : review ? 'Agent 2가 계약 문서를 근거로 판정한 결과입니다. 확인하면 Agent 3 영향 산정을 이어서 실행합니다.' : '확인 내용을 선택한 뒤 Agent 2 범위 검토와 Agent 3 영향 산정을 이어서 실행합니다.'}</p>${review ? scopeSummary(s) : ''}${final && s.supervisor && (s.realA3?.estimates || []).some(e => e.schedule?.business_days == null) ? `<label class="analysis-choice"><input type="checkbox" id="analysis-ack-schedule" ${s.ackUnknownSchedule ? 'checked' : ''}><span>일정 미산정 사실을 확인했습니다. 고객에게 확정 일정으로 안내하지 않습니다.</span></label>` : ''}${final ? assumptionsSummary(s) : ''}${final && totalsFor(s) ? `<div class="notice">예상 공수 ${esc(totalsFor(s).md ?? '미산정')} MD · 판매가 ${won(totalsFor(s).price)}</div>` : ''}<fieldset class="analysis-choices"><legend class="caption">${final ? '검토 결과' : review ? '확인 방법' : '진행 방법'} 선택</legend>${choices.map(([v, l]) => `<label class="analysis-choice"><input type="radio" name="analysis-pm-choice" value="${esc(v)}" ${selected === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</fieldset>${selected === 'other' ? `<label class="field">기타 내용<textarea id="analysis-pm-other" placeholder="추가 조건이나 수정할 내용을 입력하세요.">${esc(other)}</textarea></label><div class="form-actions"><button class="button primary" data-demo-action="answer">입력 내용 반영</button></div>` : ''}${final && s.supervisor ? `<div class="form-actions"><button class="button primary" data-demo-action="answer" ${!selected || s.running ? 'disabled' : ''}>최종 검토 저장</button></div>` : ''}${error ? `<p class="analysis-error" role="alert">${esc(error)}</p>` : ''}</dialog>`;
   }
   function page() {
     const s = current();
@@ -822,6 +856,7 @@ export function createAnalysisDemo({ records, storage, render, updateProgress = 
     setBackendProject,
     refresh: refreshSession,
     page, byId, current, resultPreview(id, tab) { const s = byId(id); return s ? preview(s, tab) : ''; },
+    workActivity(id) { const s = byId(id); return s ? workActivitySection(s.realA3) : ''; },
     enter(id) {
       currentId = byId(id) ? id : null; modal = null; error = '';
       const s = current();

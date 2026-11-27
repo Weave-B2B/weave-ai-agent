@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field
 
 from app.agents.agent3.contracts import ProvisionalAgent3Output, WorkbookReference
+from app.integrations.work_activity.models import WorkActivitySnapshot
 from schema.schemas import Agent2Output, _M
 
 
@@ -27,6 +28,7 @@ class Agent3Source(_M):
     calculation_context_revision: int | None = None
     workbook_source_pinned: bool = False
     workbook_source: WorkbookReference | None = None
+    activity_snapshot_hash: str | None = Field(None, description="산정에 쓴 진행 자료 스냅샷 해시")
 
 
 class CustomerDocumentDraft(_M):
@@ -44,3 +46,4 @@ class Agent3RunOutput(ProvisionalAgent3Output):
     contract_version: Literal["agent3-run/1", "agent3-run/2"] = "agent3-run/2"
     documents: dict[Literal["email", "agreement", "scope_reply"], CustomerDocumentDraft] = Field(default_factory=dict)
     source: Agent3Source | None = None
+    work_activity: WorkActivitySnapshot | None = Field(None, description="산정에 쓴 진행 자료 (재산정 때 같은 자료를 다시 쓴다)")
