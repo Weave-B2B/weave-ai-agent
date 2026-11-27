@@ -13,7 +13,7 @@ from pydantic import Field, model_validator
 from app.orchestration.run_state import (
     CommitResultRequest, RunStateSnapshot, Stage, StartAgentRequest, StateChangeReceipt,
 )
-from schema.schemas import Answer, _M
+from schema.schemas import Answer, EvidenceRef, _M
 
 
 def payload_fingerprint(payload: dict) -> str:
@@ -88,6 +88,7 @@ class PMQuestion(_M):
     text: str = Field(min_length=1)
     reason: str = ""
     basis_refs: list[str] = Field(default_factory=list)
+    evidence: list[EvidenceRef] = Field(default_factory=list, description="basis_refs를 출처 종류와 함께 구조화한 근거")
     target: Literal["pm", "client"] = "pm"
     choices: list[str] = Field(default_factory=list, max_length=8)
     allow_other: bool = True

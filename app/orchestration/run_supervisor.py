@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.agents.base import AgentFailure
 from app.orchestration.coordinated_execution import CoordinatedAgentRunner
 from app.orchestration.decision import choose_action, InvalidDecision
+from app.orchestration.evidence import baseline_doc_titles, parse_basis_refs
 from app.orchestration.run_agent3_payload import Agent2RunOutput, Agent3RunOutput, Agent3Source
 from app.orchestration.run_coordination import (
     AnswerQuestion, FinalReviewDecision, PMQuestion, RequestFinalReview, ReviewBundle,
@@ -148,6 +149,7 @@ class RunSupervisorRuntime:
                         reason=need.reason or "영향 산정을 진행하려면 확인이 필요합니다.",
                         target="client" if need.target == "client" else "pm",
                         choices=clean_choices(need.choices)))
+        evidence_context = None
         for q in candidates:
             key, text_key = _question_key(q.item_ids, q.field), _question_text_key(q.text)
             if q.question_id in known or key in keys or text_key in texts:
@@ -155,6 +157,12 @@ class RunSupervisorRuntime:
             if len(coord.questions) >= 4:
                 coord.hold_reason = "추가 질문 한도에 도달했습니다. 담당자 검토가 필요합니다."
                 break
+            if q.basis_refs:
+                if evidence_context is None:  # 새 질문이 있을 때만 원문·기준선 문서 제목을 읽는다
+                    request = self.state.get_inputs(run.state.run_id).agent1_input
+                    evidence_context = {"message_text": request.message_text,
+                                        "doc_titles": baseline_doc_titles(request.context.baseline_id)}
+                q.evidence = parse_basis_refs(q.basis_refs, **evidence_context)
             coord.questions.append(q)
             known.add(q.question_id)
             keys.add(key)
