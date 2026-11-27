@@ -170,6 +170,11 @@ def list_change_requests(project_id: str, request: Request, page: int = 0, size:
     pid = _validate_uuid(project_id, "project_id")
     return _proxy(request, "GET", f"/api/v1/projects/{pid}/change-requests", params={"page": page, "size": size})
 
+@router.post("/projects/{project_id}/change-requests")
+def create_change_request(project_id: str, body: dict, request: Request):
+    pid = _validate_uuid(project_id, "project_id")
+    return _proxy(request, "POST", f"/api/v1/projects/{pid}/change-requests", json_body=body)
+
 
 @router.post("/projects/{project_id}/workbook-upload")
 async def upload_impact_workbook(
