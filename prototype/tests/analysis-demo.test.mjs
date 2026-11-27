@@ -444,6 +444,24 @@ test('calc-v1 list and final review display supply amount rather than labor subt
   assert.match(html,/잠정/);
 });
 
+test('impact tab shows task assumptions and the work activity it referenced',()=>{
+  const activity={fetched_at:'2026-11-27T10:00:00+00:00',snapshot_hash:'h',issues:[
+    {key:'TP-202',title:'무장애 정보가 있는 장소만 후보로',status:'완료',status_category:'done',url:'https://team.atlassian.net/browse/TP-202',assignee:'김서연'},
+    {key:'TP-224',title:'이동수단 판정',status:'할 일',status_category:'todo',url:null,remaining_estimate_hours:6}],pull_requests:[],commits:[]};
+  const session={id:'CR-UI-ACT',text:'무장애 옵션',created:'2026-11-27',events:[],step:6,ready:true,analysisId:'act',
+    realA3:{status:'IMPACT_DRAFT_READY',work_activity:activity,estimates:[{totals:{md:3},lines:[
+      {task:'무장애 옵션 추가',role:'FE',md:3,assumption:'완료된 TP-202 필터 경로를 재사용한다'}]}]}};
+  const h=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([session])]]));
+  const html=h.demo.resultPreview(session.id,'impact');
+  assert.match(html,/가정: 완료된 TP-202 필터 경로를 재사용한다/);
+  assert.match(html,/참고한 진행 자료/);
+  assert.match(html,/<a href="https:\/\/team.atlassian.net\/browse\/TP-202" target="_blank" rel="noopener noreferrer">TP-202<\/a> 무장애 정보가 있는 장소만 후보로 <span class="caption">· 완료 · 김서연/);
+  assert.match(html,/TP-224 이동수단 판정 <span class="caption">· 할 일 · 남은 6시간/);
+  const none={...session,id:'CR-UI-ACT2',realA3:{...session.realA3,work_activity:{...activity,issues:[],unavailable_reason:'진행 자료를 조회하지 못했습니다: Jira 인증'}}};
+  const h2=setup(new Map([['weave-analysis-preview-v1',JSON.stringify([none])]]));
+  assert.match(h2.demo.resultPreview(none.id,'impact'),/진행 자료를 조회하지 못했습니다: Jira 인증/);
+});
+
 test('schedule plan summary shows backend completion date and impact, or the reason it was not calculated', async () => {
   const { planSummary } = await import('../analysis-demo.js');
   const html = planSummary({ plan: { formula_version: 'schedule-v1', change_start_date: '2026-11-24', estimated_end_date: '2026-12-01',
