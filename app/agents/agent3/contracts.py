@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from app.integrations.work_activity.models import WorkActivitySnapshot
 from schema.schemas import Agent3Input, PMReview, Line, Estimate, Agent3Output
 from pydantic import BaseModel, ConfigDict
 
@@ -21,6 +22,7 @@ class ProvisionalAgent3Input(Agent3Input):
     customer_questions: list[str] = Field(default_factory=list)
     workbook_source_pinned: bool = False
     workbook_source: WorkbookReference | None = None
+    work_activity: WorkActivitySnapshot | None = Field(None, description="Jira·GitHub 진행 자료 스냅샷. 계약 근거 아님")
     quote_links: dict[str, list[str]] = Field(default_factory=dict,
         description="estimate_request item_id -> 견적 대상 item_ids. 오케스트레이터 에이전트가 Agent 1 결과로 채운다.")
 
