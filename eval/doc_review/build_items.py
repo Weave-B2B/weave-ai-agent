@@ -6,7 +6,6 @@
 스캔 쪽 전사는 쓰지 않는다(텍스트 PDF만). 파서가 바뀌면 다시 만들고 cases.jsonl의 item 코드가 그대로인지 확인한다.
 """
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -14,21 +13,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from app.indexing import pdf_r2  # noqa: E402
+from app.tools.doc_review import item_code  # noqa: E402  (도구와 같은 조항 코드 규칙)
 
 OUT = ROOT / "eval" / "dataset" / "doc_review" / "items"
 DEFAULT = ["CTR-A-001-v1.0", "SOW-A-001-v1.0", "FSP-A-001-v1.0", "QUO-A-001-v1.0", "CO-A-001-v1.0"]
 TYPES = {"CTR": "CONTRACT", "SOW": "SOW", "FSP": "FUNCTIONAL_SPEC", "QUO": "QUOTATION", "CO": "CHANGE_ORDER"}
-# 항목 코드: [A-F12] / TB-F10 / C-03 / 제3조 / Q-06 / CO-02 / REQ-001
-CODE = re.compile(r"\[([A-Z]{1,5}-[A-Z]{0,3}\d{1,3}[A-Z]?)\]|(?<![A-Za-z0-9-])([A-Z]{1,5}-[A-Z]{0,3}\d{1,3}[A-Z]?)(?![A-Za-z0-9-])|(제\s*\d+\s*조)")
-
-
-def item_code(heading: str, text: str) -> str | None:
-    last = heading.split(">")[-1]
-    for source in (last, text[:80]):
-        m = CODE.search(source)
-        if m:
-            return re.sub(r"\s+", "", next(g for g in m.groups() if g))
-    return None
 
 
 def build(document_id: str) -> dict:

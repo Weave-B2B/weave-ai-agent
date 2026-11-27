@@ -4,6 +4,7 @@
   replace_text {code, find, with}   해당 코드 항목의 원문 일부를 바꾼다 (find가 없으면 오류)
   add_item     {after, item}         코드 after 항목 뒤에 새 항목을 넣는다
   remove_item  {code}                해당 코드 항목을 뺀다
+  renumber     {code, to}            항목 코드를 바꾼다(제목·원문 속 코드도 함께). 번호 밀림·다시 매기기 확인용
 extraction_failed=true면 항목 없이 "추출 실패" 문서로 준다 (미확인 판단 확인용).
 """
 import copy
@@ -43,6 +44,11 @@ def apply_ops(doc: dict, ops: list[dict]) -> dict:
             items.insert(at, {"item_id": f"ADD-{op['item']['code']}", "page": items[at - 1]["page"], **op["item"]})
         elif op["op"] == "remove_item":
             items.pop(_find(items, op["code"]))
+        elif op["op"] == "renumber":
+            item = items[_find(items, op["code"])]
+            item["code"] = op["to"]
+            item["heading"] = item["heading"].replace(op["code"], op["to"])
+            item["text"] = item["text"].replace(op["code"], op["to"])
         else:
             raise ValueError(f"알 수 없는 op: {op['op']}")
     return doc

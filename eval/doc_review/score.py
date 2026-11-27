@@ -6,10 +6,11 @@
 
 맞춤 기준 — 기대 후보 하나에 대해 예측 후보가
   ① type이 같고 ② 기대 docs 중 하나 이상을 포함하고 ③ 기대 codes 중 하나 이상을 포함하면(기대 codes가 비면 생략) 맞힌 것으로 본다.
+  ④ 기대에 change가 있고 예측에도 change가 있으면 같아야 한다.
 지표
   recall(required)     필수 기대 후보를 찾은 비율
   forbidden hits       음성 사례에서 보고하면 안 되는 후보를 보고한 수 (minor=true로 접은 CHANGE는 제외)
-  extra                기대·선택 후보에 맞지 않는 나머지 예측 (오탐 후보 — 사람 검수 대상, 자동으로 오답 처리하지 않음)
+  extra                기대·선택 후보에 맞지 않는 나머지 예측 (오탐 후보 — 사람 검수 대상, 자동으로 오답 처리하지 않음). minor=true는 제외
   unchecked            UNCHECKED 필수 후보를 맞힌 비율 (빠짐없음 표시 확인)
 """
 import argparse
@@ -26,6 +27,8 @@ def matches(pred: dict, exp: dict) -> bool:
         return False
     if exp.get("codes") and not set(pred.get("codes", [])) & set(exp["codes"]):
         return False
+    if exp.get("change") and pred.get("change") and pred["change"] != exp["change"]:
+        return False  # 변경 종류(added·removed·reverted 등)를 예측에 적었으면 같아야 한다
     return True
 
 
@@ -59,7 +62,8 @@ def score(cases: list[dict], predictions: dict[str, list[dict]]) -> dict:
                     forb += 1
                     used.add(i)
         forbidden_hits += forb
-        case_extra = len(preds) - len(used)
+        # 사소한 변경으로 접은 후보(minor=true)는 검수 대상 추가 후보로 세지 않는다
+        case_extra = sum(1 for i, p in enumerate(preds) if i not in used and not p.get("minor"))
         extra += case_extra
         rows.append({"id": case["id"], "missed": miss, "forbidden": forb, "extra": case_extra})
     return {"recall_required": round(found / required, 3) if required else None, "required": required, "found": found,
