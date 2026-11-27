@@ -9,7 +9,7 @@
 지표
   recall(required)     필수 기대 후보를 찾은 비율
   forbidden hits       음성 사례에서 보고하면 안 되는 후보를 보고한 수 (minor=true로 접은 CHANGE는 제외)
-  extra                기대·선택 후보에 맞지 않는 나머지 예측 (오탐 후보 — 사람 검수 대상, 자동으로 오답 처리하지 않음)
+  extra                기대·선택 후보에 맞지 않는 나머지 예측 (오탐 후보 — 사람 검수 대상, 자동으로 오답 처리하지 않음). minor=true는 제외
   unchecked            UNCHECKED 필수 후보를 맞힌 비율 (빠짐없음 표시 확인)
 """
 import argparse
@@ -59,7 +59,8 @@ def score(cases: list[dict], predictions: dict[str, list[dict]]) -> dict:
                     forb += 1
                     used.add(i)
         forbidden_hits += forb
-        case_extra = len(preds) - len(used)
+        # 사소한 변경으로 접은 후보(minor=true)는 검수 대상 추가 후보로 세지 않는다
+        case_extra = sum(1 for i, p in enumerate(preds) if i not in used and not p.get("minor"))
         extra += case_extra
         rows.append({"id": case["id"], "missed": miss, "forbidden": forb, "extra": case_extra})
     return {"recall_required": round(found / required, 3) if required else None, "required": required, "found": found,
