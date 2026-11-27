@@ -398,6 +398,7 @@ def _assemble_questions(
             "field": draft_question.field,
             "text": draft_question.text,
             "reason": draft_question.reason,
+            "choices": draft_question.choices,
             "basis_refs": basis_refs,
             "target": draft_question.target,
             "blocking": draft_question.blocking,

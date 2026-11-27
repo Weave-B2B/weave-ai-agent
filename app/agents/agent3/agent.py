@@ -143,19 +143,19 @@ class LlmAgent3:
         questions = [Question(
             question_id=f"{inp.context.case_id}-A3Q{n}", case_id=inp.context.case_id,
             stage="agent3", item_ids=ids(q.item_numbers), field=q.field,
-            text=q.text, reason=q.reason, target=q.target, blocking=q.blocking,
+            text=q.text, reason=q.reason, choices=q.choices, target=q.target, blocking=q.blocking,
         ) for n, q in enumerate(proposal.questions, 1)]
         if missing_rules:
             questions.append(Question(question_id=f"{inp.context.case_id}-A3QRULE", case_id=inp.context.case_id,
                 stage="agent3", item_ids=sorted(set(missing_rules)), field="effort_rule",
                 text="해당 작업에 적용할 공수 기준을 확인해주세요.",
                 reason="모델이 공수 기준을 찾지 못했거나 기준 ID·직군이 잘못됐거나 중복되었습니다. 입력과 기준을 확인한 뒤 다시 실행해주세요.", target="pm", blocking=True))
-        needs = [Agent3Need(kind=n.kind, item_ids=ids(n.item_numbers), topic=n.topic, source="agent3", target=n.target) for n in proposal.needs]
+        needs = [Agent3Need(kind=n.kind, item_ids=ids(n.item_numbers), topic=n.topic, reason=n.reason, choices=n.choices, source="agent3", target=n.target) for n in proposal.needs]
         if not provisional:
             for n, need in enumerate(needs):
                 questions.append(Question(question_id=f"{inp.context.case_id}-A3NEED{n}",
                     case_id=inp.context.case_id, stage="agent3", item_ids=need.item_ids,
-                    field=need.kind, text=need.topic, reason="잠정 산정을 위한 추가 확인",
+                    field=need.kind, text=need.topic, reason=need.reason or "잠정 산정을 위한 추가 확인", choices=need.choices,
                     target="client" if need.kind == "client_input" else "pm", blocking=True))
         blocked_items = {i for q in questions if q.blocking and q.status == "open" for i in q.item_ids}
         if provisional:
