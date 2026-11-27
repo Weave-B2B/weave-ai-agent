@@ -19,11 +19,12 @@ from schema.schemas import Agent2Input, Assessment, Item, Question
 from app.agents.agent2.agent import DocType, Judgment, LlmAgent2, _LlmOut, _searching, _Usage
 from app.agents.agent2.prompts import AGENT_SYSTEM, FINAL_SYSTEM
 from app.kb.loader import sections
+from app.tools.doc_review import compare_values, extract_values, find_same_items
 from app.tools.doc_tools import get_section, search_docs, verify_quote
 from app.tools.errors import ToolInputError
 
 AGENT_VERSION = "a2-agent-0.1.0"
-Action = Literal["search_docs", "get_section", "verify_quote", "submit_judgment"]
+Action = Literal["search_docs", "get_section", "find_same_items", "compare_values", "verify_quote", "submit_judgment"]
 
 
 class AgentStep(_LlmOut):
@@ -35,6 +36,7 @@ class AgentStep(_LlmOut):
     doc_id: Optional[str] = Field(None, description="get_section·verify_quote: 문서 ID")
     section_id: Optional[str] = Field(None, description="get_section·verify_quote: 섹션 ID")
     quote: Optional[str] = Field(None, description="verify_quote: 확인할 인용문")
+    refs: list[str] = Field([], description="compare_values: 비교할 읽은 섹션 \"doc_id:section_id\" 2개 이상")
     judgment: Optional[Judgment] = Field(None, description="submit_judgment: 최종 판단")
 
 
@@ -102,6 +104,8 @@ class ToolAgent2(LlmAgent2):
                                      # 이미 읽은 섹션은 snippet을 다시 싣지 않는다
                                      **({"read": True} if (r["doc_id"], r["section_id"]) in read
                                         else {"snippet": r["text"][:self.snippet_chars]})} for r in res]}
+            if step.action == "compare_values":
+                return self._compare(step.refs, read)
             if not step.doc_id or not step.section_id:
                 return {"error": "doc_id·section_id 필요"}
             if step.doc_id not in allowed:               # 다른 프로젝트·기준선 밖 문서는 열어 주지 않는다
@@ -116,11 +120,49 @@ class ToolAgent2(LlmAgent2):
                 read[key] = {"doc_id": step.doc_id, "section_id": step.section_id, "doc_type": meta["doc_type"],
                              "priority_rank": meta["priority_rank"], "heading": meta["heading"], "text": s["text"]}
                 return {"read": f"{step.doc_id}:{step.section_id}", "heading": meta["heading"]}   # 전문은 <read_sections>
+            if step.action == "find_same_items":
+                return self._find_same((step.doc_id, step.section_id), allowed, seen, read)
             if step.action == "verify_quote":
                 return verify_quote(step.quote or "", step.doc_id, step.section_id)
             return {"error": "judgment 없이 submit_judgment"}
         except ToolInputError as e:                      # 잘못된 섹션 ID 등 — 에이전트가 고칠 수 있게 결과로 돌려준다
             return {"error": str(e)}
+
+    def _find_same(self, key: tuple[str, str], allowed: set[str], seen: list, read: dict) -> dict:
+        """읽은 섹션과 같은 내용을 다른 기준선 문서에서 찾는다 (조항 코드 일치 + 어휘 겹침).
+        같은 기능이 SOW·명세·견적에서 다르게 적힌 것을 놓치지 않게 한다. 찾은 섹션은 검색 결과처럼 근거 후보가 된다."""
+        if key not in read:
+            return {"error": "먼저 get_section으로 읽은 섹션만 기준으로 찾을 수 있다"}
+        docs: dict[str, dict] = {}
+        for (doc_id, section_id), s in sections().items():
+            if doc_id in allowed and doc_id != key[0]:
+                docs.setdefault(doc_id, {"document_id": doc_id, "version_no": 1, "items": []})["items"].append(
+                    {"item_id": section_id, "code": None, "heading": s["heading"], "text": s["text"]})
+        base = read[key]
+        hits = find_same_items(f"{base['heading']} {base['text']}", list(docs.values()), top_k=5)
+        out = []
+        for h in hits:
+            k = (h["document_id"], h["key"].split("#", 1)[1])
+            self._see(seen, k)
+            out.append({"doc_id": k[0], "section_id": k[1], "doc_type": sections()[k]["doc_type"], "heading": sections()[k]["heading"],
+                        "score": h["score"], **({"read": True} if k in read else {"snippet": h["snippet"][:self.snippet_chars]})})
+        return {"results": out} if out else {"results": [], "note": "다른 문서에서 같은 내용을 찾지 못함"}
+
+    @staticmethod
+    def _compare(refs: list[str], read: dict) -> dict:
+        """읽은 섹션들의 금액·날짜·기간·수량·비율. 섹션마다 값을 보여 주고, 첫 섹션과 다른 값을 짝지어 알려 준다.
+        값이 다르다고 바로 충돌은 아니다(다른 항목의 값일 수 있음) — 판단은 원문을 보고 한다."""
+        keys = [tuple(r.split(":", 1)) for r in refs if ":" in r]
+        if len(keys) < 2:
+            return {"error": "refs에 읽은 섹션 \"doc_id:section_id\"를 2개 이상"}
+        missing = [f"{d}:{s}" for d, s in keys if (d, s) not in read]
+        if missing:
+            return {"error": f"먼저 get_section으로 읽어야 한다: {missing}"}
+        values = {f"{d}:{s}": [{"kind": v["kind"], "raw": v["raw"], "context": v["context"]} for v in extract_values(read[(d, s)]["text"])][:12]
+                  for d, s in keys}
+        first = keys[0]
+        diffs = {f"{first[0]}:{first[1]} → {d}:{s}": compare_values(read[first]["text"], read[(d, s)]["text"])[:8] for d, s in keys[1:]}
+        return {"values": values, "differences": diffs}
 
     @staticmethod
     def _see(seen: list, key: tuple[str, str]) -> None:
@@ -179,6 +221,8 @@ class ToolAgent2(LlmAgent2):
         r = h.get("result") or {}
         if "results" in r:
             out["hits"] = [f"{x['doc_id']}:{x['section_id']}" + ("*" if x.get("read") else "") for x in r["results"]]
+        if "differences" in r:
+            out["differences"] = sum(len(v) for v in r["differences"].values())
         for k in ("read", "note", "error", "rejected", "gaps"):
             if k in r:
                 out[k] = r[k]
